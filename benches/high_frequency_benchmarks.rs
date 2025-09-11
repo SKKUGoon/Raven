@@ -4,9 +4,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use market_data_subscription_server::data_handlers::high_frequency::HighFrequencyHandler;
-use market_data_subscription_server::types::{HighFrequencyStorage, OrderBookData, TradeData};
-use rand::Rng;
-use std::sync::atomic::{AtomicU64, Ordering};
+use market_data_subscription_server::types::{OrderBookData, TradeData};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};

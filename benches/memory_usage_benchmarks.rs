@@ -1,9 +1,9 @@
 // Memory Usage and Performance Benchmarks
 // "Testing the ravens' ability to manage their memory efficiently under sustained load"
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use market_data_subscription_server::data_handlers::high_frequency::HighFrequencyHandler;
-use market_data_subscription_server::types::{HighFrequencyStorage, OrderBookData, TradeData};
+use market_data_subscription_server::types::{OrderBookData, TradeData};
 use rand::Rng;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

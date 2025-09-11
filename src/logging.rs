@@ -119,19 +119,19 @@ impl SpanEvents {
         let mut span = FmtSpan::NONE;
 
         if self.new {
-            span = span | FmtSpan::NEW;
+            span |= FmtSpan::NEW;
         }
         if self.enter {
-            span = span | FmtSpan::ENTER;
+            span |= FmtSpan::ENTER;
         }
         if self.exit {
-            span = span | FmtSpan::EXIT;
+            span |= FmtSpan::EXIT;
         }
         if self.close {
-            span = span | FmtSpan::CLOSE;
+            span |= FmtSpan::CLOSE;
         }
         if self.active {
-            span = span | FmtSpan::ACTIVE;
+            span |= FmtSpan::ACTIVE;
         }
         if self.full {
             FmtSpan::FULL

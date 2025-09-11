@@ -30,7 +30,7 @@ use uuid::Uuid;
 struct TestConfig {
     pub server_port: u16,
     pub influx_port: u16,
-    pub temp_dir: TempDir,
+    pub _temp_dir: TempDir,
 }
 
 impl TestConfig {
@@ -39,7 +39,7 @@ impl TestConfig {
         Self {
             server_port: rng.gen_range(50000..60000),
             influx_port: rng.gen_range(8000..9000),
-            temp_dir: TempDir::new().expect("Failed to create temp directory"),
+            _temp_dir: TempDir::new().expect("Failed to create temp directory"),
         }
     }
 
@@ -406,7 +406,7 @@ mod tests {
 
         // Inject trade data
         for i in 1..=5 {
-            let trade_data = create_test_trade_data("BTCUSDT", &format!("trade_{}", i));
+            let trade_data = create_test_trade_data("BTCUSDT", &format!("trade_{i}"));
             fixture.hf_storage.update_trade(&trade_data);
             sleep(Duration::from_millis(10)).await;
         }
@@ -536,7 +536,7 @@ mod tests {
 
         for i in 0..num_clients {
             let client_addr = format!("http://127.0.0.1:{}", fixture.config.server_port);
-            let client_id = format!("concurrent_client_{}", i);
+            let client_id = format!("concurrent_client_{i}");
 
             let handle = tokio::spawn(async move {
                 let mut client = MarketDataServiceClient::connect(client_addr)
@@ -552,13 +552,12 @@ mod tests {
                 });
 
                 let response = client.subscribe(subscribe_request).await;
-                assert!(response.is_ok(), "Client {} subscription should succeed", i);
+                assert!(response.is_ok(), "Client {i} subscription should succeed");
 
                 let subscribe_response = response.unwrap().into_inner();
                 assert!(
                     subscribe_response.success,
-                    "Client {} subscription should be successful",
-                    i
+                    "Client {i} subscription should be successful"
                 );
 
                 // Unsubscribe
@@ -569,11 +568,7 @@ mod tests {
                 });
 
                 let response = client.unsubscribe(unsubscribe_request).await;
-                assert!(
-                    response.is_ok(),
-                    "Client {} unsubscription should succeed",
-                    i
-                );
+                assert!(response.is_ok(), "Client {i} unsubscription should succeed");
 
                 i
             });
@@ -588,17 +583,13 @@ mod tests {
         for (i, result) in results.into_iter().enumerate() {
             assert!(
                 result.is_ok(),
-                "Client {} task should complete successfully",
-                i
+                "Client {i} task should complete successfully"
             );
             let client_id = result.unwrap();
             assert_eq!(client_id, i, "Client ID should match");
         }
 
-        println!(
-            "✅ Concurrent client connections test passed - {} clients",
-            num_clients
-        );
+        println!("✅ Concurrent client connections test passed - {num_clients} clients");
 
         fixture.shutdown().await;
     }
@@ -657,7 +648,7 @@ mod tests {
 
                         // Generate trade update
                         let trade_data =
-                            create_test_trade_data(symbol, &format!("{}_{}", symbol, sequence));
+                            create_test_trade_data(symbol, &format!("{symbol}_{sequence}"));
                         hf_storage.update_trade(&trade_data);
                     }
 
@@ -692,10 +683,7 @@ mod tests {
         );
         assert!(received_count > 0, "Should receive messages under load");
 
-        println!(
-            "✅ Load scenario test passed - processed {} messages",
-            received_count
-        );
+        println!("✅ Load scenario test passed - processed {received_count} messages");
 
         fixture.shutdown().await;
     }
@@ -764,7 +752,7 @@ mod tests {
         // The stream should eventually end
         let mut stream_ended = false;
         let disconnect_timeout = timeout(Duration::from_secs(5), async {
-            while let Some(_) = response_stream.next().await {
+            while (response_stream.next().await).is_some() {
                 // Continue until stream ends
             }
             stream_ended = true;
@@ -809,9 +797,7 @@ mod tests {
                 let response = client.subscribe(subscribe_request).await;
                 assert!(
                     response.is_ok(),
-                    "Subscription to {}::{:?} should succeed",
-                    symbol,
-                    data_type
+                    "Subscription to {symbol}::{data_type:?} should succeed"
                 );
 
                 let subscribe_response = response.unwrap().into_inner();
@@ -854,9 +840,7 @@ mod tests {
                 let response = client.unsubscribe(unsubscribe_request).await;
                 assert!(
                     response.is_ok(),
-                    "Unsubscription from {}::{:?} should succeed",
-                    symbol,
-                    data_type
+                    "Unsubscription from {symbol}::{data_type:?} should succeed"
                 );
             }
         }

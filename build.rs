@@ -31,26 +31,26 @@ fn add_build_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let build_timestamp = chrono::Utc::now()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={}", build_timestamp);
+    println!("cargo:rustc-env=VERGEN_BUILD_TIMESTAMP={build_timestamp}");
 
     // Git SHA (if available)
     let git_sha = get_git_sha().unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=VERGEN_GIT_SHA={}", git_sha);
+    println!("cargo:rustc-env=VERGEN_GIT_SHA={git_sha}");
 
     // Rust version
     let rustc_version = get_rustc_version().unwrap_or_else(|| "unknown".to_string());
-    println!("cargo:rustc-env=VERGEN_RUSTC_SEMVER={}", rustc_version);
+    println!("cargo:rustc-env=VERGEN_RUSTC_SEMVER={rustc_version}");
 
     // Target triple
     let target = env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
-    println!("cargo:rustc-env=VERGEN_CARGO_TARGET_TRIPLE={}", target);
+    println!("cargo:rustc-env=VERGEN_CARGO_TARGET_TRIPLE={target}");
 
     Ok(())
 }
 
 fn get_git_sha() -> Option<String> {
     let output = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()?;
 
@@ -62,7 +62,7 @@ fn get_git_sha() -> Option<String> {
 }
 
 fn get_rustc_version() -> Option<String> {
-    let output = Command::new("rustc").args(&["--version"]).output().ok()?;
+    let output = Command::new("rustc").args(["--version"]).output().ok()?;
 
     if output.status.success() {
         let version_str = String::from_utf8_lossy(&output.stdout);

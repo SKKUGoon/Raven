@@ -33,7 +33,7 @@ use uuid::Uuid;
 struct SystemTestConfig {
     pub server_port: u16,
     pub influx_port: u16,
-    pub temp_dir: TempDir,
+    pub _temp_dir: TempDir,
     pub high_frequency_symbols: Vec<String>,
     pub test_duration_seconds: u64,
 }
@@ -44,7 +44,7 @@ impl SystemTestConfig {
         Self {
             server_port: rng.gen_range(50000..60000),
             influx_port: rng.gen_range(8000..9000),
-            temp_dir: TempDir::new().expect("Failed to create temp directory"),
+            _temp_dir: TempDir::new().expect("Failed to create temp directory"),
             high_frequency_symbols: vec![
                 "BTCUSDT".to_string(),
                 "ETHUSDT".to_string(),
@@ -97,7 +97,7 @@ struct SystemTestFixture {
     hf_storage: Arc<HighFrequencyStorage>,
     citadel: Arc<Citadel>,
     influx_client: Arc<InfluxClient>,
-    subscription_manager: Arc<SubscriptionManager>,
+    _subscription_manager: Arc<SubscriptionManager>,
 }
 
 impl SystemTestFixture {
@@ -161,7 +161,7 @@ impl SystemTestFixture {
             hf_storage,
             citadel,
             influx_client,
-            subscription_manager,
+            _subscription_manager: subscription_manager,
         })
     }
 
@@ -385,7 +385,7 @@ mod final_system_tests {
                 let mut response_stream = response.into_inner();
 
                 // Subscribe to all symbols
-                let client_id = format!("system_test_client_{}", i);
+                let client_id = format!("system_test_client_{i}");
                 let subscribe_msg = SubscriptionRequest {
                     request: Some(
                         market_data_subscription_server::proto::subscription_request::Request::Subscribe(
@@ -437,7 +437,7 @@ mod final_system_tests {
         if let (Some(start), Some(end)) = (sim_stats.start_time, sim_stats.end_time) {
             let duration = end.duration_since(start);
             let msg_per_sec = sim_stats.total_messages as f64 / duration.as_secs_f64();
-            println!("  ⚡ Messages per second: {:.2}", msg_per_sec);
+            println!("  ⚡ Messages per second: {msg_per_sec:.2}");
 
             // Validate high-frequency performance
             assert!(
@@ -459,18 +459,12 @@ mod final_system_tests {
                 total_received += received_count;
             }
 
-            println!(
-                "  👤 Client {}: {} messages received",
-                client_id, received_count
-            );
+            println!("  👤 Client {client_id}: {received_count} messages received");
         }
 
         println!("✅ System test results:");
-        println!(
-            "  🎯 Successful clients: {}/{}",
-            successful_clients, num_clients
-        );
-        println!("  📊 Total messages distributed: {}", total_received);
+        println!("  🎯 Successful clients: {successful_clients}/{num_clients}");
+        println!("  📊 Total messages distributed: {total_received}");
 
         // Validate system performance requirements
         assert!(
@@ -506,7 +500,7 @@ mod final_system_tests {
                 let client = MarketDataServiceClient::connect(client_addr).await;
                 if let Ok(mut client) = client {
                     let request = Request::new(SubscribeRequest {
-                        client_id: format!("perf_client_{}", i),
+                        client_id: format!("perf_client_{i}"),
                         symbols: vec!["BTCUSDT".to_string()],
                         data_types: vec![DataType::Orderbook as i32],
                         filters: HashMap::new(),
@@ -529,10 +523,7 @@ mod final_system_tests {
             .filter(|&success| success)
             .count();
 
-        println!(
-            "  ✅ Successful connections: {}/{}",
-            successful_connections, num_concurrent_clients
-        );
+        println!("  ✅ Successful connections: {successful_connections}/{num_concurrent_clients}");
         assert!(
             successful_connections >= num_concurrent_clients * 8 / 10,
             "Should handle 80%+ concurrent connections"
@@ -560,7 +551,7 @@ mod final_system_tests {
             let duration = end.duration_since(start);
             let actual_throughput = throughput_stats.total_messages as f64 / duration.as_secs_f64();
 
-            println!("  📊 Achieved throughput: {:.2} msg/sec", actual_throughput);
+            println!("  📊 Achieved throughput: {actual_throughput:.2} msg/sec");
             assert!(
                 actual_throughput >= 10000.0,
                 "Should achieve 10,000+ messages/second"
@@ -589,8 +580,8 @@ mod final_system_tests {
             latency_measurements.iter().sum::<Duration>() / latency_measurements.len() as u32;
         let max_latency = latency_measurements.iter().max().unwrap();
 
-        println!("  📏 Average latency: {:?}", avg_latency);
-        println!("  📏 Maximum latency: {:?}", max_latency);
+        println!("  📏 Average latency: {avg_latency:?}");
+        println!("  📏 Maximum latency: {max_latency:?}");
 
         assert!(
             avg_latency < Duration::from_millis(1),
@@ -607,16 +598,13 @@ mod final_system_tests {
 
         // Add data for many symbols
         for i in 0..1000 {
-            let symbol = format!("TEST{:04}USDT", i);
+            let symbol = format!("TEST{i:04}USDT");
             let test_data = WebSocketFeedSimulator::create_realistic_orderbook_data(&symbol);
             fixture.hf_storage.update_orderbook(&test_data);
         }
 
         let final_symbols = fixture.hf_storage.get_orderbook_symbols().len();
-        println!(
-            "  📊 Symbols before: {}, after: {}",
-            initial_symbols, final_symbols
-        );
+        println!("  📊 Symbols before: {initial_symbols}, after: {final_symbols}");
 
         assert!(
             final_symbols >= initial_symbols + 1000,
@@ -673,7 +661,7 @@ mod final_system_tests {
 
         // Server should handle disconnection gracefully
         let disconnect_timeout = timeout(Duration::from_secs(10), async {
-            while let Some(_) = response_stream.next().await {
+            while (response_stream.next().await).is_some() {
                 // Wait for stream to end
             }
         })
@@ -833,12 +821,9 @@ mod final_system_tests {
                 // Note: In test environment, InfluxDB might not be available
                 // We verify that the query doesn't error, even if no data is returned
                 if query_result.is_ok() {
-                    println!("  ✅ InfluxDB query for {} successful", symbol);
+                    println!("  ✅ InfluxDB query for {symbol} successful");
                 } else {
-                    println!(
-                        "  ⚠️ InfluxDB query for {} failed (expected in test env)",
-                        symbol
-                    );
+                    println!("  ⚠️ InfluxDB query for {symbol} failed (expected in test env)");
                 }
             }
         } else {
@@ -879,10 +864,7 @@ mod final_system_tests {
             .filter(|(orderbook_ok, trade_ok)| *orderbook_ok && *trade_ok)
             .count();
 
-        println!(
-            "  📊 Successful concurrent updates: {}/{}",
-            successful_updates, concurrent_updates
-        );
+        println!("  📊 Successful concurrent updates: {successful_updates}/{concurrent_updates}");
         assert!(
             successful_updates >= concurrent_updates * 9 / 10,
             "Should handle 90%+ concurrent updates successfully"
@@ -976,12 +958,12 @@ mod final_system_tests {
             let p99_latency = latency_measurements[count * 99 / 100];
 
             println!("📊 Latency Statistics:");
-            println!("  📏 Min: {:?}", min_latency);
-            println!("  📏 Max: {:?}", max_latency);
-            println!("  📏 Avg: {:?}", avg_latency);
-            println!("  📏 P50: {:?}", p50_latency);
-            println!("  📏 P95: {:?}", p95_latency);
-            println!("  📏 P99: {:?}", p99_latency);
+            println!("  📏 Min: {min_latency:?}");
+            println!("  📏 Max: {max_latency:?}");
+            println!("  📏 Avg: {avg_latency:?}");
+            println!("  📏 P50: {p50_latency:?}");
+            println!("  📏 P95: {p95_latency:?}");
+            println!("  📏 P99: {p99_latency:?}");
 
             // Validate latency requirements
             assert!(
@@ -1044,14 +1026,14 @@ mod final_system_tests {
             let sim_duration = end.duration_since(start);
             let sim_throughput =
                 throughput_stats.total_messages as f64 / sim_duration.as_secs_f64();
-            println!("  🏭 Simulation throughput: {:.2} msg/sec", sim_throughput);
+            println!("  🏭 Simulation throughput: {sim_throughput:.2} msg/sec");
         }
-        println!("  👤 Client throughput: {:.2} msg/sec", client_throughput);
+        println!("  👤 Client throughput: {client_throughput:.2} msg/sec");
         println!(
             "  📦 Total messages generated: {}",
             throughput_stats.total_messages
         );
-        println!("  📨 Total messages received: {}", received_messages);
+        println!("  📨 Total messages received: {received_messages}");
 
         // Validate throughput requirements
         assert!(

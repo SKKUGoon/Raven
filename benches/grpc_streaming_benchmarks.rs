@@ -6,7 +6,6 @@ use market_data_subscription_server::data_handlers::high_frequency::HighFrequenc
 use market_data_subscription_server::types::{OrderBookData, TradeData};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use std::thread;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use rand::Rng;
