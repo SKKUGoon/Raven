@@ -1,0 +1,93 @@
+[package]
+name = "market-data-subscription-server"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "market_data_subscription_server"
+path = "src/lib.rs"
+
+[dependencies]
+# gRPC and Protocol Buffers
+tonic = "0.10"
+prost = "0.12"
+prost-types = "0.12"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+tokio-stream = "0.1"
+async-stream = "0.3"
+async-trait = "0.1"
+
+# Database
+influxdb = "0.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Concurrent data structures
+dashmap = "5.5"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+config = "0.14"
+figment = { version = "0.10", features = ["env", "toml", "json"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4"] }
+clap = { version = "4.4", features = ["derive"] }
+
+# Monitoring and Metrics
+prometheus = "0.13"
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+opentelemetry = "0.21"
+opentelemetry-otlp = "0.14"
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+tracing-opentelemetry = "0.22"
+hyper = { version = "1.0", features = ["full"] }
+http-body-util = "0.1"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3.8"
+rand = "0.8"
+serde_json = "1.0"
+bincode = "1.3"
+# Integration testing dependencies
+tokio-test = "0.4"
+futures-util = "0.3"
+tower-test = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+tokio-stream = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
+
+[build-dependencies]
+tonic-build = "0.10"
+prost-build = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+
+[[bench]]
+name = "high_frequency_benchmarks"
+harness = false
+
+[[bench]]
+name = "grpc_streaming_benchmarks"
+harness = false
+
+[[bench]]
+name = "memory_usage_benchmarks"
+harness = false
+
+[[bench]]
+name = "latency_benchmarks"
+harness = false

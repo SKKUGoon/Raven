@@ -1,0 +1,94 @@
+# Default Configuration for Project Raven
+# "The foundation upon which the realm is built"
+
+[server]
+host = "0.0.0.0"
+port = 50051
+max_connections = 1000
+heartbeat_interval_seconds = 30
+client_timeout_seconds = 60
+enable_compression = true
+max_message_size = 4194304  # 4MB
+
+[database]
+influx_url = "http://localhost:8086"
+database_name = "market_data"
+connection_pool_size = 20
+connection_timeout_seconds = 10
+write_timeout_seconds = 5
+query_timeout_seconds = 30
+retry_attempts = 3
+retry_delay_ms = 1000
+circuit_breaker_threshold = 5
+circuit_breaker_timeout_seconds = 60
+
+[data_processing]
+snapshot_interval_ms = 5
+high_frequency_buffer_size = 10000
+low_frequency_buffer_size = 1000
+private_data_buffer_size = 500
+data_validation_enabled = true
+sanitization_enabled = true
+dead_letter_queue_size = 1000
+
+# Retention Policies - "How long shall the ravens remember?"
+[retention_policies.high_frequency]
+full_resolution_days = 7
+downsampled_days = 30
+archive_days = 90
+auto_cleanup = true
+compression_enabled = true
+
+[retention_policies.low_frequency]
+full_resolution_days = 730  # 2 years
+downsampled_days = 1095     # 3 years
+archive_days = 1825         # 5 years
+auto_cleanup = true
+compression_enabled = true
+
+[retention_policies.private_data]
+full_resolution_days = 365  # 1 year
+downsampled_days = 730      # 2 years
+archive_days = 1095         # 3 years
+auto_cleanup = false        # Manual cleanup for sensitive data
+compression_enabled = true
+
+[retention_policies.system_logs]
+full_resolution_days = 30
+downsampled_days = 90
+archive_days = 180
+auto_cleanup = true
+compression_enabled = true
+
+# Batching Configuration - "Efficiency in numbers"
+[batching.database_writes]
+size = 1000
+timeout_ms = 5
+max_memory_mb = 100
+compression_threshold = 500
+
+[batching.client_broadcasts]
+size = 100
+timeout_ms = 1
+max_memory_mb = 50
+compression_threshold = 50
+
+[batching.snapshot_captures]
+size = 50
+timeout_ms = 5
+max_memory_mb = 25
+compression_threshold = 25
+
+[batching.metrics_collection]
+size = 500
+timeout_ms = 1000
+max_memory_mb = 10
+compression_threshold = 250
+
+[monitoring]
+metrics_enabled = true
+metrics_port = 9090
+health_check_port = 8080
+tracing_enabled = true
+log_level = "info"
+performance_monitoring = true

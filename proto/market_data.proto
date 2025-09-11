@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package raven;
+
+// Market data types
+message OrderBookSnapshot {
+    string symbol = 1;
+    int64 timestamp = 2;
+    repeated PriceLevel bids = 3;
+    repeated PriceLevel asks = 4;
+    int64 sequence = 5;
+}
+
+message PriceLevel {
+    double price = 1;
+    double quantity = 2;
+}
+
+message Trade {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double price = 3;
+    double quantity = 4;
+    string side = 5;
+    string trade_id = 6;
+}
+
+message Candle {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double open = 3;
+    double high = 4;
+    double low = 5;
+    double close = 6;
+    double volume = 7;
+    string interval = 8;
+}
+
+message FundingRate {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double rate = 3;
+    int64 next_funding_time = 4;
+}
+
+message WalletUpdate {
+    string user_id = 1;
+    int64 timestamp = 2;
+    repeated Balance balances = 3;
+}
+
+message Balance {
+    string asset = 1;
+    double available = 2;
+    double locked = 3;
+}
+
+message MarketDataMessage {
+    oneof data {
+        OrderBookSnapshot orderbook = 1;
+        Trade trade = 2;
+        Candle candle = 3;
+        FundingRate funding = 4;
+        WalletUpdate wallet = 5;
+    }
+}

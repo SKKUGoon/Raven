@@ -1,0 +1,94 @@
+# Production Configuration for Project Raven
+# "The realm in its full glory, ready for battle"
+
+[server]
+host = "0.0.0.0"
+port = 50051
+max_connections = 5000
+heartbeat_interval_seconds = 15
+client_timeout_seconds = 30
+enable_compression = true
+max_message_size = 8388608  # 8MB
+
+[database]
+influx_url = "http://influxdb:8086"
+database_name = "market_data_prod"
+connection_pool_size = 50
+connection_timeout_seconds = 5
+write_timeout_seconds = 3
+query_timeout_seconds = 15
+retry_attempts = 5
+retry_delay_ms = 500
+circuit_breaker_threshold = 3
+circuit_breaker_timeout_seconds = 30
+
+[data_processing]
+snapshot_interval_ms = 1  # Higher frequency for production
+high_frequency_buffer_size = 50000
+low_frequency_buffer_size = 5000
+private_data_buffer_size = 2500
+data_validation_enabled = true
+sanitization_enabled = true
+dead_letter_queue_size = 5000
+
+# Production retention policies - longer retention
+[retention_policies.high_frequency]
+full_resolution_days = 30
+downsampled_days = 90
+archive_days = 365
+auto_cleanup = true
+compression_enabled = true
+
+[retention_policies.low_frequency]
+full_resolution_days = 1095  # 3 years
+downsampled_days = 1825      # 5 years
+archive_days = 3650          # 10 years
+auto_cleanup = true
+compression_enabled = true
+
+[retention_policies.private_data]
+full_resolution_days = 730   # 2 years
+downsampled_days = 1095      # 3 years
+archive_days = 2190          # 6 years
+auto_cleanup = false
+compression_enabled = true
+
+[retention_policies.system_logs]
+full_resolution_days = 90
+downsampled_days = 180
+archive_days = 365
+auto_cleanup = true
+compression_enabled = true
+
+# Production batching - optimized for throughput
+[batching.database_writes]
+size = 5000
+timeout_ms = 1
+max_memory_mb = 500
+compression_threshold = 2500
+
+[batching.client_broadcasts]
+size = 500
+timeout_ms = 1
+max_memory_mb = 200
+compression_threshold = 250
+
+[batching.snapshot_captures]
+size = 200
+timeout_ms = 1
+max_memory_mb = 100
+compression_threshold = 100
+
+[batching.metrics_collection]
+size = 2000
+timeout_ms = 500
+max_memory_mb = 50
+compression_threshold = 1000
+
+[monitoring]
+metrics_enabled = true
+metrics_port = 9090
+health_check_port = 8080
+tracing_enabled = true
+log_level = "warn"  # Less verbose in production
+performance_monitoring = true
