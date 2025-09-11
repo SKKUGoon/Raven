@@ -253,18 +253,32 @@ impl Default for MonitoringConfig {
 impl Config {
     /// Load configuration from environment variables and config files
     pub fn load() -> Result<Self> {
+        Self::load_with_file(None)
+    }
+
+    /// Load configuration from environment variables and config files with optional custom config file
+    pub fn load_with_file(config_file: Option<&str>) -> Result<Self> {
         info!("📜 Loading configuration for the realm...");
 
         let mut builder = ConfigBuilder::builder()
             // Start with default values
-            .add_source(config::Config::try_from(&Config::default())?)
-            // Add config file if it exists
-            .add_source(File::with_name("config/default").required(false))
-            .add_source(File::with_name("config/local").required(false));
+            .add_source(config::Config::try_from(&Config::default())?);
 
-        // Add environment-specific config file
-        if let Ok(env) = std::env::var("ENVIRONMENT") {
-            builder = builder.add_source(File::with_name(&format!("config/{env}")).required(false));
+        // Add custom config file if specified, otherwise use default locations
+        if let Some(config_path) = config_file {
+            info!("🔧 Using custom config file: {}", config_path);
+            builder = builder.add_source(File::with_name(config_path).required(true));
+        } else {
+            // Add config file if it exists
+            builder = builder
+                .add_source(File::with_name("config/default").required(false))
+                .add_source(File::with_name("config/local").required(false));
+
+            // Add environment-specific config file
+            if let Ok(env) = std::env::var("ENVIRONMENT") {
+                builder =
+                    builder.add_source(File::with_name(&format!("config/{env}")).required(false));
+            }
         }
 
         // Add environment variables with prefix

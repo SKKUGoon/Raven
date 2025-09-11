@@ -1,28 +1,29 @@
-// The Night's Watch - gRPC Server Implementation
-// "The watchers on the wall who guard the realm of market data"
+// gRPC service implementation for MarketDataService
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio_stream::{Stream, StreamExt};
-use tonic::{transport::Server, Request, Response, Status, Streaming};
+use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info, warn};
 
-// Import our protobuf definitions and other modules
 use crate::database::influx_client::InfluxClient;
 use crate::monitoring::MetricsCollector;
 use crate::proto::{
-    market_data_service_server::{MarketDataService, MarketDataServiceServer},
-    DataType, HistoricalDataRequest, MarketDataMessage, SubscribeRequest, SubscribeResponse,
-    SubscriptionRequest, UnsubscribeRequest, UnsubscribeResponse,
+    market_data_service_server::MarketDataService, DataType, HistoricalDataRequest,
+    MarketDataMessage, SubscribeRequest, SubscribeResponse, SubscriptionRequest,
+    UnsubscribeRequest, UnsubscribeResponse,
 };
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::types::HighFrequencyStorage;
 
-/// The Night's Watch - Main gRPC server implementation
-pub struct MarketDataServer {
+use super::connection::ConnectionManager;
+
+/// gRPC service implementation
+#[derive(Clone)]
+pub struct MarketDataServiceImpl {
     /// The Maester's Registry - manages all client subscriptions
     subscription_manager: Arc<SubscriptionManager>,
     /// The Iron Bank - InfluxDB client for historical data
@@ -31,118 +32,30 @@ pub struct MarketDataServer {
     hf_storage: Arc<HighFrequencyStorage>,
     /// Metrics collector for monitoring
     metrics: Option<Arc<MetricsCollector>>,
-    /// Server configuration
-    max_connections: usize,
-    /// Active connection count
-    active_connections: Arc<RwLock<usize>>,
+    /// Connection manager
+    connection_manager: ConnectionManager,
 }
 
-impl MarketDataServer {
-    /// Create a new MarketDataServer instance
+impl MarketDataServiceImpl {
+    /// Create a new MarketDataServiceImpl
     pub fn new(
         subscription_manager: Arc<SubscriptionManager>,
         influx_client: Arc<InfluxClient>,
         hf_storage: Arc<HighFrequencyStorage>,
-        max_connections: usize,
+        metrics: Option<Arc<MetricsCollector>>,
+        connection_manager: ConnectionManager,
     ) -> Self {
-        info!("🏰 The Night's Watch is assembling...");
-        info!("⚔️ Maximum concurrent connections: {}", max_connections);
-
         Self {
             subscription_manager,
             influx_client,
             hf_storage,
-            metrics: None,
-            max_connections,
-            active_connections: Arc::new(RwLock::new(0)),
-        }
-    }
-
-    /// Create a new MarketDataServer instance with metrics
-    pub fn with_metrics(
-        subscription_manager: Arc<SubscriptionManager>,
-        influx_client: Arc<InfluxClient>,
-        hf_storage: Arc<HighFrequencyStorage>,
-        metrics: Arc<MetricsCollector>,
-        max_connections: usize,
-    ) -> Self {
-        info!("🏰 The Night's Watch is assembling with monitoring...");
-        info!("⚔️ Maximum concurrent connections: {}", max_connections);
-
-        Self {
-            subscription_manager,
-            influx_client,
-            hf_storage,
-            metrics: Some(metrics),
-            max_connections,
-            active_connections: Arc::new(RwLock::new(0)),
-        }
-    }
-
-    /// Start the gRPC server
-    pub async fn start(self, host: &str, port: u16) -> Result<()> {
-        let addr = format!("{host}:{port}").parse()?;
-
-        info!("🏰 The Night's Watch is taking position at {}", addr);
-        info!("🐦‍⬛ Ravens are ready to carry messages across the realm");
-
-        let service = MarketDataServiceServer::new(self)
-            .max_decoding_message_size(4 * 1024 * 1024) // 4MB max message size
-            .max_encoding_message_size(4 * 1024 * 1024);
-
-        Server::builder()
-            .add_service(service)
-            .serve(addr)
-            .await
-            .map_err(|e| anyhow!("Server failed: {}", e))?;
-
-        Ok(())
-    }
-
-    /// Check if server can accept new connections
-    async fn can_accept_connection(&self) -> bool {
-        let current_connections = *self.active_connections.read().await;
-        current_connections < self.max_connections
-    }
-
-    /// Increment active connection count
-    async fn increment_connections(&self) -> Result<()> {
-        let mut connections = self.active_connections.write().await;
-        if *connections >= self.max_connections {
-            if let Some(metrics) = &self.metrics {
-                metrics.record_error("max_connections_reached", "server");
-            }
-            return Err(anyhow!("Maximum connections reached"));
-        }
-        *connections += 1;
-        debug!("🔗 Active connections: {}", *connections);
-
-        // Update metrics
-        if let Some(metrics) = &self.metrics {
-            metrics.record_connection("grpc");
-            metrics.active_connections.set(*connections as f64);
-        }
-
-        Ok(())
-    }
-
-    /// Decrement active connection count
-    async fn decrement_connections(&self, duration: std::time::Duration) {
-        let mut connections = self.active_connections.write().await;
-        if *connections > 0 {
-            *connections -= 1;
-        }
-        debug!("🔗 Active connections: {}", *connections);
-
-        // Update metrics
-        if let Some(metrics) = &self.metrics {
-            metrics.record_disconnection("grpc", duration);
-            metrics.active_connections.set(*connections as f64);
+            metrics,
+            connection_manager,
         }
     }
 
     /// Convert DataType to SubscriptionDataType
-    fn convert_data_type(data_type: DataType) -> SubscriptionDataType {
+    pub fn convert_data_type(data_type: DataType) -> SubscriptionDataType {
         match data_type {
             DataType::Orderbook => SubscriptionDataType::Orderbook,
             DataType::Trades => SubscriptionDataType::Trades,
@@ -155,7 +68,7 @@ impl MarketDataServer {
     }
 
     /// Create market data message from orderbook snapshot
-    fn create_orderbook_message(
+    pub fn create_orderbook_message(
         symbol: &str,
         best_bid_price: f64,
         best_bid_quantity: f64,
@@ -188,7 +101,7 @@ impl MarketDataServer {
     }
 
     /// Create market data message from trade snapshot
-    fn create_trade_message(
+    pub fn create_trade_message(
         symbol: &str,
         price: f64,
         quantity: f64,
@@ -312,7 +225,7 @@ impl MarketDataServer {
 }
 
 #[tonic::async_trait]
-impl MarketDataService for MarketDataServer {
+impl MarketDataService for MarketDataServiceImpl {
     type StreamMarketDataStream =
         Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
     type GetHistoricalDataStream =
@@ -324,12 +237,13 @@ impl MarketDataService for MarketDataServer {
         request: Request<Streaming<SubscriptionRequest>>,
     ) -> Result<Response<Self::StreamMarketDataStream>, Status> {
         // Check connection limits
-        if !self.can_accept_connection().await {
+        if !self.connection_manager.can_accept_connection().await {
             warn!("🚫 Connection rejected - maximum connections reached");
             return Err(Status::resource_exhausted("Maximum connections reached"));
         }
 
-        self.increment_connections()
+        self.connection_manager
+            .increment_connections(self.metrics.as_ref())
             .await
             .map_err(|e| Status::internal(format!("Failed to accept connection: {e}")))?;
 
@@ -484,7 +398,7 @@ impl MarketDataService for MarketDataServer {
             }
             // Cleanup when stream ends
             let connection_duration = connection_start.elapsed();
-            server_clone.decrement_connections(connection_duration).await;
+            server_clone.connection_manager.decrement_connections(connection_duration, server_clone.metrics.as_ref()).await;
             info!("🔌 Streaming connection closed (duration: {:?})", connection_duration);
         };
 
@@ -664,128 +578,5 @@ impl MarketDataService for MarketDataServer {
         };
 
         Ok(Response::new(Box::pin(stream)))
-    }
-}
-
-// Implement Clone for MarketDataServer to allow sharing across async tasks
-impl Clone for MarketDataServer {
-    fn clone(&self) -> Self {
-        Self {
-            subscription_manager: Arc::clone(&self.subscription_manager),
-            influx_client: Arc::clone(&self.influx_client),
-            hf_storage: Arc::clone(&self.hf_storage),
-            metrics: self.metrics.as_ref().map(Arc::clone),
-            max_connections: self.max_connections,
-            active_connections: Arc::clone(&self.active_connections),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::database::influx_client::{InfluxClient, InfluxConfig};
-
-    #[tokio::test]
-    async fn test_server_creation() {
-        let subscription_manager = Arc::new(SubscriptionManager::new());
-        let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-        let hf_storage = Arc::new(HighFrequencyStorage::new());
-
-        let server = MarketDataServer::new(subscription_manager, influx_client, hf_storage, 1000);
-
-        assert_eq!(server.max_connections, 1000);
-        assert_eq!(*server.active_connections.read().await, 0);
-    }
-
-    #[tokio::test]
-    async fn test_connection_management() {
-        let subscription_manager = Arc::new(SubscriptionManager::new());
-        let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-        let hf_storage = Arc::new(HighFrequencyStorage::new());
-
-        let server = MarketDataServer::new(
-            subscription_manager,
-            influx_client,
-            hf_storage,
-            2, // Small limit for testing
-        );
-
-        // Test connection acceptance
-        assert!(server.can_accept_connection().await);
-        server.increment_connections().await.unwrap();
-        assert_eq!(*server.active_connections.read().await, 1);
-
-        assert!(server.can_accept_connection().await);
-        server.increment_connections().await.unwrap();
-        assert_eq!(*server.active_connections.read().await, 2);
-
-        // Should reject when at limit
-        assert!(!server.can_accept_connection().await);
-        assert!(server.increment_connections().await.is_err());
-
-        // Test decrement
-        server
-            .decrement_connections(std::time::Duration::from_secs(1))
-            .await;
-        assert_eq!(*server.active_connections.read().await, 1);
-        assert!(server.can_accept_connection().await);
-    }
-
-    #[test]
-    fn test_data_type_conversion() {
-        assert_eq!(
-            MarketDataServer::convert_data_type(DataType::Orderbook),
-            SubscriptionDataType::Orderbook
-        );
-        assert_eq!(
-            MarketDataServer::convert_data_type(DataType::Trades),
-            SubscriptionDataType::Trades
-        );
-        assert_eq!(
-            MarketDataServer::convert_data_type(DataType::Candles1m),
-            SubscriptionDataType::Candles1M
-        );
-    }
-
-    #[test]
-    fn test_message_creation() {
-        let orderbook_msg = MarketDataServer::create_orderbook_message(
-            "BTCUSDT",
-            45000.0,
-            1.5,
-            45001.0,
-            1.2,
-            12345,
-            1640995200000,
-        );
-
-        match orderbook_msg.data {
-            Some(crate::proto::market_data_message::Data::Orderbook(orderbook)) => {
-                assert_eq!(orderbook.symbol, "BTCUSDT");
-                assert_eq!(orderbook.sequence, 12345);
-                assert_eq!(orderbook.bids.len(), 1);
-                assert_eq!(orderbook.asks.len(), 1);
-            }
-            _ => panic!("Expected orderbook message"),
-        }
-
-        let trade_msg = MarketDataServer::create_trade_message(
-            "BTCUSDT",
-            45000.5,
-            0.1,
-            "buy",
-            67890,
-            1640995200000,
-        );
-
-        match trade_msg.data {
-            Some(crate::proto::market_data_message::Data::Trade(trade)) => {
-                assert_eq!(trade.symbol, "BTCUSDT");
-                assert_eq!(trade.price, 45000.5);
-                assert_eq!(trade.side, "buy");
-            }
-            _ => panic!("Expected trade message"),
-        }
     }
 }

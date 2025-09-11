@@ -111,9 +111,11 @@ async fn test_data_sanitization() {
 async fn test_validation_rules_update() {
     let citadel = create_test_citadel();
 
-    let mut rules = ValidationRules::default();
-    rules.min_price = 1000.0;
-    rules.max_price = 50000.0;
+    let rules = ValidationRules {
+        min_price: 1000.0,
+        max_price: 50000.0,
+        ..ValidationRules::default()
+    };
 
     citadel
         .update_validation_rules(rules.clone())

@@ -23,10 +23,7 @@ use tokio::{
     sync::mpsc,
     time::{sleep, timeout},
 };
-use tonic::{
-    transport::{Channel, Server},
-    Request,
-};
+use tonic::{transport::Channel, Request};
 use uuid::Uuid;
 
 /// Test configuration for integration tests
@@ -79,7 +76,7 @@ impl TestConfig {
 /// Test fixture for setting up the complete system
 struct TestFixture {
     config: TestConfig,
-    server_handle: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+    server_handle: tokio::task::JoinHandle<anyhow::Result<()>>,
     client: MarketDataServiceClient<Channel>,
     hf_storage: Arc<HighFrequencyStorage>,
     citadel: Arc<Citadel>,
@@ -129,20 +126,11 @@ impl TestFixture {
         );
 
         let server_config = config.get_server_config();
-        let addr = format!("{}:{}", server_config.host, server_config.port)
-            .parse()
-            .unwrap();
 
-        let server_handle = tokio::spawn(async move {
-            Server::builder()
-                .add_service(
-                    market_data_subscription_server::proto::market_data_service_server::MarketDataServiceServer::new(server)
-                        .max_decoding_message_size(4 * 1024 * 1024)
-                        .max_encoding_message_size(4 * 1024 * 1024),
-                )
-                .serve(addr)
-                .await
-        });
+        let server_handle =
+            tokio::spawn(
+                async move { server.start(&server_config.host, server_config.port).await },
+            );
 
         // Wait for server to start
         sleep(Duration::from_millis(500)).await;

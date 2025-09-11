@@ -1,137 +1,24 @@
 // Snapshot Service - Periodic Data Capture
 // "Ravens fly on schedule - capturing the realm's data every 5ms"
 
+pub mod config;
+pub mod metrics;
+#[cfg(test)]
+mod tests;
+
+pub use config::SnapshotConfig;
+pub use metrics::SnapshotMetrics;
+
 use crate::database::influx_client::InfluxClient;
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::types::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use anyhow::{Context, Result};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
-
-/// Configuration for the snapshot service
-#[derive(Debug, Clone)]
-pub struct SnapshotConfig {
-    /// Interval between snapshots (default: 5ms)
-    pub snapshot_interval: Duration,
-    /// Maximum number of snapshots to batch before writing to database
-    pub max_batch_size: usize,
-    /// Timeout for database writes
-    pub write_timeout: Duration,
-    /// Whether to broadcast snapshots to gRPC clients
-    pub broadcast_enabled: bool,
-    /// Whether to persist snapshots to database
-    pub persistence_enabled: bool,
-}
-
-impl Default for SnapshotConfig {
-    fn default() -> Self {
-        Self {
-            snapshot_interval: Duration::from_millis(5),
-            max_batch_size: 1000,
-            write_timeout: Duration::from_millis(100),
-            broadcast_enabled: true,
-            persistence_enabled: true,
-        }
-    }
-}
-
-/// Performance metrics for the snapshot service
-#[derive(Debug, Default)]
-pub struct SnapshotMetrics {
-    /// Total number of snapshots captured
-    pub total_snapshots: AtomicU64,
-    /// Total number of orderbook snapshots
-    pub orderbook_snapshots: AtomicU64,
-    /// Total number of trade snapshots
-    pub trade_snapshots: AtomicU64,
-    /// Total number of snapshots written to database
-    pub database_writes: AtomicU64,
-    /// Total number of snapshots broadcast to clients
-    pub client_broadcasts: AtomicU64,
-    /// Total number of failed operations
-    pub failed_operations: AtomicU64,
-    /// Last snapshot timestamp
-    pub last_snapshot_time: AtomicU64,
-    /// Average snapshot capture time in nanoseconds
-    pub avg_capture_time_ns: AtomicU64,
-    /// Average database write time in nanoseconds
-    pub avg_write_time_ns: AtomicU64,
-}
-
-impl SnapshotMetrics {
-    /// Get metrics as a HashMap for monitoring
-    pub fn to_map(&self) -> HashMap<String, u64> {
-        let mut metrics = HashMap::new();
-        metrics.insert(
-            "total_snapshots".to_string(),
-            self.total_snapshots.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "orderbook_snapshots".to_string(),
-            self.orderbook_snapshots.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "trade_snapshots".to_string(),
-            self.trade_snapshots.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "database_writes".to_string(),
-            self.database_writes.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "client_broadcasts".to_string(),
-            self.client_broadcasts.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "failed_operations".to_string(),
-            self.failed_operations.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "last_snapshot_time".to_string(),
-            self.last_snapshot_time.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "avg_capture_time_ns".to_string(),
-            self.avg_capture_time_ns.load(Ordering::Relaxed),
-        );
-        metrics.insert(
-            "avg_write_time_ns".to_string(),
-            self.avg_write_time_ns.load(Ordering::Relaxed),
-        );
-        metrics
-    }
-
-    /// Update average capture time
-    pub fn update_capture_time(&self, duration: Duration) {
-        let new_time = duration.as_nanos() as u64;
-        let current_avg = self.avg_capture_time_ns.load(Ordering::Relaxed);
-        // Simple moving average approximation
-        let new_avg = if current_avg == 0 {
-            new_time
-        } else {
-            (current_avg * 9 + new_time) / 10
-        };
-        self.avg_capture_time_ns.store(new_avg, Ordering::Relaxed);
-    }
-
-    /// Update average write time
-    pub fn update_write_time(&self, duration: Duration) {
-        let new_time = duration.as_nanos() as u64;
-        let current_avg = self.avg_write_time_ns.load(Ordering::Relaxed);
-        // Simple moving average approximation
-        let new_avg = if current_avg == 0 {
-            new_time
-        } else {
-            (current_avg * 9 + new_time) / 10
-        };
-        self.avg_write_time_ns.store(new_avg, Ordering::Relaxed);
-    }
-}
 
 /// Snapshot batch for efficient database writes
 #[derive(Debug, Clone)]
@@ -576,7 +463,7 @@ impl SnapshotService {
     }
 
     /// Get snapshot service metrics
-    pub fn get_metrics(&self) -> HashMap<String, u64> {
+    pub fn get_metrics(&self) -> std::collections::HashMap<String, u64> {
         self.metrics.to_map()
     }
 
@@ -618,140 +505,5 @@ impl Clone for SnapshotService {
             metrics: Arc::clone(&self.metrics),
             current_batch: Arc::clone(&self.current_batch),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::database::influx_client::InfluxConfig;
-    use crate::types::{OrderBookData, TradeData};
-
-    #[tokio::test]
-    async fn test_snapshot_service_creation() {
-        let config = SnapshotConfig::default();
-        let storage = Arc::new(HighFrequencyStorage::new());
-        let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-        let subscription_manager = Arc::new(SubscriptionManager::new());
-
-        let service = SnapshotService::new(config, storage, influx_client, subscription_manager);
-
-        assert!(!service.is_running());
-        assert_eq!(service.get_current_batch_size().await, 0);
-    }
-
-    #[tokio::test]
-    async fn test_snapshot_batch() {
-        let mut batch = SnapshotBatch::new();
-        assert!(batch.is_empty());
-        assert_eq!(batch.len(), 0);
-
-        let orderbook_snapshot = OrderBookSnapshot {
-            symbol: "BTCUSDT".to_string(),
-            timestamp: 1640995200000,
-            best_bid_price: 45000.0,
-            best_bid_quantity: 1.5,
-            best_ask_price: 45001.0,
-            best_ask_quantity: 1.2,
-            sequence: 12345,
-        };
-
-        batch.add_orderbook_snapshot(orderbook_snapshot);
-        assert!(!batch.is_empty());
-        assert_eq!(batch.len(), 1);
-
-        let trade_snapshot = TradeSnapshot {
-            symbol: "BTCUSDT".to_string(),
-            timestamp: 1640995200000,
-            price: 45000.5,
-            quantity: 0.1,
-            side: "buy".to_string(),
-            trade_id: 123456,
-        };
-
-        batch.add_trade_snapshot(trade_snapshot);
-        assert_eq!(batch.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_snapshot_metrics() {
-        let metrics = SnapshotMetrics::default();
-
-        metrics.total_snapshots.store(100, Ordering::Relaxed);
-        metrics.orderbook_snapshots.store(60, Ordering::Relaxed);
-        metrics.trade_snapshots.store(40, Ordering::Relaxed);
-
-        let metrics_map = metrics.to_map();
-        assert_eq!(metrics_map.get("total_snapshots"), Some(&100));
-        assert_eq!(metrics_map.get("orderbook_snapshots"), Some(&60));
-        assert_eq!(metrics_map.get("trade_snapshots"), Some(&40));
-    }
-
-    #[tokio::test]
-    async fn test_capture_snapshots_with_data() {
-        let config = SnapshotConfig::default();
-        let storage = Arc::new(HighFrequencyStorage::new());
-        let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-        let subscription_manager = Arc::new(SubscriptionManager::new());
-
-        // Add some test data to storage
-        let orderbook_data = OrderBookData {
-            symbol: "BTCUSDT".to_string(),
-            timestamp: 1640995200000,
-            bids: vec![(45000.0, 1.5)],
-            asks: vec![(45001.0, 1.2)],
-            sequence: 12345,
-            exchange: "binance".to_string(),
-        };
-
-        let trade_data = TradeData {
-            symbol: "BTCUSDT".to_string(),
-            timestamp: 1640995200000,
-            price: 45000.5,
-            quantity: 0.1,
-            side: "buy".to_string(),
-            trade_id: "trade123".to_string(),
-            exchange: "binance".to_string(),
-        };
-
-        storage.update_orderbook(&orderbook_data);
-        storage.update_trade(&trade_data);
-
-        let mut service_config = config;
-        service_config.persistence_enabled = false; // Disable persistence for test
-        service_config.broadcast_enabled = false; // Disable broadcast for test
-
-        let service =
-            SnapshotService::new(service_config, storage, influx_client, subscription_manager);
-
-        // Capture snapshots
-        let snapshot_count = service.capture_snapshots().await.unwrap();
-        assert_eq!(snapshot_count, 2); // 1 orderbook + 1 trade
-
-        let metrics = service.get_metrics();
-        assert_eq!(metrics.get("orderbook_snapshots"), Some(&1));
-        assert_eq!(metrics.get("trade_snapshots"), Some(&1));
-    }
-
-    #[test]
-    fn test_snapshot_config() {
-        let config = SnapshotConfig::default();
-        assert_eq!(config.snapshot_interval, Duration::from_millis(5));
-        assert_eq!(config.max_batch_size, 1000);
-        assert!(config.broadcast_enabled);
-        assert!(config.persistence_enabled);
-
-        let custom_config = SnapshotConfig {
-            snapshot_interval: Duration::from_millis(10),
-            max_batch_size: 500,
-            write_timeout: Duration::from_millis(50),
-            broadcast_enabled: false,
-            persistence_enabled: true,
-        };
-
-        assert_eq!(custom_config.snapshot_interval, Duration::from_millis(10));
-        assert_eq!(custom_config.max_batch_size, 500);
-        assert!(!custom_config.broadcast_enabled);
-        assert!(custom_config.persistence_enabled);
     }
 }

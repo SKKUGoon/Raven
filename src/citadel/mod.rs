@@ -123,9 +123,9 @@ impl Default for CitadelMetrics {
 pub struct Citadel {
     config: CitadelConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
-    influx_client: Arc<InfluxClient>,
-    subscription_manager: Arc<SubscriptionManager>,
-    dead_letter_queue: Arc<DeadLetterQueue>,
+    _influx_client: Arc<InfluxClient>,
+    _subscription_manager: Arc<SubscriptionManager>,
+    _dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: CitadelMetrics,
 }
 
@@ -143,9 +143,9 @@ impl Citadel {
         Self {
             config,
             validation_rules: Arc::new(RwLock::new(ValidationRules::default())),
-            influx_client,
-            subscription_manager,
-            dead_letter_queue,
+            _influx_client: influx_client,
+            _subscription_manager: subscription_manager,
+            _dead_letter_queue: dead_letter_queue,
             metrics: CitadelMetrics::default(),
         }
     }
@@ -477,7 +477,7 @@ impl Citadel {
     }
 
     /// Add entry to dead letter queue
-    pub async fn add_to_dead_letter_queue(&self, symbol: String, data: String, error: String) {
+    pub async fn add_to_dead_letter_queue(&self, symbol: String, _data: String, error: String) {
         // TODO: Create proper dead letter entry
         debug!("Would add to dead letter queue: {} - {}", symbol, error);
         self.metrics

@@ -6,6 +6,8 @@ A high-performance, real-time market data distribution system built in Rust, des
 
 ## 🏗️ Architecture Overview
 
+> **Note**: This codebase has been recently refactored for better organization. Large files have been broken down into focused modules with separated implementation and test code for improved maintainability.
+
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   WebSocket     │    │   High Frequency │    │   gRPC Clients  │
@@ -23,12 +25,15 @@ A high-performance, real-time market data distribution system built in Rust, des
 
 ### Core Components
 
-- **High Frequency Handler**: Lock-free atomic operations for orderbook and trade data
-- **Low Frequency Handler**: Async channel-based processing for candles and funding rates  
-- **Subscription Manager**: Topic-based routing with client lifecycle management
-- **gRPC Server**: Bidirectional streaming with connection management
-- **Circuit Breakers**: Fault tolerance and graceful degradation
-- **Dead Letter Queue**: Error handling and retry mechanisms
+- **Application Module** (`src/app/`): Entry point coordination with CLI parsing, startup, and shutdown logic
+- **High Frequency Handler** (`src/data_handlers/high_frequency/`): Lock-free atomic operations for orderbook and trade data
+- **Low Frequency Handler** (`src/data_handlers/low_frequency/`): Async channel-based processing for candles and funding rates  
+- **Subscription Manager** (`src/subscription_manager/`): Topic-based routing with client lifecycle management
+- **gRPC Server** (`src/server/`): Bidirectional streaming with connection management and service implementation
+- **Circuit Breakers** (`src/circuit_breaker/`): Fault tolerance and graceful degradation
+- **Dead Letter Queue** (`src/dead_letter_queue/`): Error handling and retry mechanisms
+- **Error Handling** (`src/error/`): Comprehensive error types and conversion implementations
+- **Types System** (`src/types/`): Core data structures with atomic operations and snapshot support
 
 ## 🚀 Quick Start
 
@@ -151,7 +156,7 @@ let trade_data = TradeData {
 For real-time orderbook and trade data (sub-microsecond latency):
 
 ```rust
-use market_data_subscription_server::data_handlers::HighFrequencyHandler;
+use market_data_subscription_server::data_handlers::high_frequency::HighFrequencyHandler;
 
 // Create handler
 let hf_handler = HighFrequencyHandler::new();
@@ -172,7 +177,7 @@ let trade_snapshot = hf_handler.capture_trade_snapshot("BTCUSDT")?;
 For candles, funding rates, and other non-critical data:
 
 ```rust
-use market_data_subscription_server::data_handlers::LowFrequencyHandler;
+use market_data_subscription_server::data_handlers::low_frequency::LowFrequencyHandler;
 use market_data_subscription_server::types::{CandleData, FundingRateData};
 
 // Create and start handler
@@ -214,8 +219,9 @@ lf_handler.ingest_funding_rate(&funding_data).await?;
 use tonic::transport::Channel;
 use market_data_subscription_server::proto::{
     market_data_service_client::MarketDataServiceClient,
-    SubscribeRequest, SubscriptionRequest, DataType
+    SubscribeRequest, SubscriptionRequest, DataType, HeartbeatRequest
 };
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Connect to server
 let mut client = MarketDataServiceClient::connect("http://localhost:50051").await?;
@@ -266,6 +272,8 @@ while let Some(message) = inbound.message().await? {
 ### Simple Subscribe/Unsubscribe
 
 ```rust
+use market_data_subscription_server::proto::{SubscribeRequest, UnsubscribeRequest, DataType};
+
 // Subscribe
 let response = client.subscribe(SubscribeRequest {
     client_id: "client_001".to_string(),
@@ -282,6 +290,8 @@ let response = client.unsubscribe(UnsubscribeRequest {
     symbols: vec!["BTCUSDT".to_string()],
     data_types: vec![DataType::Orderbook as i32],
 }).await?;
+
+println!("Unsubscribed from {} topics", response.into_inner().unsubscribed_topics.len());
 ```
 
 ## 📈 Performance & Monitoring
@@ -323,17 +333,49 @@ Access Grafana at http://localhost:3000 for:
 
 ```
 src/
+├── app/                    # Application entry point and coordination
+│   ├── mod.rs              # Main coordination logic
+│   ├── cli.rs              # CLI argument parsing
+│   ├── startup.rs          # Application startup logic
+│   └── shutdown.rs         # Graceful shutdown handling
 ├── bin/                    # Binary executables
 ├── circuit_breaker/        # Fault tolerance
+│   ├── mod.rs              # Circuit breaker implementation
+│   └── tests.rs            # Circuit breaker tests
 ├── client_manager/         # Connection lifecycle
+│   ├── mod.rs              # Client management implementation
+│   └── tests.rs            # Client management tests
 ├── config/                 # Configuration management
 ├── data_handlers/          # Data processing
 │   ├── high_frequency/     # Lock-free atomic handlers
-│   └── low_frequency/      # Async channel handlers
+│   ├── low_frequency/      # Async channel handlers
+│   └── private_data/       # Private data handling
 ├── database/               # InfluxDB integration
+├── dead_letter_queue/      # Error handling and retry mechanisms
+│   ├── mod.rs              # Dead letter queue implementation
+│   └── tests.rs            # Dead letter queue tests
+├── error/                  # Error definitions and handling
+│   ├── mod.rs              # Error types and implementations
+│   └── tests.rs            # Error handling tests
 ├── monitoring/             # Metrics and health checks
+├── server/                 # gRPC server implementation
+│   ├── mod.rs              # Main server coordination
+│   ├── grpc_service.rs     # gRPC service implementation
+│   ├── connection.rs       # Connection management
+│   └── tests.rs            # Server tests
+├── snapshot_service/       # Snapshot service implementation
+│   ├── mod.rs              # Main service implementation
+│   ├── config.rs           # Configuration structures
+│   ├── metrics.rs          # Performance metrics
+│   └── tests.rs            # Service tests
 ├── subscription_manager/   # Topic routing
-└── types.rs               # Core data structures
+│   ├── mod.rs              # Subscription management implementation
+│   └── tests.rs            # Subscription management tests
+└── types/                  # Core data structures
+    ├── mod.rs              # Main type definitions
+    ├── atomic.rs           # Atomic data structures
+    ├── snapshots.rs        # Snapshot types and conversions
+    └── tests.rs            # Type system tests
 ```
 
 ### Testing
@@ -431,6 +473,25 @@ The system includes comprehensive error handling:
 - `Candle`: OHLCV candlestick data
 - `FundingRate`: Perpetual funding rates
 - `WalletUpdate`: Account balance changes
+
+## 📁 Module Organization
+
+This codebase follows a modular architecture where each major component is organized into its own module with separated implementation and test files:
+
+- **Implementation files** (`mod.rs`, `*.rs`): Core functionality and public APIs
+- **Test files** (`tests.rs`): Comprehensive test suites for each module
+- **Submodules**: Logical separation of concerns within larger modules
+
+### Key Refactored Modules
+
+- `src/app/`: Application entry point split into CLI, startup, and shutdown components
+- `src/server/`: gRPC server organized into service implementation and connection management
+- `src/types/`: Core data structures with atomic operations and snapshot support
+- `src/error/`: Centralized error handling with comprehensive test coverage
+- `src/dead_letter_queue/`: Error recovery mechanisms with retry logic
+- `src/snapshot_service/`: Snapshot functionality with configuration and metrics
+
+This organization improves code navigation, testing, and maintenance while preserving all existing functionality.
 
 ## 🤝 Contributing
 

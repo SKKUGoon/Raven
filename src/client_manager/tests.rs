@@ -19,8 +19,10 @@ async fn test_client_registration() {
 
 #[tokio::test]
 async fn test_max_clients_limit() {
-    let mut config = ClientManagerConfig::default();
-    config.max_clients = 2;
+    let config = ClientManagerConfig {
+        max_clients: 2,
+        ..Default::default()
+    };
     let manager = ClientManager::new(config);
 
     // Register up to the limit
@@ -132,8 +134,10 @@ async fn test_connection_quality() {
 
 #[tokio::test]
 async fn test_client_health_check() {
-    let mut config = ClientManagerConfig::default();
-    config.heartbeat_timeout = Duration::from_millis(100);
+    let config = ClientManagerConfig {
+        health_check_interval: Duration::from_millis(100),
+        ..Default::default()
+    };
     let manager = ClientManager::new(config);
 
     manager

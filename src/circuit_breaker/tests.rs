@@ -39,9 +39,11 @@ async fn test_circuit_breaker_failure() {
 
 #[tokio::test]
 async fn test_circuit_breaker_opens_on_failures() {
-    let mut config = CircuitBreakerConfig::default();
-    config.failure_threshold = 3;
-    config.minimum_requests = 1;
+    let config = CircuitBreakerConfig {
+        failure_threshold: 3,
+        minimum_requests: 1,
+        ..CircuitBreakerConfig::default()
+    };
 
     let breaker = CircuitBreaker::new("test", config);
 
@@ -61,10 +63,12 @@ async fn test_circuit_breaker_opens_on_failures() {
 
 #[tokio::test]
 async fn test_circuit_breaker_half_open_transition() {
-    let mut config = CircuitBreakerConfig::default();
-    config.recovery_timeout = Duration::from_millis(10);
-    config.failure_threshold = 1;
-    config.minimum_requests = 1;
+    let config = CircuitBreakerConfig {
+        recovery_timeout: Duration::from_millis(10),
+        failure_threshold: 1,
+        minimum_requests: 1,
+        ..CircuitBreakerConfig::default()
+    };
 
     let breaker = CircuitBreaker::new("test", config);
 
