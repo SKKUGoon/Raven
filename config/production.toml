@@ -12,7 +12,8 @@ max_message_size = 8388608  # 8MB
 
 [database]
 influx_url = "http://influxdb:8086"
-database_name = "market_data_prod"
+bucket = "market_data_prod"
+org = "raven"
 connection_pool_size = 50
 connection_timeout_seconds = 5
 write_timeout_seconds = 3

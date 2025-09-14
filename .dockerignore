@@ -31,6 +31,7 @@ docs/
 
 # Docker files (avoid recursion)
 docker/
+!docker/healthcheck.sh
 Dockerfile
 docker-compose.yml
 .dockerignore

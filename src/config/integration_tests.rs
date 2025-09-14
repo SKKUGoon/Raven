@@ -22,7 +22,8 @@ max_connections = 500
 
 [database]
 influx_url = "http://test-influx:8086"
-database_name = "test_db"
+bucket = "test_db"
+org = "test_org"
 connection_pool_size = 10
 
 [data_processing]
@@ -49,7 +50,8 @@ metrics_enabled = true
     // This is expected behavior for the current implementation
     assert_eq!(config.server.host, "0.0.0.0"); // Default value
     assert_eq!(config.server.port, 50051); // Default value
-    assert_eq!(config.database.database_name, "market_data"); // Default value
+    assert_eq!(config.database.bucket, "market_data"); // Default value
+    assert_eq!(config.database.org, "raven"); // Default value
 
     // Test configuration validation
     assert!(config.validate().is_ok());
@@ -105,18 +107,18 @@ log_level = "warn"
 fn test_environment_variable_precedence() {
     // Test that environment variables override config files
     env::set_var("RAVEN_SERVER__PORT", "9999");
-    env::set_var("RAVEN_DATABASE__DATABASE_NAME", "env_override_db");
+    env::set_var("RAVEN_DATABASE__BUCKET", "env_override_db");
 
     // In a real test, we would load config and verify overrides
     assert_eq!(env::var("RAVEN_SERVER__PORT").unwrap(), "9999");
     assert_eq!(
-        env::var("RAVEN_DATABASE__DATABASE_NAME").unwrap(),
+        env::var("RAVEN_DATABASE__BUCKET").unwrap(),
         "env_override_db"
     );
 
     // Clean up
     env::remove_var("RAVEN_SERVER__PORT");
-    env::remove_var("RAVEN_DATABASE__DATABASE_NAME");
+    env::remove_var("RAVEN_DATABASE__BUCKET");
 }
 
 #[test]
@@ -280,7 +282,8 @@ port = 8080
 
 [database]
 influx_url = "http://localhost:8086"
-database_name = "initial_db"
+bucket = "initial_db"
+org = "test_org"
 
 [monitoring]
 log_level = "info"
@@ -295,7 +298,7 @@ log_level = "info"
 
     // Get initial config
     let config = manager.get_config().await;
-    assert_eq!(config.database.database_name, "market_data"); // Uses default
+    assert_eq!(config.database.bucket, "market_data"); // Uses default
 
     // Test force reload
     assert!(manager.force_reload().await.is_ok());
@@ -307,7 +310,8 @@ port = 9090
 
 [database]
 influx_url = "http://localhost:8086"
-database_name = "updated_db"
+bucket = "updated_db"
+org = "updated_org"
 
 [monitoring]
 log_level = "debug"

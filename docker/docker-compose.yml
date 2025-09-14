@@ -13,15 +13,12 @@ services:
     environment:
       - RUST_LOG=info
       - RUST_BACKTRACE=1
-      - INFLUXDB_URL=http://influxdb:8086
-      - INFLUXDB_DATABASE=market_data
-      - INFLUXDB_USERNAME=raven
-      - INFLUXDB_PASSWORD=ravens_fly_at_dawn
-      - REDIS_URL=redis://redis:6379
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=50051
-      - HEALTH_PORT=8080
-      - METRICS_PORT=9090
+      - RAVEN_DATABASE__INFLUX_URL=http://influxdb:8086
+      - RAVEN_DATABASE__BUCKET=market_data
+      - RAVEN_DATABASE__ORG=raven
+      - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
+      - RAVEN_SERVER__HOST=0.0.0.0
+      - RAVEN_SERVER__PORT=50051
     volumes:
       - ./config:/app/config:ro
       - raven_logs:/app/logs
@@ -144,40 +141,39 @@ services:
       retries: 3
       start_period: 30s
 
-  # Grafana - Monitoring Dashboard
-  grafana:
-    image: grafana/grafana:10.1.0
-    container_name: raven-grafana
+  # Dashboard - Real-time Market Data Visualization
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: raven-dashboard
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8050:8050"
     environment:
-      - GF_SECURITY_ADMIN_USER=raven
-      - GF_SECURITY_ADMIN_PASSWORD=ravens_see_all
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=raven_master_token_for_the_iron_bank
+      - INFLUX_ORG=house_raven
+      - INFLUX_BUCKET=market_data
     networks:
       - raven_network
     depends_on:
-      - prometheus
+      influxdb:
+        condition: service_healthy
     deploy:
       resources:
         limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
           cpus: '0.5'
           memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8050"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 
   # Jaeger - Distributed Tracing
   jaeger:
@@ -223,8 +219,6 @@ volumes:
   redis_data:
     driver: local
   prometheus_data:
-    driver: local
-  grafana_data:
     driver: local
   jaeger_data:
     driver: local

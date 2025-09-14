@@ -103,10 +103,8 @@ impl HealthService {
 
     /// Start the health check HTTP server
     pub async fn start(&self) -> Result<Option<JoinHandle<()>>> {
-        if !self.config.metrics_enabled {
-            info!("🏥 Health checks disabled in configuration");
-            return Ok(None);
-        }
+        // Health checks should always be enabled for container health monitoring
+        info!("🏥 Starting health check service...");
 
         let app = Router::new()
             .route("/health", get(health_handler))

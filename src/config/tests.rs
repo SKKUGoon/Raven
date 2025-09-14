@@ -12,7 +12,8 @@ fn test_default_config_creation() {
     assert_eq!(config.server.port, 50051);
     assert_eq!(config.server.max_connections, 1000);
     assert_eq!(config.database.influx_url, "http://localhost:8086");
-    assert_eq!(config.database.database_name, "market_data");
+    assert_eq!(config.database.bucket, "market_data");
+    assert_eq!(config.database.org, "raven");
     assert_eq!(config.data_processing.snapshot_interval_ms, 5);
 }
 
@@ -129,7 +130,8 @@ port = 8080
 
 [database]
 influx_url = "http://localhost:8086"
-database_name = "test_db"
+bucket = "test_db"
+org = "test_org"
 "#;
     fs::write(&config_path, initial_config).await.unwrap();
 

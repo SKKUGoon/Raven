@@ -12,7 +12,8 @@ max_message_size = 4194304  # 4MB
 
 [database]
 influx_url = "http://localhost:8086"
-database_name = "market_data"
+bucket = "market_data"
+org = "raven"
 connection_pool_size = 20
 connection_timeout_seconds = 10
 write_timeout_seconds = 5

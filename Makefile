@@ -1,7 +1,7 @@
 # Project Raven - Market Data Subscription Server
 # Makefile for deployment and development operations
 
-.PHONY: help build deploy start stop restart status logs clean backup test lint fmt check health bench bench-all bench-grpc bench-latency bench-memory bench-high-freq
+.PHONY: help build deploy start stop restart status logs clean backup test lint fmt check health
 
 # Default target
 .DEFAULT_GOAL := help
@@ -34,14 +34,17 @@ help:
 	@echo "  fmt            Format code with rustfmt"
 	@echo "  check          Run cargo check"
 	@echo ""
-	@echo "$(YELLOW)Benchmarks:$(NC)"
-	@echo "  bench          Run basic benchmarks"
-	@echo "  bench-all      Run all benchmarks with detailed output"
-	@echo "  bench-grpc     Run gRPC streaming benchmarks"
-	@echo "  bench-latency  Run latency benchmarks"
-	@echo "  bench-memory   Run memory usage benchmarks"
-	@echo "  bench-high-freq Run high frequency benchmarks"
+	@echo "$(YELLOW)Development Environment (uses external services):$(NC)"
+	@echo "  dev-build      Build development containers"
+	@echo "  dev-up         Start development services (dashboard + server)"
+	@echo "  dev-dashboard  Start only dashboard in dev mode"
+	@echo "  dev-server     Start only server in dev mode"
+	@echo "  dev-down       Stop development services"
+	@echo "  dev-logs       View development logs"
+	@echo "  dev-status     Show development service status"
+	@echo "  dev-health     Check development service health"
 	@echo ""
+
 	@echo "$(YELLOW)Docker Operations:$(NC)"
 	@echo "  docker-build   Build Docker image"
 	@echo "  deploy         Deploy full stack with Docker Compose"
@@ -73,8 +76,7 @@ help:
 	@echo "  make logs-server         # Show server logs"
 	@echo "  make backup              # Create data backup"
 	@echo "  make restore BACKUP_NAME=backup_20240101_120000"
-	@echo "  make bench-all           # Run all performance benchmarks"
-	@echo "  make bench-latency       # Run only latency benchmarks"
+
 
 ## Development Commands
 
@@ -120,48 +122,7 @@ check:
 	cargo check --all-targets
 	@echo "$(GREEN)✅ Check completed$(NC)"
 
-# Run benchmarks
-bench:
-	@echo "$(BLUE)⚡ Running benchmarks...$(NC)"
-	cargo bench
-	@echo "$(GREEN)✅ Benchmarks completed$(NC)"
 
-# Run all benchmarks with proper output formatting
-bench-all:
-	@echo "$(BLUE)⚡ Running all benchmarks with detailed output...$(NC)"
-	@echo "$(YELLOW)📊 Starting comprehensive benchmark suite...$(NC)"
-	@echo ""
-	cargo bench --bench grpc_streaming_benchmarks --bench latency_benchmarks --bench memory_usage_benchmarks --bench high_frequency_benchmarks
-	@echo ""
-	@echo "$(GREEN)✅ All benchmarks completed$(NC)"
-
-# Run gRPC streaming benchmarks
-bench-grpc:
-	@echo "$(BLUE)⚡ Running gRPC streaming benchmarks...$(NC)"
-	@echo "$(YELLOW)🌐 Testing gRPC streaming performance...$(NC)"
-	cargo bench --bench grpc_streaming_benchmarks
-	@echo "$(GREEN)✅ gRPC streaming benchmarks completed$(NC)"
-
-# Run latency benchmarks
-bench-latency:
-	@echo "$(BLUE)⚡ Running latency benchmarks...$(NC)"
-	@echo "$(YELLOW)⏱️  Testing system latency performance...$(NC)"
-	cargo bench --bench latency_benchmarks
-	@echo "$(GREEN)✅ Latency benchmarks completed$(NC)"
-
-# Run memory usage benchmarks
-bench-memory:
-	@echo "$(BLUE)⚡ Running memory usage benchmarks...$(NC)"
-	@echo "$(YELLOW)💾 Testing memory allocation and usage patterns...$(NC)"
-	cargo bench --bench memory_usage_benchmarks
-	@echo "$(GREEN)✅ Memory usage benchmarks completed$(NC)"
-
-# Run high frequency benchmarks
-bench-high-freq:
-	@echo "$(BLUE)⚡ Running high frequency benchmarks...$(NC)"
-	@echo "$(YELLOW)🚀 Testing high frequency data processing performance...$(NC)"
-	cargo bench --bench high_frequency_benchmarks
-	@echo "$(GREEN)✅ High frequency benchmarks completed$(NC)"
 
 ## Docker Operations
 
@@ -172,10 +133,10 @@ docker-build:
 	@echo "$(GREEN)✅ Docker image built$(NC)"
 
 # Deploy full stack
-deploy: docker-build
+deploy:
 	@echo "$(BLUE)🚀 Deploying Project Raven full stack...$(NC)"
 	@mkdir -p $(BACKUP_DIR)
-	docker-compose -f $(COMPOSE_FILE) up -d
+	docker-compose -f $(COMPOSE_FILE) up -d --build
 	@echo "$(YELLOW)⏳ Waiting for services to start...$(NC)"
 	@sleep 30
 	@$(MAKE) health
@@ -235,11 +196,11 @@ health:
 		echo "$(RED)❌ Prometheus is not responding$(NC)"; \
 	fi
 	@echo ""
-	@echo "$(YELLOW)Grafana:$(NC)"
-	@if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then \
-		echo "$(GREEN)✅ Grafana is healthy$(NC)"; \
+	@echo "$(YELLOW)Dashboard:$(NC)"
+	@if curl -sf http://localhost:8050 >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ Dashboard is healthy$(NC)"; \
 	else \
-		echo "$(RED)❌ Grafana is not responding$(NC)"; \
+		echo "$(RED)❌ Dashboard is not responding$(NC)"; \
 	fi
 
 ## Monitoring & Logs
@@ -259,10 +220,10 @@ logs-influx:
 	@echo "$(BLUE)📋 Showing logs for InfluxDB...$(NC)"
 	docker-compose -f $(COMPOSE_FILE) logs -f influxdb
 
-# Show logs for Grafana
-logs-grafana:
-	@echo "$(BLUE)📋 Showing logs for Grafana...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f grafana
+# Show logs for Dashboard
+logs-dashboard:
+	@echo "$(BLUE)📋 Showing logs for Dashboard...$(NC)"
+	docker-compose -f $(COMPOSE_FILE) logs -f dashboard
 
 # Show logs for Prometheus
 logs-prometheus:
@@ -340,9 +301,7 @@ clean-all:
 urls:
 	@echo "$(BLUE)🌐 Service URLs:$(NC)"
 	@echo ""
-	@echo "$(GREEN)📊 Grafana Dashboard:$(NC)     http://localhost:3000"
-	@echo "   $(YELLOW)Username: raven$(NC)"
-	@echo "   $(YELLOW)Password: ravens_see_all$(NC)"
+	@echo "$(GREEN)📊 Raven Dashboard:$(NC)        http://localhost:8050"
 	@echo ""
 	@echo "$(GREEN)📈 Prometheus:$(NC)             http://localhost:9091"
 	@echo "$(GREEN)🔍 Jaeger Tracing:$(NC)         http://localhost:16686"
@@ -388,3 +347,130 @@ dev: fmt lint test
 # Production deployment with backup
 prod-deploy: backup deploy
 	@echo "$(GREEN)✅ Production deployment completed with backup$(NC)"
+
+## Development Environment Commands (uses external services)
+DEV_COMPOSE_FILE := docker/docker-compose.dev.yml
+
+# Build development containers
+dev-build:
+	@echo "$(BLUE)🔨 Building development containers...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) build
+	@echo "$(GREEN)✅ Development containers built$(NC)"
+
+# Start development services (dashboard + server)
+dev-up:
+	@echo "$(BLUE)🚀 Starting Raven development services...$(NC)"
+	@echo "📊 Dashboard will be available at http://localhost:8050"
+	@echo "🔌 Server will be available at localhost:50051"
+	@echo "📡 Health check at http://localhost:8080/health"
+	@echo ""
+	@echo "⚠️  Make sure your external services are running:"
+	@echo "   - InfluxDB at localhost:8086"
+	@echo "   - Redis at localhost:6379"
+	@echo ""
+	docker-compose -f $(DEV_COMPOSE_FILE) up -d
+	@echo "$(GREEN)✅ Development services started$(NC)"
+
+# Start only dashboard in development mode
+dev-dashboard:
+	@echo "$(BLUE)🚀 Starting Raven dashboard in development mode...$(NC)"
+	@echo "📊 Dashboard will be available at http://localhost:8050"
+	docker-compose -f $(DEV_COMPOSE_FILE) up -d dashboard-dev
+	@echo "$(GREEN)✅ Development dashboard started$(NC)"
+
+# Start only server in development mode
+dev-server:
+	@echo "$(BLUE)🚀 Starting Raven server in development mode...$(NC)"
+	@echo "🔌 Server will be available at localhost:50051"
+	docker-compose -f $(DEV_COMPOSE_FILE) up -d market-data-server-dev
+	@echo "$(GREEN)✅ Development server started$(NC)"
+
+# Stop development services
+dev-down:
+	@echo "$(BLUE)⏹️  Stopping development services...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) down
+	@echo "$(GREEN)✅ Development services stopped$(NC)"
+
+# View development logs
+dev-logs:
+	@echo "$(BLUE)📋 Showing development logs...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) logs -f
+
+# View dashboard logs only
+dev-logs-dashboard:
+	@echo "$(BLUE)📋 Showing dashboard logs...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) logs -f dashboard-dev
+
+# View server logs only
+dev-logs-server:
+	@echo "$(BLUE)📋 Showing server logs...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) logs -f market-data-server-dev
+
+# Show development service status
+dev-status:
+	@echo "$(BLUE)📊 Development Service Status:$(NC)"
+	@docker-compose -f $(DEV_COMPOSE_FILE) ps
+
+# Check development service health
+dev-health:
+	@echo "$(BLUE)❤️  Checking development service health...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Dashboard Health:$(NC)"
+	@if curl -sf http://localhost:8050 >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ Dashboard is healthy$(NC)"; \
+	else \
+		echo "$(RED)❌ Dashboard is not responding$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Server Health:$(NC)"
+	@if curl -sf http://localhost:8080/health >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ Server is healthy$(NC)"; \
+	else \
+		echo "$(RED)❌ Server is not responding$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)External Services (should be running in setup-server):$(NC)"
+	@if curl -sf http://localhost:8086/health >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ InfluxDB is healthy$(NC)"; \
+	else \
+		echo "$(RED)❌ InfluxDB is not responding$(NC)"; \
+	fi
+	@if command -v redis-cli >/dev/null 2>&1 && redis-cli -p 6379 ping >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ Redis is healthy$(NC)"; \
+	else \
+		echo "$(RED)❌ Redis is not responding$(NC)"; \
+	fi
+
+# Clean development environment
+dev-clean:
+	@echo "$(BLUE)🧹 Cleaning development environment...$(NC)"
+	docker-compose -f $(DEV_COMPOSE_FILE) down -v
+	docker system prune -f
+	@echo "$(GREEN)✅ Development environment cleaned$(NC)"
+
+# Test connection to external services
+dev-test-connection:
+	@echo "$(BLUE)🔗 Testing connections to external services...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Testing InfluxDB connection:$(NC)"
+	@if curl -sf "http://localhost:8086/health" >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ InfluxDB is reachable$(NC)"; \
+	else \
+		echo "$(RED)❌ InfluxDB is not reachable$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Testing Redis connection:$(NC)"
+	@if command -v redis-cli >/dev/null 2>&1 && redis-cli -p 6379 ping >/dev/null 2>&1; then \
+		echo "$(GREEN)✅ Redis is reachable$(NC)"; \
+	else \
+		echo "$(RED)❌ Redis is not reachable or redis-cli not installed$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(YELLOW)Listing external services:$(NC)"
+	@echo "Expected services from setup-server:"
+	@echo "  - localdev-influxdb (port 8086)"
+	@echo "  - localdev-redis (port 6379)"
+	@echo ""
+	@if command -v docker >/dev/null 2>&1; then \
+		docker ps --filter name=localdev --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || echo "No localdev services found"; \
+	fi

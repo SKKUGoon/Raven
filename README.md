@@ -1,38 +1,40 @@
 # Project Raven - Market Data Subscription Server
 
-> *"The ravens are the memory of the realm"*
+> _"The ravens are the memory of the realm"_
 
-A high-performance, real-time market data distribution system built in Rust, designed for financial trading applications. Project Raven provides sub-microsecond latency for high-frequency data while maintaining reliability and scalability.
+A high-performance, real-time market data distribution system built in Rust, designed for financial trading applications. Project Raven provides sub-microsecond latency for high-frequency data while maintaining reliability and scalability through advanced error handling, circuit breakers, and comprehensive monitoring.
 
 ## 🏗️ Architecture Overview
 
-> **Note**: This codebase has been recently refactored for better organization. Large files have been broken down into focused modules with separated implementation and test code for improved maintainability.
+> **Note**: This codebase follows a modular architecture with separated implementation and test files for improved maintainability and testing coverage.
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   WebSocket     │    │   High Frequency │    │   gRPC Clients  │
-│   Data Feeds    │───▶│     Handler      │───▶│   (Streaming)   │
-│                 │    │  (Lock-free)     │    │                 │
+│   WebSocket     │    │     Citadel      │    │   gRPC Clients  │
+│   Data Feeds    │───▶│   (Validation)   │───▶│   (Streaming)   │
+│                 │    │  & Processing    │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
                                 │
                                 ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   REST APIs     │    │   Low Frequency  │    │   InfluxDB      │
-│   (Candles,     │───▶│     Handler      │───▶│   (Historical)  │
-│   Funding)      │    │  (Async Queue)   │    │                 │
+│  Circuit        │    │  High Frequency  │    │   InfluxDB      │
+│  Breakers &     │───▶│  Atomic Storage  │───▶│   (Historical)  │
+│  Dead Letter Q  │    │  (Lock-free)     │    │                 │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
 ### Core Components
 
-- **Application Module** (`src/app/`): Entry point coordination with CLI parsing, startup, and shutdown logic
-- **High Frequency Handler** (`src/data_handlers/high_frequency/`): Lock-free atomic operations for orderbook and trade data
-- **Low Frequency Handler** (`src/data_handlers/low_frequency/`): Async channel-based processing for candles and funding rates  
+- **Application Module** (`src/app/`): Entry point coordination with CLI parsing, startup, and graceful shutdown logic
+- **Citadel** (`src/citadel/`): Data validation and processing engine with sanitization and quality control
+- **High Frequency Storage** (`src/types/atomic.rs`): Lock-free atomic operations for orderbook and trade data
+- **Snapshot Service** (`src/snapshot_service/`): Atomic snapshot capture with configurable intervals and metrics
 - **Subscription Manager** (`src/subscription_manager/`): Topic-based routing with client lifecycle management
 - **gRPC Server** (`src/server/`): Bidirectional streaming with connection management and service implementation
-- **Circuit Breakers** (`src/circuit_breaker/`): Fault tolerance and graceful degradation
-- **Dead Letter Queue** (`src/dead_letter_queue/`): Error handling and retry mechanisms
-- **Error Handling** (`src/error/`): Comprehensive error types and conversion implementations
+- **Circuit Breakers** (`src/circuit_breaker/`): Fault tolerance and graceful degradation with configurable thresholds
+- **Dead Letter Queue** (`src/dead_letter_queue/`): Error handling and retry mechanisms with persistence
+- **Client Manager** (`src/client_manager/`): Connection lifecycle management with heartbeat monitoring
+- **Error Handling** (`src/error/`): Comprehensive error types with context and conversion implementations
 - **Types System** (`src/types/`): Core data structures with atomic operations and snapshot support
 
 ## 🚀 Quick Start
@@ -79,7 +81,7 @@ make bench-high-freq
 ### Docker Deployment
 
 ```bash
-# Deploy full stack (InfluxDB, Grafana, Prometheus, Redis)
+# Deploy full stack (InfluxDB, Dashboard, Prometheus, Redis)
 make deploy
 
 # Check service health
@@ -100,7 +102,7 @@ make restore BACKUP_NAME=backup_20240101_120000
 
 After deployment, access these services:
 
-- **Grafana Dashboard**: http://localhost:3000 (raven/ravens_see_all)
+- **Raven Dashboard**: http://localhost:8050 (Real-time market data visualization)
 - **Prometheus**: http://localhost:9091
 - **InfluxDB UI**: http://localhost:8086
 - **Health Check**: http://localhost:8080/health
@@ -116,13 +118,14 @@ Configuration files are located in the `config/` directory:
 - `production.toml` - Production settings
 - `staging.toml` - Staging environment
 
-## 🌐 WebSocket Data Integration
+## 🌐 Data Integration & Processing
 
-### Creating WebSocket Connections
+### Data Types and Structures
 
-The system expects WebSocket data in the following formats:
+The system processes various market data types with built-in validation and sanitization:
 
 #### Orderbook Data
+
 ```rust
 use market_data_subscription_server::types::OrderBookData;
 
@@ -137,6 +140,7 @@ let orderbook_data = OrderBookData {
 ```
 
 #### Trade Data
+
 ```rust
 use market_data_subscription_server::types::TradeData;
 
@@ -151,67 +155,108 @@ let trade_data = TradeData {
 };
 ```
 
-### High Frequency Handler Integration
+### Citadel Data Processing
 
-For real-time orderbook and trade data (sub-microsecond latency):
+The Citadel engine provides comprehensive data validation and processing:
 
 ```rust
-use market_data_subscription_server::data_handlers::high_frequency::HighFrequencyHandler;
+use market_data_subscription_server::citadel::{Citadel, CitadelConfig};
 
-// Create handler
-let hf_handler = HighFrequencyHandler::new();
+// Create Citadel with validation rules
+let config = CitadelConfig {
+    strict_validation: true,
+    max_price_deviation: 10.0, // 10%
+    enable_sanitization: true,
+    enable_dead_letter_queue: true,
+    ..Default::default()
+};
 
-// Ingest orderbook data (lock-free atomic operation)
-hf_handler.ingest_orderbook_atomic("BTCUSDT", &orderbook_data)?;
+let citadel = Citadel::new(config, influx_client, subscription_manager);
 
-// Ingest trade data (lock-free atomic operation)  
-hf_handler.ingest_trade_atomic("BTCUSDT", &trade_data)?;
+// Process data with validation and sanitization
+citadel.process_orderbook_data("BTCUSDT", orderbook_data).await?;
+citadel.process_trade_data("BTCUSDT", trade_data).await?;
 
-// Capture atomic snapshots
-let orderbook_snapshot = hf_handler.capture_orderbook_snapshot("BTCUSDT")?;
-let trade_snapshot = hf_handler.capture_trade_snapshot("BTCUSDT")?;
+// Get processing metrics
+let metrics = citadel.get_metrics();
+println!("Processed: {}, Failed: {}",
+    metrics.get("total_validated").unwrap_or(&0),
+    metrics.get("validation_errors").unwrap_or(&0)
+);
 ```
 
-### Low Frequency Handler Integration
+### High Frequency Atomic Storage
 
-For candles, funding rates, and other non-critical data:
+For ultra-low latency data access (sub-microsecond):
 
 ```rust
-use market_data_subscription_server::data_handlers::low_frequency::LowFrequencyHandler;
-use market_data_subscription_server::types::{CandleData, FundingRateData};
+use market_data_subscription_server::types::{HighFrequencyStorage, AtomicOrderBook};
 
-// Create and start handler
-let lf_handler = LowFrequencyHandler::new();
-lf_handler.start().await?;
+// Create atomic storage
+let hf_storage = HighFrequencyStorage::new();
 
-// Ingest candle data (async channel-based)
-let candle_data = CandleData {
-    symbol: "BTCUSDT".to_string(),
-    timestamp: 1640995200000,
-    open: 45000.0,
-    high: 45100.0,
-    low: 44900.0,
-    close: 45050.0,
-    volume: 1000.0,
-    interval: "1m".to_string(),
-    exchange: "binance".to_string(),
-};
+// Store data atomically (lock-free)
+hf_storage.store_orderbook_atomic("BTCUSDT", &orderbook_data)?;
+hf_storage.store_trade_atomic("BTCUSDT", &trade_data)?;
 
-lf_handler.ingest_candle(&candle_data).await?;
+// Capture atomic snapshots
+let orderbook_snapshot = hf_storage.capture_orderbook_snapshot("BTCUSDT")?;
+let trade_snapshot = hf_storage.capture_trade_snapshot("BTCUSDT")?;
+```
 
-// Ingest funding rate data
-let funding_data = FundingRateData {
-    symbol: "BTCUSDT".to_string(),
-    timestamp: 1640995200000,
-    rate: 0.0001, // 0.01%
-    next_funding_time: 1640995200000 + 28800000, // 8 hours later
-    exchange: "binance".to_string(),
-};
+### Snapshot Service
 
-lf_handler.ingest_funding_rate(&funding_data).await?;
+Configurable snapshot capture with metrics:
+
+```rust
+use market_data_subscription_server::snapshot_service::SnapshotService;
+
+// Create snapshot service with configuration
+let snapshot_service = SnapshotService::new(config.clone());
+
+// Capture snapshots with automatic intervals
+let snapshot = snapshot_service.capture_snapshot("BTCUSDT").await?;
+
+// Get snapshot metrics
+let metrics = snapshot_service.get_metrics().await;
+println!("Snapshots captured: {}", metrics.snapshots_captured);
 ```
 
 ## 🔌 gRPC Client Integration
+
+### Protocol Buffer Definitions
+
+The system uses Protocol Buffers for efficient data serialization:
+
+```protobuf
+// Market data types
+message OrderBookSnapshot {
+    string symbol = 1;
+    int64 timestamp = 2;
+    repeated PriceLevel bids = 3;
+    repeated PriceLevel asks = 4;
+    int64 sequence = 5;
+}
+
+message Trade {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double price = 3;
+    double quantity = 4;
+    string side = 5;
+    string trade_id = 6;
+}
+
+message MarketDataMessage {
+    oneof data {
+        OrderBookSnapshot orderbook = 1;
+        Trade trade = 2;
+        Candle candle = 3;
+        FundingRate funding = 4;
+        WalletUpdate wallet = 5;
+    }
+}
+```
 
 ### Streaming Client Example
 
@@ -219,107 +264,125 @@ lf_handler.ingest_funding_rate(&funding_data).await?;
 use tonic::transport::Channel;
 use market_data_subscription_server::proto::{
     market_data_service_client::MarketDataServiceClient,
-    SubscribeRequest, SubscriptionRequest, DataType, HeartbeatRequest
+    MarketDataMessage
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Connect to server
 let mut client = MarketDataServiceClient::connect("http://localhost:50051").await?;
 
-// Create subscription request
-let subscribe_req = SubscribeRequest {
+// Start bidirectional streaming
+let (tx, rx) = tokio::sync::mpsc::channel(100);
+
+// Send subscription requests
+tx.send(SubscriptionRequest {
     client_id: "client_001".to_string(),
     symbols: vec!["BTCUSDT".to_string(), "ETHUSDT".to_string()],
-    data_types: vec![DataType::Orderbook as i32, DataType::Trades as i32],
-    filters: std::collections::HashMap::new(),
-};
+    // ... other fields
+}).await?;
 
-// Start streaming
-let outbound = async_stream::stream! {
-    yield SubscriptionRequest {
-        request: Some(subscription_request::Request::Subscribe(subscribe_req)),
-    };
-    
-    // Send heartbeats
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
-    loop {
-        interval.tick().await;
-        yield SubscriptionRequest {
-            request: Some(subscription_request::Request::Heartbeat(HeartbeatRequest {
-                client_id: "client_001".to_string(),
-                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
-            })),
-        };
-    }
-};
-
-let mut inbound = client.stream_market_data(outbound).await?.into_inner();
+let mut stream = client.stream_market_data(tokio_stream::wrappers::ReceiverStream::new(rx)).await?.into_inner();
 
 // Process incoming messages
-while let Some(message) = inbound.message().await? {
+while let Some(message) = stream.message().await? {
     match message.data {
         Some(market_data_message::Data::Orderbook(orderbook)) => {
-            println!("Orderbook: {} @ {}", orderbook.symbol, orderbook.timestamp);
+            println!("📊 Orderbook: {} @ {} (seq: {})",
+                orderbook.symbol, orderbook.timestamp, orderbook.sequence);
         }
         Some(market_data_message::Data::Trade(trade)) => {
-            println!("Trade: {} {} @ {}", trade.symbol, trade.side, trade.price);
+            println!("💰 Trade: {} {} @ {} (qty: {})",
+                trade.symbol, trade.side, trade.price, trade.quantity);
+        }
+        Some(market_data_message::Data::Candle(candle)) => {
+            println!("🕯️ Candle: {} {} OHLCV: {}/{}/{}/{}/{}",
+                candle.symbol, candle.interval,
+                candle.open, candle.high, candle.low, candle.close, candle.volume);
         }
         _ => {}
     }
 }
 ```
 
-### Simple Subscribe/Unsubscribe
+### Connection Management
+
+The server includes sophisticated connection management:
 
 ```rust
-use market_data_subscription_server::proto::{SubscribeRequest, UnsubscribeRequest, DataType};
+use market_data_subscription_server::server::ConnectionManager;
 
-// Subscribe
-let response = client.subscribe(SubscribeRequest {
-    client_id: "client_001".to_string(),
-    symbols: vec!["BTCUSDT".to_string()],
-    data_types: vec![DataType::Orderbook as i32],
-    filters: std::collections::HashMap::new(),
-}).await?;
+// Connection manager handles:
+// - Maximum connection limits
+// - Heartbeat monitoring
+// - Graceful disconnection
+// - Connection statistics
 
-println!("Subscribed to {} topics", response.into_inner().subscribed_topics.len());
+let connection_manager = ConnectionManager::new(1000); // Max 1000 connections
 
-// Unsubscribe
-let response = client.unsubscribe(UnsubscribeRequest {
-    client_id: "client_001".to_string(),
-    symbols: vec!["BTCUSDT".to_string()],
-    data_types: vec![DataType::Orderbook as i32],
-}).await?;
-
-println!("Unsubscribed from {} topics", response.into_inner().unsubscribed_topics.len());
+// Automatic heartbeat monitoring with configurable intervals
+// Automatic cleanup of stale connections
+// Circuit breaker integration for fault tolerance
 ```
 
 ## 📈 Performance & Monitoring
 
 ### Benchmarks
 
+The system includes comprehensive benchmark suites for all critical performance paths:
+
 ```bash
-# Run all benchmarks
+# Run all benchmarks with detailed output
 make bench-all
 
 # Specific benchmark suites
-make bench-grpc      # gRPC streaming performance
-make bench-latency   # End-to-end latency
-make bench-memory    # Memory usage patterns
-make bench-high-freq # High frequency data processing
+make bench-grpc      # gRPC streaming performance and throughput
+make bench-latency   # End-to-end latency measurements
+make bench-memory    # Memory allocation and usage patterns
+make bench-high-freq # High frequency data processing performance
 ```
+
+### Benchmark Categories
+
+#### gRPC Streaming Benchmarks (`benches/grpc_streaming_benchmarks.rs`)
+
+- **10k+ Messages/Second**: Tests streaming performance at high throughput
+- **Concurrent Connections**: Multiple client simulation
+- **Message Serialization**: Protocol Buffer encoding/decoding performance
+- **Backpressure Handling**: Flow control under load
+
+#### Latency Benchmarks (`benches/latency_benchmarks.rs`)
+
+- **End-to-End Latency**: Complete request/response cycles
+- **Atomic Operations**: Lock-free data structure performance
+- **Snapshot Capture**: Atomic snapshot timing
+- **Validation Pipeline**: Data processing latency
+
+#### Memory Usage Benchmarks (`benches/memory_usage_benchmarks.rs`)
+
+- **Allocation Patterns**: Memory usage under different loads
+- **Zero-Copy Operations**: Efficient data handling
+- **Cache Performance**: CPU cache utilization
+- **Memory Leaks**: Long-running stability tests
+
+#### High Frequency Benchmarks (`benches/high_frequency_benchmarks.rs`)
+
+- **Atomic Updates**: Lock-free data structure performance
+- **Concurrent Access**: Multi-threaded performance
+- **Cache Line Optimization**: NUMA-aware operations
+- **Batch Processing**: Bulk operation efficiency
 
 ### Performance Targets
 
-- **High Frequency Ingestion**: < 1 microsecond per update
-- **gRPC Streaming Latency**: < 100 microseconds end-to-end
-- **Concurrent Connections**: 10,000+ simultaneous clients
-- **Throughput**: 1M+ messages per second
-- **Memory Usage**: < 1GB for 1000 symbols
+- **Atomic Operations**: < 100 nanoseconds per update
+- **Data Validation**: < 10 microseconds per message (Citadel)
+- **Snapshot Capture**: < 1 microsecond for atomic snapshots
+- **gRPC Streaming**: < 100 microseconds end-to-end latency
+- **Concurrent Connections**: 1,000+ simultaneous clients (configurable)
+- **Throughput**: 100k+ messages per second per core
+- **Memory Efficiency**: < 1GB for 1000 symbols with full history
 
 ### Monitoring
 
-Access Grafana at http://localhost:3000 for:
+Access the Raven Dashboard at http://localhost:8050 for:
 
 - Real-time performance metrics
 - Connection statistics
@@ -335,18 +398,21 @@ Access Grafana at http://localhost:3000 for:
 src/
 ├── app/                    # Application entry point and coordination
 │   ├── mod.rs              # Main coordination logic
-│   ├── cli.rs              # CLI argument parsing
+│   ├── cli.rs              # CLI argument parsing with version info
 │   ├── startup.rs          # Application startup logic
-│   └── shutdown.rs         # Graceful shutdown handling
+│   └── shutdown.rs         # Graceful shutdown with signal handling
 ├── bin/                    # Binary executables
-├── circuit_breaker/        # Fault tolerance
+├── circuit_breaker/        # Fault tolerance and resilience
 │   ├── mod.rs              # Circuit breaker implementation
 │   └── tests.rs            # Circuit breaker tests
-├── client_manager/         # Connection lifecycle
+├── citadel/                # Data validation and processing engine
+│   ├── mod.rs              # Main validation and processing logic
+│   └── tests.rs            # Citadel validation tests
+├── client_manager/         # Connection lifecycle management
 │   ├── mod.rs              # Client management implementation
 │   └── tests.rs            # Client management tests
 ├── config/                 # Configuration management
-├── data_handlers/          # Data processing
+├── data_handlers/          # Data processing (if implemented)
 │   ├── high_frequency/     # Lock-free atomic handlers
 │   ├── low_frequency/      # Async channel handlers
 │   └── private_data/       # Private data handling
@@ -354,7 +420,7 @@ src/
 ├── dead_letter_queue/      # Error handling and retry mechanisms
 │   ├── mod.rs              # Dead letter queue implementation
 │   └── tests.rs            # Dead letter queue tests
-├── error/                  # Error definitions and handling
+├── error/                  # Comprehensive error handling
 │   ├── mod.rs              # Error types and implementations
 │   └── tests.rs            # Error handling tests
 ├── monitoring/             # Metrics and health checks
@@ -363,19 +429,46 @@ src/
 │   ├── grpc_service.rs     # gRPC service implementation
 │   ├── connection.rs       # Connection management
 │   └── tests.rs            # Server tests
-├── snapshot_service/       # Snapshot service implementation
+├── snapshot_service/       # Atomic snapshot service
 │   ├── mod.rs              # Main service implementation
 │   ├── config.rs           # Configuration structures
 │   ├── metrics.rs          # Performance metrics
 │   └── tests.rs            # Service tests
-├── subscription_manager/   # Topic routing
+├── subscription_manager/   # Topic-based routing
 │   ├── mod.rs              # Subscription management implementation
 │   └── tests.rs            # Subscription management tests
-└── types/                  # Core data structures
+└── types/                  # Core data structures and atomic operations
     ├── mod.rs              # Main type definitions
-    ├── atomic.rs           # Atomic data structures
+    ├── atomic.rs           # Lock-free atomic data structures
     ├── snapshots.rs        # Snapshot types and conversions
     └── tests.rs            # Type system tests
+
+# Additional directories
+benches/                    # Performance benchmarks
+├── grpc_streaming_benchmarks.rs    # gRPC streaming performance
+├── high_frequency_benchmarks.rs    # High frequency data processing
+├── latency_benchmarks.rs           # End-to-end latency testing
+└── memory_usage_benchmarks.rs      # Memory allocation patterns
+
+config/                     # Configuration files
+├── default.toml           # Base configuration
+├── development.toml       # Development overrides
+├── production.toml        # Production settings
+└── staging.toml           # Staging environment
+
+docker/                     # Docker deployment
+├── docker-compose.yml     # Full stack deployment
+├── Dockerfile             # Application container
+├── dashboard/             # Real-time dashboard application
+└── prometheus.yml         # Prometheus configuration
+
+proto/                      # Protocol Buffer definitions
+├── market_data.proto      # Market data messages
+└── subscription.proto     # Subscription management
+
+tests/                      # Integration tests
+├── final_system_tests.rs  # End-to-end system tests
+└── integration_tests.rs   # Integration test suites
 ```
 
 ### Testing
@@ -448,57 +541,229 @@ metrics_interval = 1000  # 1 second
 health_check_interval = 5000  # 5 seconds
 ```
 
-## 🚨 Error Handling
+## 🚨 Error Handling & Reliability
 
-The system includes comprehensive error handling:
+The system includes comprehensive error handling and reliability features:
 
-- **Circuit Breakers**: Prevent cascade failures
-- **Dead Letter Queue**: Retry failed operations
-- **Graceful Degradation**: Continue operating with reduced functionality
-- **Health Checks**: Monitor component status
+### Circuit Breakers
+
+```rust
+use market_data_subscription_server::circuit_breaker::CircuitBreakerRegistry;
+
+// Automatic circuit breaker protection
+let registry = CircuitBreakerRegistry::new();
+
+// Circuit breakers monitor:
+// - Database connection failures
+// - External API timeouts
+// - High error rates
+// - Resource exhaustion
+```
+
+### Dead Letter Queue
+
+```rust
+use market_data_subscription_server::dead_letter_queue::DeadLetterQueue;
+
+// Failed operations are automatically queued for retry
+let dlq = DeadLetterQueue::new(config);
+
+// Features:
+// - Configurable retry attempts
+// - Exponential backoff
+// - Persistent storage
+// - Manual intervention support
+```
+
+### Error Types
+
+```rust
+use market_data_subscription_server::error::{RavenError, RavenResult};
+
+// Comprehensive error categorization:
+// - DataValidation: Invalid market data
+// - DatabaseConnection: InfluxDB issues
+// - NetworkTimeout: Connection problems
+// - ConfigurationError: Invalid settings
+// - InternalError: System failures
+```
+
+### Graceful Shutdown
+
+```rust
+// The application handles shutdown signals gracefully:
+// 1. Stop accepting new connections
+// 2. Complete in-flight requests
+// 3. Persist dead letter queue entries
+// 4. Flush metrics and logs
+// 5. Clean up resources
+```
 
 ## 📚 API Reference
 
 ### gRPC Services
 
-- `StreamMarketData`: Bidirectional streaming for real-time data
-- `Subscribe`: Simple subscription management
-- `Unsubscribe`: Remove subscriptions
-- `GetHistoricalData`: Query historical data from InfluxDB
+Based on the Protocol Buffer definitions in `proto/market_data.proto`:
 
-### Data Types
+- `MarketDataService`: Main service for streaming market data
+- **Message Types**:
+  - `OrderBookSnapshot`: Real-time orderbook state with bids/asks
+  - `Trade`: Individual trade execution with price, quantity, side
+  - `Candle`: OHLCV candlestick data with intervals
+  - `FundingRate`: Perpetual funding rates with next funding time
+  - `WalletUpdate`: Account balance changes with asset details
 
-- `OrderBookSnapshot`: Real-time orderbook state
-- `Trade`: Individual trade execution
-- `Candle`: OHLCV candlestick data
-- `FundingRate`: Perpetual funding rates
-- `WalletUpdate`: Account balance changes
+### CLI Interface
 
-## 📁 Module Organization
+```bash
+# Start server with custom configuration
+./raven --config config/production.toml --host 0.0.0.0 --port 50051
 
-This codebase follows a modular architecture where each major component is organized into its own module with separated implementation and test files:
+# Available CLI options:
+--config FILE              # Configuration file path
+--host HOST                # Server host address
+--port PORT                # Server port number
+--log-level LEVEL          # Log level (trace, debug, info, warn, error)
+--database-url URL         # InfluxDB connection URL
+--max-connections COUNT    # Maximum concurrent connections
+--validate                 # Validate configuration and exit
+--print-config             # Print loaded configuration and exit
+```
 
-- **Implementation files** (`mod.rs`, `*.rs`): Core functionality and public APIs
-- **Test files** (`tests.rs`): Comprehensive test suites for each module
-- **Submodules**: Logical separation of concerns within larger modules
+### Configuration
 
-### Key Refactored Modules
+The system uses TOML configuration files with environment-specific overrides:
 
-- `src/app/`: Application entry point split into CLI, startup, and shutdown components
-- `src/server/`: gRPC server organized into service implementation and connection management
-- `src/types/`: Core data structures with atomic operations and snapshot support
-- `src/error/`: Centralized error handling with comprehensive test coverage
-- `src/dead_letter_queue/`: Error recovery mechanisms with retry logic
-- `src/snapshot_service/`: Snapshot functionality with configuration and metrics
+```toml
+[server]
+host = "0.0.0.0"
+port = 50051
+max_connections = 1000
+heartbeat_interval_seconds = 30
 
-This organization improves code navigation, testing, and maintenance while preserving all existing functionality.
+[database]
+influx_url = "http://localhost:8086"
+bucket = "market_data"
+org = "raven"
+connection_pool_size = 20
+
+[data_processing]
+snapshot_interval_ms = 5
+high_frequency_buffer_size = 10000
+data_validation_enabled = true
+
+[monitoring]
+metrics_enabled = true
+metrics_port = 9090
+health_check_port = 8080
+log_level = "info"
+```
+
+## 📁 Module Organization & Architecture
+
+This codebase follows a modular architecture with clear separation of concerns:
+
+### Core Principles
+
+- **Separation of Implementation and Tests**: Each module has dedicated test files
+- **Atomic Operations**: Lock-free data structures for high-frequency operations
+- **Error Resilience**: Comprehensive error handling with circuit breakers and dead letter queues
+- **Configuration-Driven**: Environment-specific configuration with CLI overrides
+- **Observability**: Built-in metrics, tracing, and health checks
+
+### Key Architectural Components
+
+#### Application Layer (`src/app/`)
+
+- **CLI Interface**: Comprehensive command-line argument parsing with version info
+- **Startup Orchestration**: Coordinated initialization of all system components
+- **Graceful Shutdown**: Signal handling with proper resource cleanup
+
+#### Data Processing (`src/citadel/`, `src/types/`)
+
+- **Citadel Engine**: Data validation, sanitization, and quality control
+- **Atomic Storage**: Lock-free data structures for sub-microsecond latency
+- **Snapshot Service**: Configurable atomic snapshot capture with metrics
+
+#### Network Layer (`src/server/`)
+
+- **gRPC Service**: Bidirectional streaming with Protocol Buffer serialization
+- **Connection Management**: Client lifecycle with heartbeat monitoring
+- **Circuit Breaker Integration**: Fault tolerance for external dependencies
+
+#### Reliability Layer (`src/circuit_breaker/`, `src/dead_letter_queue/`)
+
+- **Circuit Breakers**: Prevent cascade failures with configurable thresholds
+- **Dead Letter Queue**: Retry mechanisms with exponential backoff and persistence
+- **Error Categorization**: Comprehensive error types with context
+
+#### Observability (`src/monitoring/`)
+
+- **Metrics Collection**: Prometheus-compatible metrics
+- **Health Checks**: Component status monitoring
+- **Distributed Tracing**: Request flow tracking
+
+This architecture ensures high performance, reliability, and maintainability while supporting financial-grade requirements for latency and fault tolerance.
+
+## 🚧 Current Development Status
+
+### Recently Implemented Features
+
+- ✅ **Modular Architecture**: Separated implementation and test files across all modules
+- ✅ **Citadel Data Engine**: Comprehensive data validation and processing with sanitization
+- ✅ **Atomic Storage System**: Lock-free data structures for high-frequency operations
+- ✅ **Snapshot Service**: Configurable atomic snapshot capture with performance metrics
+- ✅ **Enhanced Error Handling**: Comprehensive error types with context and conversion
+- ✅ **Circuit Breaker System**: Fault tolerance with configurable thresholds
+- ✅ **Dead Letter Queue**: Error recovery with retry mechanisms and persistence
+- ✅ **Client Manager**: Connection lifecycle management with heartbeat monitoring
+- ✅ **CLI Interface**: Rich command-line interface with version info and configuration overrides
+- ✅ **Graceful Shutdown**: Signal handling with proper resource cleanup
+- ✅ **Performance Benchmarks**: Comprehensive benchmark suite for all critical paths
+
+### In Development
+
+- 🔄 **Data Handler Integration**: Connecting high-frequency and low-frequency data handlers
+- 🔄 **gRPC Service Implementation**: Complete bidirectional streaming service
+- 🔄 **Subscription Manager**: Topic-based routing with client lifecycle integration
+- 🔄 **Database Integration**: Enhanced InfluxDB client with circuit breaker protection
+- 🔄 **Monitoring Services**: Complete observability stack with metrics and tracing
+
+### Performance Targets (Current Implementation)
+
+- **Atomic Operations**: < 100 nanoseconds per update
+- **Data Validation**: < 10 microseconds per message
+- **Snapshot Capture**: < 1 microsecond for atomic snapshots
+- **Memory Efficiency**: Zero-copy operations where possible
+- **Error Recovery**: < 1ms for circuit breaker decisions
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
-3. Run tests and benchmarks
-4. Submit a pull request
+3. Run the full development cycle: `make dev` (format, lint, test)
+4. Run benchmarks: `make bench-all`
+5. Submit a pull request with comprehensive tests
+
+### Development Workflow
+
+```bash
+# Setup development environment
+make dev-setup
+
+# Run development cycle
+make dev  # Equivalent to: make fmt lint test
+
+# Run specific benchmark suites
+make bench-latency    # Latency benchmarks
+make bench-memory     # Memory usage patterns
+make bench-grpc       # gRPC streaming performance
+make bench-high-freq  # High frequency data processing
+
+# Deploy and test full stack
+make deploy
+make health
+```
 
 ## 📄 License
 
@@ -506,4 +771,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-*"Winter is coming, but the ravens are ready."* 🐦‍⬛
+_"Winter is coming, but the ravens are ready."_ 🐦‍⬛

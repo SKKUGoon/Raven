@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Development Dashboard - connects to external services
+  dashboard-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: raven-dashboard-dev
+    restart: unless-stopped
+    ports:
+      - "8050:8050"
+    environment:
+      - INFLUX_URL=http://host.docker.internal:8086  # Connect to local InfluxDB
+      - INFLUX_TOKEN=raven_master_token_for_the_iron_bank
+      - INFLUX_ORG=house_raven
+      - INFLUX_BUCKET=market_data
+      - DEVELOPMENT=true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../dashboard:/app/dashboard:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8050"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Development Market Data Server - connects to external services
+  market-data-server-dev:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: raven-server-dev
+    restart: unless-stopped
+    ports:
+      - "50051:50051"  # gRPC port
+      - "8080:8080"    # Health check port
+      - "9090:9090"    # Metrics port
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=full
+      - RAVEN_DATABASE__INFLUX_URL=http://host.docker.internal:8086
+      - RAVEN_DATABASE__BUCKET=market_data
+      - RAVEN_DATABASE__ORG=house_raven
+      - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
+      - RAVEN_SERVER__HOST=0.0.0.0
+      - RAVEN_SERVER__PORT=50051
+      - RAVEN_REDIS__URL=redis://host.docker.internal:6379
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./config:/app/config:ro
+      - raven_logs_dev:/app/logs
+      - raven_data_dev:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  raven_logs_dev:
+    driver: local
+  raven_data_dev:
+    driver: local

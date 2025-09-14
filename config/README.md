@@ -50,9 +50,9 @@ max_message_size = 4194304          # Maximum message size (4MB)
 ```toml
 [database]
 influx_url = "http://localhost:8086"        # InfluxDB connection URL
-database_name = "market_data"               # Database name
-username = "admin"                          # Optional: Database username
-password = "secret"                         # Optional: Database password
+bucket = "market_data"                      # InfluxDB v2 bucket name
+org = "raven"                               # InfluxDB v2 organization name
+token = "your_token_here"                   # Optional: InfluxDB v2 authentication token
 connection_pool_size = 20                   # Connection pool size
 connection_timeout_seconds = 10             # Connection timeout
 write_timeout_seconds = 5                   # Write operation timeout
@@ -145,9 +145,9 @@ export RAVEN_SERVER__MAX_CONNECTIONS=1000
 
 # Database configuration
 export RAVEN_DATABASE__INFLUX_URL=http://localhost:8086
-export RAVEN_DATABASE__DATABASE_NAME=market_data
-export RAVEN_DATABASE__USERNAME=admin
-export RAVEN_DATABASE__PASSWORD=secret_password
+export RAVEN_DATABASE__BUCKET=market_data
+export RAVEN_DATABASE__ORG=raven
+export RAVEN_DATABASE__TOKEN=your_influxdb_v2_token
 
 # Data processing configuration
 export RAVEN_DATA_PROCESSING__SNAPSHOT_INTERVAL_MS=5

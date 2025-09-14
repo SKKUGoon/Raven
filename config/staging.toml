@@ -12,7 +12,8 @@ max_message_size = 6291456  # 6MB
 
 [database]
 influx_url = "http://influxdb-staging:8086"
-database_name = "market_data_staging"
+bucket = "market_data_staging"
+org = "raven"
 connection_pool_size = 25
 connection_timeout_seconds = 8
 write_timeout_seconds = 4

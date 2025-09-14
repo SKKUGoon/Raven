@@ -242,9 +242,9 @@ pub async fn initialize_influx_client(
 ) -> RavenResult<(Arc<InfluxClient>, Arc<EnhancedInfluxClient>)> {
     let influx_config = market_data_subscription_server::database::InfluxConfig {
         url: config.database.influx_url.clone(),
-        database: config.database.database_name.clone(),
-        username: config.database.username.clone(),
-        password: config.database.password.clone(),
+        bucket: config.database.bucket.clone(),
+        org: config.database.org.clone(),
+        token: config.database.token.clone(),
         pool_size: config.database.connection_pool_size,
         timeout: Duration::from_secs(config.database.connection_timeout_seconds),
         retry_attempts: config.database.retry_attempts,

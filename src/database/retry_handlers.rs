@@ -4,7 +4,7 @@
 use crate::dead_letter_queue::{DeadLetterEntry, RetryHandler};
 use crate::error::{RavenError, RavenResult};
 use crate::types::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
-use influxdb::WriteQuery;
+use influxdb2::models::DataPoint;
 use serde_json;
 use std::sync::Arc;
 use tracing::{debug, warn};
@@ -86,9 +86,9 @@ impl RetryHandler for InfluxWriteRetryHandler {
             "batch_write" => {
                 // For batch writes, we store a simplified representation
                 // In a real implementation, you'd need a more sophisticated approach
-                // to serialize/deserialize WriteQuery objects
+                // to serialize/deserialize DataPoint objects
                 return Err(RavenError::dead_letter_processing(
-                    "Batch write retry not implemented - WriteQuery serialization not supported"
+                    "Batch write retry not implemented - DataPoint serialization not supported"
                         .to_string(),
                 ));
             }
@@ -245,16 +245,16 @@ impl DatabaseDeadLetterHelper {
 
     /// Create a dead letter entry for batch write failure
     pub fn create_batch_write_entry(
-        queries: &[WriteQuery],
+        data_points: &[DataPoint],
         error_message: String,
     ) -> RavenResult<DeadLetterEntry> {
-        // Serialize WriteQuery is complex, so we'll store a simplified representation
-        let query_info: Vec<String> = queries
+        // Serialize DataPoint is complex, so we'll store a simplified representation
+        let data_point_info: Vec<String> = data_points
             .iter()
-            .map(|q| format!("{q:?}")) // This is not ideal but WriteQuery doesn't implement Serialize
+            .map(|dp| format!("{dp:?}")) // This is not ideal but DataPoint doesn't implement Serialize
             .collect();
 
-        let data = serde_json::to_string(&query_info)
+        let data = serde_json::to_string(&data_point_info)
             .map_err(|e| RavenError::data_serialization(e.to_string()))?;
 
         let entry = crate::dead_letter_queue::DeadLetterEntry::new(
@@ -264,7 +264,7 @@ impl DatabaseDeadLetterHelper {
             3, // max retries
         )
         .with_metadata("subtype", "batch_write")
-        .with_metadata("query_count", queries.len().to_string());
+        .with_metadata("data_point_count", data_points.len().to_string());
 
         Ok(entry)
     }
@@ -395,14 +395,14 @@ impl EnhancedInfluxClient {
     }
 
     /// Write batch with dead letter queue fallback
-    pub async fn write_batch_safe(&self, queries: Vec<WriteQuery>) -> RavenResult<()> {
-        match self.client.write_batch(queries.clone()).await {
+    pub async fn write_batch_safe(&self, data_points: Vec<DataPoint>) -> RavenResult<()> {
+        match self.client.write_batch(data_points.clone()).await {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("📮 Batch write failed, adding to dead letter queue: {}", e);
                 let raven_error = RavenError::database_write(e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_batch_write_entry(
-                    &queries,
+                    &data_points,
                     raven_error.to_string(),
                 )?;
                 self.dead_letter_queue.add_entry(entry).await?;

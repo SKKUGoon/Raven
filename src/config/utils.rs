@@ -19,7 +19,8 @@ impl ConfigUtils {
         info!("  📡 Server: {}:{}", config.server.host, config.server.port);
         info!("  🔗 Max Connections: {}", config.server.max_connections);
         info!("  🗄️  Database: {}", config.database.influx_url);
-        info!("  📊 Database Name: {}", config.database.database_name);
+        info!("  🪣 Bucket: {}", config.database.bucket);
+        info!("  🏢 Organization: {}", config.database.org);
         info!(
             "  ⚡ Snapshot Interval: {}ms",
             config.data_processing.snapshot_interval_ms
@@ -53,10 +54,8 @@ impl ConfigUtils {
             "database_url".to_string(),
             config.database.influx_url.clone(),
         );
-        summary.insert(
-            "database_name".to_string(),
-            config.database.database_name.clone(),
-        );
+        summary.insert("bucket".to_string(), config.database.bucket.clone());
+        summary.insert("org".to_string(), config.database.org.clone());
         summary.insert(
             "snapshot_interval_ms".to_string(),
             config.data_processing.snapshot_interval_ms.to_string(),
@@ -94,9 +93,8 @@ impl ConfigUtils {
         }
 
         // Check for security issues
-        if config.database.username.is_none() && config.database.password.is_none() {
-            warnings
-                .push("Database credentials not configured - using anonymous access".to_string());
+        if config.database.token.is_none() {
+            warnings.push("Database token not configured - using anonymous access".to_string());
         }
 
         if config.server.host == "0.0.0.0" {
@@ -181,7 +179,8 @@ impl ConfigUtils {
     pub fn validate_environment() -> Result<()> {
         let required_vars = vec![
             "RAVEN_DATABASE__INFLUX_URL",
-            "RAVEN_DATABASE__DATABASE_NAME",
+            "RAVEN_DATABASE__BUCKET",
+            "RAVEN_DATABASE__ORG",
         ];
 
         let mut missing_vars = Vec::new();
@@ -221,9 +220,9 @@ max_connections = 1000
 
 [database]
 influx_url = "http://localhost:8086"
-database_name = "market_data"
-# username = "your_username"
-# password = "your_password"
+bucket = "market_data"
+org = "raven"
+# token = "your_influxdb_v2_token"
 
 [data_processing]
 snapshot_interval_ms = 5

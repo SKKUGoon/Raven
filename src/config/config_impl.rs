@@ -40,9 +40,9 @@ pub struct ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatabaseConfig {
     pub influx_url: String,
-    pub database_name: String,
-    pub username: Option<String>,
-    pub password: Option<String>,
+    pub bucket: String,
+    pub org: String,
+    pub token: Option<String>,
     pub connection_pool_size: usize,
     pub connection_timeout_seconds: u64,
     pub write_timeout_seconds: u64,
@@ -142,9 +142,9 @@ impl Default for DatabaseConfig {
     fn default() -> Self {
         DatabaseConfig {
             influx_url: "http://localhost:8086".to_string(),
-            database_name: "market_data".to_string(),
-            username: None,
-            password: None,
+            bucket: "market_data".to_string(),
+            org: "raven".to_string(),
+            token: None,
             connection_pool_size: 20,
             connection_timeout_seconds: 10,
             write_timeout_seconds: 5,
@@ -320,8 +320,11 @@ impl Config {
         if self.database.influx_url.is_empty() {
             return Err(anyhow::anyhow!("InfluxDB URL cannot be empty"));
         }
-        if self.database.database_name.is_empty() {
-            return Err(anyhow::anyhow!("Database name cannot be empty"));
+        if self.database.bucket.is_empty() {
+            return Err(anyhow::anyhow!("Bucket name cannot be empty"));
+        }
+        if self.database.org.is_empty() {
+            return Err(anyhow::anyhow!("Organization name cannot be empty"));
         }
         if self.database.connection_pool_size == 0 {
             return Err(anyhow::anyhow!(
@@ -375,9 +378,10 @@ impl Config {
             self.database.influx_url.clone(),
         );
         vars.insert(
-            "RAVEN_DATABASE__DATABASE_NAME".to_string(),
-            self.database.database_name.clone(),
+            "RAVEN_DATABASE__BUCKET".to_string(),
+            self.database.bucket.clone(),
         );
+        vars.insert("RAVEN_DATABASE__ORG".to_string(), self.database.org.clone());
 
         // Add more as needed for debugging
         vars

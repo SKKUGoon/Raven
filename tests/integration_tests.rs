@@ -58,9 +58,9 @@ impl TestConfig {
     fn get_database_config(&self) -> DatabaseConfig {
         DatabaseConfig {
             influx_url: format!("http://127.0.0.1:{}", self.influx_port),
-            database_name: "test_market_data".to_string(),
-            username: Some("admin".to_string()),
-            password: Some("password".to_string()),
+            bucket: "test_market_data".to_string(),
+            org: "test_org".to_string(),
+            token: Some("test_token".to_string()),
             connection_pool_size: 5,
             connection_timeout_seconds: 5,
             write_timeout_seconds: 3,
@@ -93,9 +93,9 @@ impl TestFixture {
         let subscription_manager = Arc::new(SubscriptionManager::new());
         let influx_config = InfluxConfig {
             url: config.get_database_config().influx_url.clone(),
-            database: config.get_database_config().database_name.clone(),
-            username: config.get_database_config().username.clone(),
-            password: config.get_database_config().password.clone(),
+            bucket: config.get_database_config().bucket.clone(),
+            org: config.get_database_config().org.clone(),
+            token: config.get_database_config().token.clone(),
             pool_size: config.get_database_config().connection_pool_size,
             timeout: Duration::from_secs(config.get_database_config().connection_timeout_seconds),
             retry_attempts: config.get_database_config().retry_attempts,
@@ -465,9 +465,9 @@ mod tests {
         // Test database connectivity
         let influx_config = InfluxConfig {
             url: fixture.config.get_database_config().influx_url,
-            database: fixture.config.get_database_config().database_name,
-            username: fixture.config.get_database_config().username,
-            password: fixture.config.get_database_config().password,
+            bucket: fixture.config.get_database_config().bucket,
+            org: fixture.config.get_database_config().org,
+            token: fixture.config.get_database_config().token,
             pool_size: 5,
             timeout: Duration::from_secs(5),
             retry_attempts: 2,
