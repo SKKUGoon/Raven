@@ -1,5 +1,4 @@
-from dash import dcc, html
-from typing import List
+from dash import html
 
 
 def layout() -> html.Div:

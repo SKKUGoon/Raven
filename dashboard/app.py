@@ -1,286 +1,166 @@
-import dash
-from dash import dcc, html, Input, Output, callback
-import plotly.graph_objects as go
-import pandas as pd
-from typing import List, Dict, Any, Optional
-from utils.influx_client import InfluxDBHandler
+import streamlit as st
+import time
+from utils.home.data_ops import get_market_data, get_system_metrics, calculate_market_summary, get_active_symbols_text, prepare_chart_data
+from utils.home.charting import create_price_chart, create_volume_chart
+from utils.home.templates import (
+    load_css, render_page_header, render_section_header, render_metric_card,
+    render_colored_metric_card, render_error_message, render_info_message
+)
 
-# Initialize Dash app
-app = dash.Dash(__name__,
-                suppress_callback_exceptions=True,
-                external_stylesheets=['/static/css/styles.css'])
-app.title = "Raven Market Data Dashboard"
+# Page configuration
+st.set_page_config(
+    page_title="🐦‍⬛ Raven Market Data Dashboard",
+    page_icon="🐦‍⬛",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Initialize InfluxDB handler
-influx_handler = InfluxDBHandler()
+# Load CSS styles
+load_css()
 
-# Define the layout
-app.layout = html.Div([
-    dcc.Location(id='url', refresh=False),
-    html.Div([
-        html.H1("🐦‍⬛ Raven Market Data Dashboard", className='page-header'),
+# Sidebar navigation
+st.sidebar.title("🐦‍⬛ Raven Dashboard")
+page = st.sidebar.selectbox(
+    "Navigate to:",
+    ["Home", "Crypto", "Macro", "Analysis"]
+)
 
-        # Navigation
-        html.Div([
-            dcc.Link('Home', href='/', className='nav-link'),
-            dcc.Link('Crypto', href='/crypto', className='nav-link'),
-            dcc.Link('Macro', href='/macro', className='nav-link'),
-            dcc.Link('Analysis', href='/analysis', className='nav-link'),
-        ], className='nav-container'),
+# Auto-refresh toggle
+auto_refresh = st.sidebar.checkbox("Auto-refresh (5s)", value=True)
 
-        # Page content
-        html.Div(id='page-content'),
+# Home page
+def home_page():
+    st.markdown(render_page_header('🐦‍⬛ Raven Market Data Dashboard'), unsafe_allow_html=True)
+    st.markdown(render_section_header('Market Data Overview'), unsafe_allow_html=True)
 
-        # Interval component for real-time updates
-        dcc.Interval(
-            id='interval-component',
-            interval=5*1000,  # Update every 5 seconds
-            n_intervals=0
-        ),
+    # Get data
+    market_data = get_market_data()
+    system_metrics = get_system_metrics()
 
-        # Store components for data sharing
-        dcc.Store(id='market-data-store'),
-        dcc.Store(id='system-metrics-store'),
-    ]),
-])
+    # System status section
+    st.markdown("#### System Status")
+    if system_metrics:
+        cols = st.columns(len(system_metrics))
+        for i, (key, value) in enumerate(system_metrics.items()):
+            with cols[i]:
+                formatted_value = f"{value:.2f}" if isinstance(value, float) else str(value)
+                st.markdown(render_metric_card(
+                    value=formatted_value,
+                    label=key.replace('_', ' ').title()
+                ), unsafe_allow_html=True)
+    else:
+        st.markdown(render_error_message('No system data available'), unsafe_allow_html=True)
 
-# Home page layout
-def home_layout():
-    return html.Div([
-        html.H2("Market Data Overview", className='section-header'),
+    # Market summary section
+    st.markdown("#### Market Summary")
+    market_summary = calculate_market_summary(market_data)
 
-        html.Div([
-            html.Div([
-                html.H4("System Status"),
-                html.Div(id='system-status', children=[
-                    html.P("Loading system metrics...", className='loading-spinner')
-                ])
-            ], className='status-card', style={'width': '30%', 'display': 'inline-block'}),
+    if market_summary:
+        col1, col2, col3, col4 = st.columns(4)
 
-            html.Div([
-                html.H4("Market Summary"),
-                html.Div(id='market-summary', children=[
-                    html.P("Loading market data...", className='loading-spinner')
-                ])
-            ], className='status-card', style={'width': '30%', 'display': 'inline-block'}),
+        with col1:
+            st.markdown(render_metric_card(
+                value=market_summary['total_records'],
+                label='Total Records'
+            ), unsafe_allow_html=True)
 
-            html.Div([
-                html.H4("Active Symbols"),
-                html.Div(id='active-symbols', children=[
-                    html.P("Loading symbols...", className='loading-spinner')
-                ])
-            ], className='status-card', style={'width': '30%', 'display': 'inline-block'}),
-        ], style={'textAlign': 'center'}),
+        with col2:
+            st.markdown(render_metric_card(
+                value=f"{market_summary['avg_volume']:.2f}",
+                label='Avg Volume'
+            ), unsafe_allow_html=True)
 
-        html.Div([
-            dcc.Graph(id='overview-price-chart'),
-        ], className='chart-container'),
+        with col3:
+            if market_summary['price_change'] != 0:
+                st.markdown(render_colored_metric_card(
+                    value=f"{market_summary['price_change']:+.2f}%",
+                    label='Price Change',
+                    color_class=market_summary['price_change_class']
+                ), unsafe_allow_html=True)
+            else:
+                st.markdown(render_metric_card(
+                    value='N/A',
+                    label='Price Change'
+                ), unsafe_allow_html=True)
 
-        html.Div([
-            dcc.Graph(id='overview-volume-chart'),
-        ], className='chart-container'),
-    ])
+        with col4:
+            if market_summary['unique_symbols'] > 0:
+                st.markdown(render_metric_card(
+                    value=market_summary['unique_symbols'],
+                    label='Active Symbols'
+                ), unsafe_allow_html=True)
+            else:
+                st.markdown(render_metric_card(
+                    value='N/A',
+                    label='Active Symbols'
+                ), unsafe_allow_html=True)
+    else:
+        st.markdown(render_error_message('No market data available'), unsafe_allow_html=True)
 
-# Page routing callback
-@callback(Output('page-content', 'children'), Input('url', 'pathname'))
-def display_page(pathname):
-    if pathname == '/crypto':
+    # Active symbols section
+    symbols_text = get_active_symbols_text(market_data)
+    if symbols_text:
+        st.markdown("#### Active Symbols")
+        st.markdown(render_info_message(symbols_text), unsafe_allow_html=True)
+
+    # Charts section
+    st.markdown("#### Charts")
+
+    # Prepare data for charting
+    chart_data = prepare_chart_data(market_data)
+
+    # Price chart
+    if chart_data is not None and 'price' in chart_data.columns:
+        fig_price = create_price_chart(chart_data)
+        st.plotly_chart(fig_price, use_container_width=True)
+    else:
+        st.markdown(render_info_message('No price data available for chart'), unsafe_allow_html=True)
+
+    # Volume chart
+    if chart_data is not None and 'volume' in chart_data.columns:
+        fig_volume = create_volume_chart(chart_data)
+        st.plotly_chart(fig_volume, use_container_width=True)
+    else:
+        st.markdown(render_info_message('No volume data available for chart'), unsafe_allow_html=True)
+
+# Crypto page
+def crypto_page():
+    st.markdown(render_page_header('🪙 Cryptocurrency Data'), unsafe_allow_html=True)
+    try:
         from pages.crypto import layout
-        return layout()
-    elif pathname == '/macro':
+        layout()
+    except ImportError:
+        st.markdown(render_error_message('Crypto page module not found. Please implement pages/crypto.py'), unsafe_allow_html=True)
+
+# Macro page
+def macro_page():
+    st.markdown(render_page_header('📈 Macro Economic Data'), unsafe_allow_html=True)
+    try:
         from pages.macro import layout
-        return layout()
-    elif pathname == '/analysis':
+        layout()
+    except ImportError:
+        st.markdown(render_error_message('Macro page module not found. Please implement pages/macro.py'), unsafe_allow_html=True)
+
+# Analysis page
+def analysis_page():
+    st.markdown(render_page_header('📊 Data Analysis'), unsafe_allow_html=True)
+    try:
         from pages.analysis import layout
-        return layout()
-    else:
-        return home_layout()
+        layout()
+    except ImportError:
+        st.markdown(render_error_message('Analysis page module not found. Please implement pages/analysis.py'), unsafe_allow_html=True)
 
-# Data update callback
-@callback(
-    [Output('market-data-store', 'data'),
-     Output('system-metrics-store', 'data')],
-    Input('interval-component', 'n_intervals')
-)
-def update_data(n: int) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    market_data = influx_handler.query_market_data(time_range="1h")
-    system_metrics = influx_handler.query_system_metrics()
-    return market_data.to_dict('records'), system_metrics
+# Page routing
+if page == "Home":
+    home_page()
+elif page == "Crypto":
+    crypto_page()
+elif page == "Macro":
+    macro_page()
+elif page == "Analysis":
+    analysis_page()
 
-# System status callback
-@callback(
-    Output('system-status', 'children'),
-    Input('system-metrics-store', 'data')
-)
-def update_system_status(system_data):
-    if not system_data:
-        return [html.P("No system data", className='error-message')]
-
-    status_items = []
-    for key, value in system_data.items():
-        formatted_value = f"{value:.2f}" if isinstance(value, float) else str(value)
-        status_items.append(
-            html.Div([
-                html.P(formatted_value, className='metric-value'),
-                html.P(key.replace('_', ' ').title(), className='metric-label')
-            ], className='metric-card')
-        )
-
-    return status_items
-
-# Market summary callback
-@callback(
-    Output('market-summary', 'children'),
-    Input('market-data-store', 'data')
-)
-def update_market_summary(market_data):
-    if not market_data:
-        return [html.P("No market data", className='error-message')]
-
-    df = pd.DataFrame(market_data)
-    if df.empty:
-        return [html.P("No market data", className='error-message')]
-
-    total_records = len(df)
-    avg_volume = df['volume'].mean() if 'volume' in df.columns else 0
-    price_change = 0
-
-    if 'price' in df.columns and len(df) > 1:
-        price_change = ((df['price'].iloc[-1] - df['price'].iloc[0]) / df['price'].iloc[0] * 100)
-
-    change_class = 'positive' if price_change >= 0 else 'negative'
-
-    return [
-        html.Div([
-            html.P(f"{total_records}", className='metric-value'),
-            html.P("Total Records", className='metric-label')
-        ], className='metric-card'),
-        html.Div([
-            html.P(f"{avg_volume:.2f}", className='metric-value'),
-            html.P("Avg Volume", className='metric-label')
-        ], className='metric-card'),
-        html.Div([
-            html.P(f"{price_change:+.2f}%", className=f'metric-value {change_class}'),
-            html.P("Price Change", className='metric-label')
-        ], className='metric-card')
-    ]
-
-# Active symbols callback
-@callback(
-    Output('active-symbols', 'children'),
-    Input('market-data-store', 'data')
-)
-def update_active_symbols(market_data):
-    if not market_data:
-        return [html.P("No symbols", className='error-message')]
-
-    df = pd.DataFrame(market_data)
-    if df.empty or 'symbol' not in df.columns:
-        return [html.P("No symbols", className='error-message')]
-
-    unique_symbols = df['symbol'].unique()
-    symbol_list = [html.P(symbol, style={'margin': '3px 0'}) for symbol in unique_symbols[:10]]
-
-    if len(unique_symbols) > 10:
-        symbol_list.append(html.P(f"... and {len(unique_symbols) - 10} more",
-                                 style={'fontStyle': 'italic', 'color': '#6c757d'}))
-
-    return symbol_list
-
-# Overview price chart callback
-@callback(
-    Output('overview-price-chart', 'figure'),
-    Input('market-data-store', 'data')
-)
-def update_price_chart(market_data):
-    if not market_data:
-        return go.Figure().add_annotation(text="No data available", x=0.5, y=0.5, showarrow=False)
-
-    df = pd.DataFrame(market_data)
-    if df.empty or 'time' not in df.columns or 'price' not in df.columns:
-        return go.Figure().add_annotation(text="No price data", x=0.5, y=0.5, showarrow=False)
-
-    df['time'] = pd.to_datetime(df['time'])
-
-    fig = go.Figure()
-
-    if 'symbol' in df.columns and df['symbol'].nunique() > 1:
-        for symbol in df['symbol'].unique():
-            symbol_data = df[df['symbol'] == symbol]
-            fig.add_trace(go.Scatter(
-                x=symbol_data['time'],
-                y=symbol_data['price'],
-                mode='lines+markers',
-                name=symbol,
-                line=dict(width=2)
-            ))
-    else:
-        fig.add_trace(go.Scatter(
-            x=df['time'],
-            y=df['price'],
-            mode='lines+markers',
-            name='Price',
-            line=dict(width=2, color='#007bff')
-        ))
-
-    fig.update_layout(
-        title="Real-time Price Chart",
-        xaxis_title="Time",
-        yaxis_title="Price",
-        height=400,
-        hovermode='x unified',
-        paper_bgcolor='white',
-        plot_bgcolor='white'
-    )
-
-    return fig
-
-# Overview volume chart callback
-@callback(
-    Output('overview-volume-chart', 'figure'),
-    Input('market-data-store', 'data')
-)
-def update_volume_chart(market_data):
-    if not market_data:
-        return go.Figure().add_annotation(text="No data available", x=0.5, y=0.5, showarrow=False)
-
-    df = pd.DataFrame(market_data)
-    if df.empty or 'time' not in df.columns or 'volume' not in df.columns:
-        return go.Figure().add_annotation(text="No volume data", x=0.5, y=0.5, showarrow=False)
-
-    df['time'] = pd.to_datetime(df['time'])
-
-    fig = go.Figure()
-
-    if 'symbol' in df.columns and df['symbol'].nunique() > 1:
-        for symbol in df['symbol'].unique():
-            symbol_data = df[df['symbol'] == symbol]
-            fig.add_trace(go.Bar(
-                x=symbol_data['time'],
-                y=symbol_data['volume'],
-                name=symbol,
-                opacity=0.7
-            ))
-    else:
-        fig.add_trace(go.Bar(
-            x=df['time'],
-            y=df['volume'],
-            name='Volume',
-            marker_color='#17a2b8',
-            opacity=0.7
-        ))
-
-    fig.update_layout(
-        title="Real-time Volume Chart",
-        xaxis_title="Time",
-        yaxis_title="Volume",
-        height=300,
-        showlegend=True,
-        paper_bgcolor='white',
-        plot_bgcolor='white'
-    )
-
-    return fig
-
-if __name__ == '__main__':
-    app.run_server(debug=True, host='0.0.0.0', port=8050)
+# Auto-refresh functionality
+if auto_refresh:
+    time.sleep(5)
+    st.rerun()

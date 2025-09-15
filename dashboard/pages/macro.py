@@ -1,6 +1,5 @@
 from dash import dcc, html, Input, Output, callback
 import plotly.graph_objects as go
-import plotly.express as px
 import pandas as pd
 from typing import List, Dict, Any
 
