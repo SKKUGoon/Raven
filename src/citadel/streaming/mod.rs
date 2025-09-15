@@ -11,7 +11,7 @@ pub use metrics::SnapshotMetrics;
 
 use crate::database::influx_client::InfluxClient;
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
-use crate::types::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
+use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use anyhow::{Context, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -453,7 +453,7 @@ impl SnapshotService {
             timestamp: snapshot.timestamp,
             price: snapshot.price,
             quantity: snapshot.quantity,
-            side: snapshot.side.clone(),
+            side: snapshot.side.to_string(),
             trade_id: snapshot.trade_id.to_string(),
         };
 

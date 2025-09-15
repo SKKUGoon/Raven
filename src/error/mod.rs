@@ -87,6 +87,22 @@ pub enum RavenError {
 
     #[error("External service error: {service}: {message}")]
     ExternalService { service: String, message: String },
+
+    // Exchange errors
+    #[error("Parse error: {message}")]
+    ParseError { message: String },
+
+    #[error("Connection error: {message}")]
+    ConnectionError { message: String },
+
+    #[error("Config error: {message}")]
+    ConfigError { message: String },
+
+    #[error("Not implemented: {message}")]
+    NotImplemented { message: String },
+
+    #[error("Internal error: {message}")]
+    InternalError { message: String },
 }
 
 impl RavenError {
@@ -257,6 +273,41 @@ impl RavenError {
         }
     }
 
+    /// Create a parse error
+    pub fn parse_error<S: Into<String>>(message: S) -> Self {
+        Self::ParseError {
+            message: message.into(),
+        }
+    }
+
+    /// Create a connection error
+    pub fn connection_error<S: Into<String>>(message: S) -> Self {
+        Self::ConnectionError {
+            message: message.into(),
+        }
+    }
+
+    /// Create a config error
+    pub fn config_error<S: Into<String>>(message: S) -> Self {
+        Self::ConfigError {
+            message: message.into(),
+        }
+    }
+
+    /// Create a not implemented error
+    pub fn not_implemented<S: Into<String>>(message: S) -> Self {
+        Self::NotImplemented {
+            message: message.into(),
+        }
+    }
+
+    /// Create an internal error (new variant)
+    pub fn internal_error<S: Into<String>>(message: S) -> Self {
+        Self::InternalError {
+            message: message.into(),
+        }
+    }
+
     /// Get error category for metrics and logging
     pub fn category(&self) -> &'static str {
         match self {
@@ -279,6 +330,7 @@ impl RavenError {
             Self::Authentication { .. } | Self::Authorization { .. } => "security",
             Self::DeadLetterQueueFull { .. } | Self::DeadLetterProcessing { .. } => "dead_letter",
             Self::Internal { .. } | Self::ExternalService { .. } => "general",
+            Self::ParseError { .. } | Self::ConnectionError { .. } | Self::ConfigError { .. } | Self::NotImplemented { .. } | Self::InternalError { .. } => "exchange",
         }
     }
 
@@ -311,7 +363,14 @@ impl RavenError {
             | Self::Authorization { .. }
             | Self::DeadLetterQueueFull { .. }
             | Self::DeadLetterProcessing { .. }
-            | Self::Internal { .. } => false,
+            | Self::Internal { .. }
+            | Self::ParseError { .. }
+            | Self::ConfigError { .. }
+            | Self::NotImplemented { .. }
+            | Self::InternalError { .. } => false,
+
+            // Connection errors are retryable
+            Self::ConnectionError { .. } => true,
         }
     }
 
@@ -348,7 +407,14 @@ impl RavenError {
             | Self::InvalidConfigValue { .. }
             | Self::Authentication { .. }
             | Self::Authorization { .. }
-            | Self::Internal { .. } => tracing::Level::DEBUG,
+            | Self::Internal { .. }
+            | Self::ParseError { .. }
+            | Self::ConfigError { .. }
+            | Self::NotImplemented { .. }
+            | Self::InternalError { .. } => tracing::Level::DEBUG,
+
+            // Connection errors are warnings
+            Self::ConnectionError { .. } => tracing::Level::WARN,
         }
     }
 }
@@ -427,6 +493,26 @@ impl From<RavenError> for Status {
             }
 
             RavenError::Internal { message } => {
+                Status::internal(format!("Internal error: {message}"))
+            }
+
+            RavenError::ParseError { message } => {
+                Status::invalid_argument(format!("Parse error: {message}"))
+            }
+
+            RavenError::ConnectionError { message } => {
+                Status::unavailable(format!("Connection error: {message}"))
+            }
+
+            RavenError::ConfigError { message } => {
+                Status::failed_precondition(format!("Config error: {message}"))
+            }
+
+            RavenError::NotImplemented { message } => {
+                Status::unimplemented(format!("Not implemented: {message}"))
+            }
+
+            RavenError::InternalError { message } => {
                 Status::internal(format!("Internal error: {message}"))
             }
         }

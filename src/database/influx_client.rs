@@ -15,7 +15,10 @@ use tokio::time::{interval, sleep};
 
 use tracing::{debug, error, info, warn};
 
-use crate::types::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
+use crate::citadel::storage::{
+    CandleData, FundingRateData, OrderBookSnapshot, TradeSide, TradeSnapshot,
+};
+use crate::exchanges::types::Exchange;
 
 // For now, let's use a simpler approach and return raw query results
 // We'll implement proper parsing later when we have the correct API understanding
@@ -40,7 +43,7 @@ pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPo
 pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
     DataPoint::builder("trades")
         .tag("symbol", &snapshot.symbol)
-        .tag("side", &snapshot.side)
+        .tag("side", snapshot.side.as_str())
         .field("price", snapshot.price)
         .field("quantity", snapshot.quantity)
         .field("trade_id", snapshot.trade_id as i64)
@@ -55,7 +58,7 @@ pub fn create_candle_datapoint(candle: &CandleData) -> Result<DataPoint> {
     DataPoint::builder("candles")
         .tag("symbol", &candle.symbol)
         .tag("interval", &candle.interval)
-        .tag("exchange", &candle.exchange)
+        .tag("exchange", candle.exchange.to_string())
         .field("open", candle.open)
         .field("high", candle.high)
         .field("low", candle.low)
@@ -70,7 +73,7 @@ pub fn create_candle_datapoint(candle: &CandleData) -> Result<DataPoint> {
 pub fn create_funding_rate_datapoint(funding: &FundingRateData) -> Result<DataPoint> {
     DataPoint::builder("funding_rates")
         .tag("symbol", &funding.symbol)
-        .tag("exchange", &funding.exchange)
+        .tag("exchange", funding.exchange.to_string())
         .field("rate", funding.rate)
         .field("next_funding_time", funding.next_funding_time)
         .timestamp(funding.timestamp)
@@ -1001,7 +1004,7 @@ mod tests {
             timestamp: 1640995200000,
             price: 45000.5,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: 123456,
         };
 
@@ -1020,7 +1023,7 @@ mod tests {
             close: 45050.0,
             volume: 150.5,
             interval: "1m".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let datapoint = create_candle_datapoint(&candle).unwrap();
@@ -1034,7 +1037,7 @@ mod tests {
             timestamp: 1640995200000,
             rate: 0.0001,
             next_funding_time: 1640995200000 + 28800000,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let datapoint = create_funding_rate_datapoint(&funding).unwrap();
@@ -1096,7 +1099,7 @@ mod tests {
                 .as_millis() as i64,
             price: 45000.5,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: 123456,
         };
 
@@ -1116,7 +1119,7 @@ mod tests {
             close: 45050.0,
             volume: 150.5,
             interval: "1m".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = client.write_candle(&candle).await;
@@ -1135,7 +1138,7 @@ mod tests {
                 .unwrap()
                 .as_millis() as i64
                 + 28800000, // 8 hours later
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = client.write_funding_rate(&funding).await;

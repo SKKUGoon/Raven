@@ -6,7 +6,8 @@ use market_data_subscription_server::{
     data_handlers::HighFrequencyHandler,
     error::RavenError,
     subscription_manager::{SubscriptionDataType, SubscriptionManager},
-    types::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage, OrderBookData, TradeData},
+    citadel::storage::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage, OrderBookData, TradeData, TradeSide},
+    exchanges::types::Exchange,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -38,7 +39,7 @@ mod atomic_data_structures {
             bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
             asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         orderbook.update_from_data(&data);
@@ -72,9 +73,9 @@ mod atomic_data_structures {
             timestamp: 1640995200000,
             price: 45000.5,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "abc123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         trade.update_from_data(&data);
@@ -106,9 +107,9 @@ mod atomic_data_structures {
             timestamp: 1640995200000,
             price: 45000.0,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "buy123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
         trade.update_from_data(&buy_data);
         assert_eq!(trade.side.load(Ordering::Relaxed), 0);
@@ -119,22 +120,22 @@ mod atomic_data_structures {
             timestamp: 1640995200000,
             price: 45000.0,
             quantity: 0.1,
-            side: "sell".to_string(),
+            side: TradeSide::Sell,
             trade_id: "sell123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
         trade.update_from_data(&sell_data);
         assert_eq!(trade.side.load(Ordering::Relaxed), 1);
 
-        // Test unknown side defaults to buy
+        // Test buy side
         let unknown_data = TradeData {
             symbol: "BTCUSDT".to_string(),
             timestamp: 1640995200000,
             price: 45000.0,
             quantity: 0.1,
-            side: "unknown".to_string(),
+            side: TradeSide::Buy,
             trade_id: "unknown123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
         trade.update_from_data(&unknown_data);
         assert_eq!(trade.side.load(Ordering::Relaxed), 0);
@@ -151,7 +152,7 @@ mod atomic_data_structures {
             bids: vec![(45000.0, 1.5)],
             asks: vec![(45001.0, 1.2)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         storage.update_orderbook(&orderbook_data);
@@ -165,9 +166,9 @@ mod atomic_data_structures {
             timestamp: 1640995200000,
             price: 45000.5,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "abc123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         storage.update_trade(&trade_data);
@@ -197,7 +198,7 @@ mod atomic_data_structures {
                     bids: vec![(45000.0 + i as f64, 1.5)],
                     asks: vec![(45001.0 + i as f64, 1.2)],
                     sequence: 12345 + i as u64,
-                    exchange: "binance".to_string(),
+                    exchange: Exchange::BinanceSpot,
                 };
                 orderbook_clone.update_from_data(&data);
             });
@@ -226,7 +227,7 @@ mod atomic_data_structures {
             bids: vec![],
             asks: vec![],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         storage.update_orderbook(&empty_data);
@@ -431,7 +432,7 @@ mod data_ingestion_handlers {
             bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
             asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = handler.ingest_orderbook_atomic("BTCUSDT", &data);
@@ -454,9 +455,9 @@ mod data_ingestion_handlers {
             timestamp: 1640995200000,
             price: 45000.5,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "abc123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = handler.ingest_trade_atomic("BTCUSDT", &data);
@@ -482,7 +483,7 @@ mod data_ingestion_handlers {
             bids: vec![(45000.0, 1.5)],
             asks: vec![(45001.0, 1.2)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = handler.ingest_orderbook_atomic("", &data);
@@ -494,26 +495,26 @@ mod data_ingestion_handlers {
             timestamp: 1640995200000,
             price: -100.0, // Invalid negative price
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "abc123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = handler.ingest_trade_atomic("BTCUSDT", &invalid_trade);
         assert!(result.is_err());
 
-        // Test invalid trade side
-        let invalid_side_trade = TradeData {
+        // Test invalid trade price
+        let invalid_price_trade = TradeData {
             symbol: "BTCUSDT".to_string(),
             timestamp: 1640995200000,
-            price: 45000.0,
+            price: -45000.0, // Invalid negative price
             quantity: 0.1,
-            side: "invalid".to_string(),
+            side: TradeSide::Buy,
             trade_id: "abc123".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
-        let result = handler.ingest_trade_atomic("BTCUSDT", &invalid_side_trade);
+        let result = handler.ingest_trade_atomic("BTCUSDT", &invalid_price_trade);
         assert!(result.is_err());
     }
 
@@ -528,7 +529,7 @@ mod data_ingestion_handlers {
             bids: vec![(44999.0, 1.5), (45000.0, 2.0)], // Wrong order - should be descending
             asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         // This should fail validation during ingestion
@@ -542,7 +543,7 @@ mod data_ingestion_handlers {
             bids: vec![(45002.0, 1.5)], // Higher than ask
             asks: vec![(45001.0, 1.2)], // Lower than bid
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let result = handler.ingest_orderbook_atomic("BTCUSDT", &invalid_spread_orderbook);
@@ -560,7 +561,7 @@ mod data_ingestion_handlers {
             bids: vec![(45000.0, 1.5)],
             asks: vec![(45001.0, 1.2)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         let coinbase_data = OrderBookData {
@@ -569,7 +570,7 @@ mod data_ingestion_handlers {
             bids: vec![(44999.0, 1.0)],
             asks: vec![(45002.0, 0.8)],
             sequence: 54321,
-            exchange: "coinbase".to_string(),
+            exchange: Exchange::Coinbase,
         };
 
         handler
@@ -891,7 +892,7 @@ mod edge_cases_and_validation {
             bids: vec![(45000.0, 1.5)],
             asks: vec![], // Empty asks
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         storage.update_orderbook(&bids_only_data);
@@ -906,7 +907,7 @@ mod edge_cases_and_validation {
             bids: vec![], // Empty bids
             asks: vec![(3000.0, 2.0)],
             sequence: 54321,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         storage.update_orderbook(&asks_only_data);
@@ -962,9 +963,9 @@ mod edge_cases_and_validation {
             timestamp: 1640995200000,
             price: 45000.0,
             quantity: 0.1,
-            side: "buy".to_string(),
+            side: TradeSide::Buy,
             trade_id: "same_id".to_string(),
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         trade1.update_from_data(&data);

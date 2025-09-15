@@ -1,9 +1,10 @@
 use crate::database::influx_client::InfluxConfig;
 use crate::database::InfluxClient;
+use crate::exchanges::Exchange;
 use crate::snapshot_service::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotService};
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::{
-    HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSnapshot,
+    HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSide, TradeSnapshot,
 };
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -47,7 +48,7 @@ async fn test_snapshot_batch() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: 123456,
     };
 
@@ -83,7 +84,7 @@ async fn test_capture_snapshots_with_data() {
         bids: vec![(45000.0, 1.5)],
         asks: vec![(45001.0, 1.2)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let trade_data = TradeData {
@@ -91,9 +92,9 @@ async fn test_capture_snapshots_with_data() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "trade123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     storage.update_orderbook(&orderbook_data);

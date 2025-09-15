@@ -13,7 +13,8 @@ use market_data_subscription_server::{
     },
     server::MarketDataServer,
     subscription_manager::SubscriptionManager,
-    types::{HighFrequencyStorage, OrderBookData, TradeData},
+    citadel::storage::{HighFrequencyStorage, OrderBookData, TradeData, TradeSide},
+    exchanges::types::Exchange,
 };
 use rand::Rng;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -171,7 +172,7 @@ fn create_test_orderbook_data(symbol: &str, sequence: u64) -> OrderBookData {
             (base_price + 2.0, rng.gen_range(0.1..5.0)),
         ],
         sequence,
-        exchange: "test_exchange".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -184,9 +185,9 @@ fn create_test_trade_data(symbol: &str, trade_id: &str) -> TradeData {
         timestamp: chrono::Utc::now().timestamp_millis(),
         price,
         quantity: rng.gen_range(0.01..1.0),
-        side: if rng.gen_bool(0.5) { "buy" } else { "sell" }.to_string(),
+        side: if rng.gen_bool(0.5) { TradeSide::Buy } else { TradeSide::Sell },
         trade_id: trade_id.to_string(),
-        exchange: "test_exchange".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 

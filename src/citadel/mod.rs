@@ -1,11 +1,26 @@
-// Citadel - Data Validation and Processing Engine
-// "The fortress that guards the integrity of our data"
+// Citadel - Unified Data Management System
+// "The fortress that guards the integrity of our data, stores it atomically, and streams it to the realm"
+
+// Sub-modules
+pub mod storage;   // Atomic data storage (formerly types)
+pub mod streaming; // Data streaming to clients (formerly snapshot_service)
+
+// Re-export core types and functionality
+pub use storage::{
+    atomic::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage},
+    snapshots::{OrderBookSnapshot, TradeSnapshot},
+    {OrderBookData, TradeData, TradeSide, CandleData, TickerData},
+};
+
+pub use streaming::{
+    SnapshotService, SnapshotConfig, SnapshotMetrics, SnapshotBatch,
+};
 
 use crate::database::influx_client::InfluxClient;
 use crate::dead_letter_queue::DeadLetterQueue;
 use crate::error::{RavenError, RavenResult};
+use crate::exchanges::types::Exchange;
 use crate::subscription_manager::SubscriptionManager;
-use crate::types::{OrderBookData, TradeData};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -60,7 +75,7 @@ pub struct ValidationRules {
     pub max_spread_percentage: f64,
     pub max_price_deviation: f64,
     pub required_fields: Vec<String>,
-    pub allowed_exchanges: Vec<String>,
+    pub allowed_exchanges: Vec<Exchange>,
     pub allowed_symbols: Vec<String>,
 }
 
@@ -79,10 +94,10 @@ impl Default for ValidationRules {
                 "exchange".to_string(),
             ],
             allowed_exchanges: vec![
-                "binance".to_string(),
-                "coinbase".to_string(),
-                "kraken".to_string(),
-                "bitfinex".to_string(),
+                Exchange::BinanceSpot,
+                Exchange::BinanceFutures,
+                Exchange::Coinbase,
+                Exchange::Kraken,
             ],
             allowed_symbols: vec![
                 "BTCUSDT".to_string(),
@@ -396,13 +411,7 @@ impl Citadel {
             )));
         }
 
-        // Validate side
-        if data.side != "buy" && data.side != "sell" {
-            return Err(RavenError::data_validation(format!(
-                "Invalid trade side: {}",
-                data.side
-            )));
-        }
+        // TradeSide enum already validates the side, no need for additional validation
 
         debug!("✅ Trade data validation passed for {}", symbol);
         Ok(data.clone())
@@ -415,9 +424,8 @@ impl Citadel {
     ) -> RavenResult<OrderBookData> {
         let mut sanitized = data.clone();
 
-        // Normalize symbol and exchange
+        // Normalize symbol (exchange is already an enum, no need to normalize)
         sanitized.symbol = sanitized.symbol.trim().to_uppercase();
-        sanitized.exchange = sanitized.exchange.trim().to_lowercase();
 
         // Round prices and quantities to reasonable precision
         sanitized.bids = sanitized

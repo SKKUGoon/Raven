@@ -4,9 +4,10 @@
 use market_data_subscription_server::database::influx_client::{
     create_orderbook_datapoint, create_trade_datapoint, InfluxClient, InfluxConfig,
 };
-use market_data_subscription_server::types::{
-    CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot,
+use market_data_subscription_server::citadel::storage::{
+    CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot, TradeSide,
 };
+use market_data_subscription_server::exchanges::types::Exchange;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Helper function to create test config
@@ -128,7 +129,7 @@ async fn test_write_trade_snapshot() {
             .as_millis() as i64,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: 123456,
     };
 
@@ -164,7 +165,7 @@ async fn test_write_candle_data() {
         close: 45050.0,
         volume: 150.5,
         interval: "1m".to_string(),
-        exchange: "test_exchange".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let result = client.write_candle(&candle).await;
@@ -195,7 +196,7 @@ async fn test_write_funding_rate() {
             .unwrap()
             .as_millis() as i64
             + 28800000, // 8 hours later
-        exchange: "test_exchange".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let result = client.write_funding_rate(&funding).await;
@@ -280,7 +281,7 @@ async fn test_batch_write() {
                 + i as i64,
             price: 45000.5 + i as f64,
             quantity: 0.1,
-            side: if i % 2 == 0 { "buy" } else { "sell" }.to_string(),
+            side: if i % 2 == 0 { TradeSide::Buy } else { TradeSide::Sell },
             trade_id: 123456 + i as u64,
         };
         datapoints.push(create_trade_datapoint(&trade).unwrap());

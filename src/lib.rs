@@ -9,12 +9,19 @@ pub mod data_handlers;
 pub mod database;
 pub mod dead_letter_queue;
 pub mod error;
+pub mod exchanges;
 pub mod logging;
 pub mod monitoring;
 pub mod server;
-pub mod snapshot_service;
 pub mod subscription_manager;
-pub mod types;
+
+// Legacy re-exports for backward compatibility
+pub mod types {
+    pub use crate::citadel::storage::*;
+}
+pub mod snapshot_service {
+    pub use crate::citadel::streaming::*;
+}
 
 // Generated protobuf modules
 pub mod proto {

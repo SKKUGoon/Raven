@@ -157,7 +157,7 @@ impl MarketDataServiceImpl {
                         &snapshot.symbol,
                         snapshot.price,
                         snapshot.quantity,
-                        &snapshot.side,
+                        snapshot.side.as_str(),
                         snapshot.trade_id,
                         snapshot.timestamp,
                     );

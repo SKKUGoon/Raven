@@ -13,7 +13,8 @@ use market_data_subscription_server::{
     },
     server::MarketDataServer,
     subscription_manager::SubscriptionManager,
-    types::{HighFrequencyStorage, OrderBookData, TradeData},
+    citadel::storage::{HighFrequencyStorage, OrderBookData, TradeData, TradeSide},
+    exchanges::types::Exchange,
 };
 use rand::Rng;
 use std::{
@@ -301,7 +302,7 @@ impl WebSocketFeedSimulator {
                 })
                 .collect(),
             sequence: rng.gen_range(1000000..9999999),
-            exchange: "simulated_exchange".to_string(),
+            exchange: Exchange::BinanceSpot,
         }
     }
 
@@ -327,9 +328,9 @@ impl WebSocketFeedSimulator {
             timestamp: chrono::Utc::now().timestamp_millis(),
             price,
             quantity: rng.gen_range(0.01..5.0),
-            side: if rng.gen_bool(0.5) { "buy" } else { "sell" }.to_string(),
+            side: if rng.gen_bool(0.5) { TradeSide::Buy } else { TradeSide::Sell },
             trade_id: format!("trade_{}", rng.gen_range(1000000..9999999)),
-            exchange: "simulated_exchange".to_string(),
+            exchange: Exchange::BinanceSpot,
         }
     }
 }
@@ -683,7 +684,7 @@ mod final_system_tests {
             bids: vec![],
             asks: vec![],
             sequence: 0,
-            exchange: "test".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
 
         // System should handle invalid data gracefully
@@ -794,7 +795,7 @@ mod final_system_tests {
             bids: vec![(45000.0, 1.5)],
             asks: vec![(45001.0, 1.2)],
             sequence: 12345,
-            exchange: "binance".to_string(),
+            exchange: Exchange::BinanceSpot,
         };
         let process_result = fixture
             .citadel
@@ -928,7 +929,7 @@ mod final_system_tests {
                 bids: vec![(45000.0 + i as f64, 1.0)],
                 asks: vec![(45001.0 + i as f64, 1.0)],
                 sequence: 1000 + i,
-                exchange: "latency_test".to_string(),
+                exchange: Exchange::BinanceSpot,
             };
 
             fixture.hf_storage.update_orderbook(&test_data);

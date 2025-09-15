@@ -1,6 +1,6 @@
 // Snapshot structures for periodic captures and conversion functions
 
-use super::{OrderBookData, TradeData};
+use super::{OrderBookData, TradeData, TradeSide};
 use serde::{Deserialize, Serialize};
 
 // Snapshot structures for periodic captures
@@ -21,7 +21,7 @@ pub struct TradeSnapshot {
     pub timestamp: i64,
     pub price: f64,
     pub quantity: f64,
-    pub side: String,
+    pub side: TradeSide,
     pub trade_id: u64,
 }
 

@@ -1,5 +1,6 @@
 use super::*;
-use crate::types::{CandleData, FundingRateData};
+use crate::citadel::storage::{CandleData, FundingRateData};
+use crate::exchanges::types::Exchange;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -13,7 +14,7 @@ fn create_test_candle_data(symbol: &str, interval: &str, timestamp: i64) -> Cand
         close: 45050.0,
         volume: 150.5,
         interval: interval.to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -23,7 +24,7 @@ fn create_test_funding_rate_data(symbol: &str, timestamp: i64) -> FundingRateDat
         timestamp,
         rate: 0.0001,                            // 0.01%
         next_funding_time: timestamp + 28800000, // 8 hours later
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 

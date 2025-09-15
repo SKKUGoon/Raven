@@ -3,6 +3,8 @@
 
 use super::*;
 use crate::database::influx_client::InfluxConfig;
+use crate::exchanges::types::Exchange;
+use crate::citadel::storage::TradeSide;
 use std::sync::atomic::Ordering;
 
 fn create_test_citadel() -> Citadel {
@@ -24,7 +26,7 @@ fn create_test_orderbook_data() -> OrderBookData {
         bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
         asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -37,9 +39,9 @@ fn create_test_trade_data() -> TradeData {
             .as_millis() as i64,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "test_trade_123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -87,8 +89,8 @@ async fn test_invalid_trade_validation() {
     let citadel = create_test_citadel();
     let mut data = create_test_trade_data();
 
-    // Test invalid side
-    data.side = "invalid".to_string();
+    // Test invalid price instead of invalid side
+    data.price = -1.0;
     let result = citadel.validate_trade_data("BTCUSDT", &data).await;
     assert!(result.is_err());
 }
@@ -100,11 +102,11 @@ async fn test_data_sanitization() {
 
     // Add whitespace and lowercase
     data.symbol = " btcusdt ".to_string();
-    data.exchange = " BINANCE ".to_string();
+    data.exchange = Exchange::BinanceSpot;
 
     let sanitized = citadel.sanitize_orderbook_data(&data).await.unwrap();
     assert_eq!(sanitized.symbol, "BTCUSDT");
-    assert_eq!(sanitized.exchange, "binance");
+    assert_eq!(sanitized.exchange, Exchange::BinanceSpot);
 }
 
 #[tokio::test]

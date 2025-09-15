@@ -1,7 +1,8 @@
+use crate::exchanges::Exchange;
 use crate::types::{
     atomic_to_price, atomic_to_quantity, price_to_atomic, quantity_to_atomic, AtomicOrderBook,
-    AtomicTrade, HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSnapshot,
-    PRICE_SCALE, QUANTITY_SCALE,
+    AtomicTrade, HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSide,
+    TradeSnapshot, PRICE_SCALE, QUANTITY_SCALE,
 };
 
 use std::sync::atomic::Ordering;
@@ -25,7 +26,7 @@ fn test_atomic_orderbook_update() {
         bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
         asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     orderbook.update_from_data(&data);
@@ -51,7 +52,7 @@ fn test_atomic_orderbook_snapshot() {
         bids: vec![(45000.0, 1.5)],
         asks: vec![(45001.0, 1.2)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     orderbook.update_from_data(&data);
@@ -73,7 +74,7 @@ fn test_atomic_orderbook_spread() {
         bids: vec![(45000.0, 1.5)],
         asks: vec![(45001.0, 1.2)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     orderbook.update_from_data(&data);
@@ -97,9 +98,9 @@ fn test_atomic_trade_update() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "abc123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     trade.update_from_data(&data);
@@ -126,9 +127,9 @@ fn test_atomic_trade_side_conversion() {
         timestamp: 1640995200000,
         price: 45000.0,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "buy123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
     trade.update_from_data(&buy_data);
     assert_eq!(trade.side.load(Ordering::Relaxed), 0);
@@ -139,9 +140,9 @@ fn test_atomic_trade_side_conversion() {
         timestamp: 1640995200000,
         price: 45000.0,
         quantity: 0.1,
-        side: "sell".to_string(),
+        side: TradeSide::Sell,
         trade_id: "sell123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
     trade.update_from_data(&sell_data);
     assert_eq!(trade.side.load(Ordering::Relaxed), 1);
@@ -155,9 +156,9 @@ fn test_atomic_trade_snapshot() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "sell".to_string(),
+        side: TradeSide::Sell,
         trade_id: "abc123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     trade.update_from_data(&data);
@@ -178,9 +179,9 @@ fn test_atomic_trade_value() {
         timestamp: 1640995200000,
         price: 45000.0,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "abc123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     trade.update_from_data(&data);
@@ -199,7 +200,7 @@ fn test_high_frequency_storage() {
         bids: vec![(45000.0, 1.5)],
         asks: vec![(45001.0, 1.2)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     storage.update_orderbook(&orderbook_data);
@@ -213,9 +214,9 @@ fn test_high_frequency_storage() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "abc123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     storage.update_trade(&trade_data);
@@ -239,7 +240,7 @@ fn test_concurrent_atomic_operations() {
                 bids: vec![(45000.0 + i as f64, 1.5)],
                 asks: vec![(45001.0 + i as f64, 1.2)],
                 sequence: 12345 + i as u64,
-                exchange: "binance".to_string(),
+                exchange: Exchange::BinanceSpot,
             };
             orderbook_clone.update_from_data(&data);
         });
@@ -278,7 +279,7 @@ fn test_conversion_from_orderbook_data() {
         bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
         asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let snapshot = OrderBookSnapshot::from(&data);
@@ -295,9 +296,9 @@ fn test_conversion_from_trade_data() {
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "abc123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let snapshot = TradeSnapshot::from(&data);
@@ -317,7 +318,7 @@ fn test_high_frequency_storage_symbols() {
         bids: vec![(45000.0, 1.5)],
         asks: vec![(45001.0, 1.2)],
         sequence: 12345,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     let trade_data = TradeData {
@@ -325,9 +326,9 @@ fn test_high_frequency_storage_symbols() {
         timestamp: 1640995200000,
         price: 3000.0,
         quantity: 1.0,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: "eth123".to_string(),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     };
 
     storage.update_orderbook(&orderbook_data);

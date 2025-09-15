@@ -1,5 +1,6 @@
 use super::*;
-use crate::types::{HighFrequencyStorage, OrderBookData, TradeData};
+use crate::citadel::storage::{HighFrequencyStorage, OrderBookData, TradeData, TradeSide};
+use crate::exchanges::types::Exchange;
 use std::sync::Arc;
 use std::thread;
 
@@ -18,7 +19,7 @@ fn create_test_orderbook_data(symbol: &str, sequence: u64) -> OrderBookData {
             (45002.0 + sequence as f64, 1.8),
         ],
         sequence,
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -28,9 +29,9 @@ fn create_test_trade_data(symbol: &str, price: f64) -> TradeData {
         timestamp: 1640995200000,
         price,
         quantity: 0.1,
-        side: "buy".to_string(),
+        side: TradeSide::Buy,
         trade_id: format!("trade_{price}"),
-        exchange: "binance".to_string(),
+        exchange: Exchange::BinanceSpot,
     }
 }
 
@@ -113,9 +114,9 @@ fn test_invalid_trade_data() {
     let result = handler.ingest_trade_atomic("BTCUSDT", &data);
     assert!(result.is_err());
 
-    // Test invalid side
+    // Test invalid price instead of invalid side
     data = create_test_trade_data("BTCUSDT", 45000.0);
-    data.side = "invalid".to_string();
+    data.price = -1.0;
     let result = handler.ingest_trade_atomic("BTCUSDT", &data);
     assert!(result.is_err());
 
@@ -278,13 +279,13 @@ fn test_multi_exchange_support() {
 
     // Create data for different exchanges
     let mut binance_data = create_test_orderbook_data("BTCUSDT", 12345);
-    binance_data.exchange = "binance".to_string();
+    binance_data.exchange = Exchange::BinanceSpot;
 
     let mut coinbase_data = create_test_orderbook_data("BTCUSDT", 12346);
-    coinbase_data.exchange = "coinbase".to_string();
+    coinbase_data.exchange = Exchange::Coinbase;
 
     let mut kraken_data = create_test_trade_data("BTCUSDT", 45000.0);
-    kraken_data.exchange = "kraken".to_string();
+    kraken_data.exchange = Exchange::Kraken;
 
     // Ingest data from different exchanges
     handler
@@ -329,12 +330,12 @@ fn test_exchange_isolation() {
 
     // Create data for same symbol on different exchanges with different prices
     let mut binance_data = create_test_orderbook_data("BTCUSDT", 12345);
-    binance_data.exchange = "binance".to_string();
+    binance_data.exchange = Exchange::BinanceSpot;
     binance_data.bids = vec![(50000.0, 1.0)];
     binance_data.asks = vec![(50001.0, 1.0)];
 
     let mut coinbase_data = create_test_orderbook_data("BTCUSDT", 12346);
-    coinbase_data.exchange = "coinbase".to_string();
+    coinbase_data.exchange = Exchange::Coinbase;
     coinbase_data.bids = vec![(49000.0, 1.0)];
     coinbase_data.asks = vec![(49001.0, 1.0)];
 

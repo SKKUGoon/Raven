@@ -117,11 +117,10 @@ impl AtomicTrade {
         self.quantity
             .store((data.quantity * QUANTITY_SCALE) as u64, Ordering::Relaxed);
 
-        // Convert side string to numeric value
-        let side_value = match data.side.as_str() {
-            "buy" => 0,
-            "sell" => 1,
-            _ => 0, // Default to buy if unknown
+        // Convert TradeSide enum to numeric value
+        let side_value = match data.side {
+            super::TradeSide::Buy => 0,
+            super::TradeSide::Sell => 1,
         };
         self.side.store(side_value, Ordering::Relaxed);
 
@@ -132,18 +131,16 @@ impl AtomicTrade {
 
     /// Convert to snapshot for periodic captures
     pub fn to_snapshot(&self) -> TradeSnapshot {
-        let side_str = match self.side.load(Ordering::Relaxed) {
-            0 => "buy".to_string(),
-            1 => "sell".to_string(),
-            _ => "unknown".to_string(),
-        };
-
         TradeSnapshot {
             symbol: self.symbol.clone(),
             timestamp: self.timestamp.load(Ordering::Relaxed),
             price: self.price.load(Ordering::Relaxed) as f64 / PRICE_SCALE,
             quantity: self.quantity.load(Ordering::Relaxed) as f64 / QUANTITY_SCALE,
-            side: side_str,
+            side: match self.side.load(Ordering::Relaxed) {
+                0 => super::TradeSide::Buy,
+                1 => super::TradeSide::Sell,
+                _ => super::TradeSide::Buy,
+            },
             trade_id: self.trade_id.load(Ordering::Relaxed),
         }
     }

@@ -116,9 +116,7 @@ impl HighFrequencyHandler {
             return Err(anyhow::anyhow!("Trade quantity must be positive"));
         }
 
-        if !matches!(data.side.as_str(), "buy" | "sell") {
-            return Err(anyhow::anyhow!("Trade side must be 'buy' or 'sell'"));
-        }
+        // TradeSide enum already validates the side, no need for string matching
 
         if data.trade_id.is_empty() {
             return Err(anyhow::anyhow!("Trade ID cannot be empty"));
