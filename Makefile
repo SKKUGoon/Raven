@@ -435,7 +435,7 @@ dev-health:
 	else \
 		echo "$(RED)❌ InfluxDB is not responding$(NC)"; \
 	fi
-	@if command -v redis-cli >/dev/null 2>&1 && redis-cli -p 6379 ping >/dev/null 2>&1; then \
+	@if nc -z localhost 6379 >/dev/null 2>&1; then \
 		echo "$(GREEN)✅ Redis is healthy$(NC)"; \
 	else \
 		echo "$(RED)❌ Redis is not responding$(NC)"; \
@@ -460,10 +460,10 @@ dev-test-connection:
 	fi
 	@echo ""
 	@echo "$(YELLOW)Testing Redis connection:$(NC)"
-	@if command -v redis-cli >/dev/null 2>&1 && redis-cli -p 6379 ping >/dev/null 2>&1; then \
+	@if nc -z localhost 6379 >/dev/null 2>&1; then \
 		echo "$(GREEN)✅ Redis is reachable$(NC)"; \
 	else \
-		echo "$(RED)❌ Redis is not reachable or redis-cli not installed$(NC)"; \
+		echo "$(RED)❌ Redis is not reachable$(NC)"; \
 	fi
 	@echo ""
 	@echo "$(YELLOW)Listing external services:$(NC)"
