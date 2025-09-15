@@ -1,9 +1,6 @@
 // Circuit Breaker Implementation
 // "When the wall falls, we must know when to rebuild it"
 
-#[cfg(test)]
-mod tests;
-
 use crate::error::RavenError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

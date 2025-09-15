@@ -3,7 +3,7 @@ use market_data_subscription_server::{
     client_manager::{ClientManager, ClientManagerConfig},
     config::{Config, ConfigManager, ConfigUtils},
     database::{EnhancedInfluxClient, InfluxClient, InfluxWriteRetryHandler},
-    dead_letter_queue::{DeadLetterQueue, DeadLetterQueueConfig},
+    database::{DeadLetterQueue, DeadLetterQueueConfig},
     error::{RavenError, RavenResult},
     logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
     monitoring::{HealthService, MetricsService, MonitoringService, TracingService},

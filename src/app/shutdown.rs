@@ -1,7 +1,7 @@
 use market_data_subscription_server::{
     circuit_breaker::CircuitBreakerRegistry,
     client_manager::ClientManager,
-    dead_letter_queue::DeadLetterQueue,
+    database::DeadLetterQueue,
     error::{RavenError, RavenResult},
     logging::log_error_with_context,
     monitoring::TracingService,

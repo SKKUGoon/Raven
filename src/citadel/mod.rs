@@ -2,22 +2,20 @@
 // "The fortress that guards the integrity of our data, stores it atomically, and streams it to the realm"
 
 // Sub-modules
-pub mod storage;   // Atomic data storage (formerly types)
+pub mod storage; // Atomic data storage (formerly types)
 pub mod streaming; // Data streaming to clients (formerly snapshot_service)
 
 // Re-export core types and functionality
 pub use storage::{
     atomic::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage},
     snapshots::{OrderBookSnapshot, TradeSnapshot},
-    {OrderBookData, TradeData, TradeSide, CandleData, TickerData},
+    {CandleData, OrderBookData, TickerData, TradeData, TradeSide},
 };
 
-pub use streaming::{
-    SnapshotService, SnapshotConfig, SnapshotMetrics, SnapshotBatch,
-};
+pub use streaming::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotService};
 
-use crate::database::influx_client::InfluxClient;
-use crate::dead_letter_queue::DeadLetterQueue;
+
+use crate::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::error::{RavenError, RavenResult};
 use crate::exchanges::types::Exchange;
 use crate::subscription_manager::SubscriptionManager;

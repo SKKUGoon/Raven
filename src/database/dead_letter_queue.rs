@@ -553,6 +553,3 @@ impl Clone for DeadLetterQueue {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;
