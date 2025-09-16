@@ -46,6 +46,7 @@ services:
       - RAVEN_SERVER__HOST=0.0.0.0
       - RAVEN_SERVER__PORT=50051
       - RAVEN_REDIS__URL=redis://host.docker.internal:6379
+      - RAVEN_RETENTION_POLICIES__PRIVATE_DATA__AUTO_CLEANUP=true
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

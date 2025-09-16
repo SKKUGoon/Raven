@@ -19,6 +19,7 @@ services:
       - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
       - RAVEN_SERVER__HOST=0.0.0.0
       - RAVEN_SERVER__PORT=50051
+      - RAVEN_RETENTION_POLICIES__PRIVATE_DATA__AUTO_CLEANUP=false
     volumes:
       - ./config:/app/config:ro
       - raven_logs:/app/logs
