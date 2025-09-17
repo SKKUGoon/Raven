@@ -14,7 +14,7 @@ RED := \033[31m
 NC := \033[0m # No Color
 
 # Configuration
-COMPOSE_FILE := docker/docker-compose.yml
+COMPOSE_FILE := docker/docker compose.yml
 DOCKERFILE := docker/Dockerfile
 BACKUP_DIR := docker/backups
 PROJECT_NAME := raven
@@ -136,7 +136,7 @@ docker-build:
 deploy:
 	@echo "$(BLUE)🚀 Deploying Project Raven full stack...$(NC)"
 	@mkdir -p $(BACKUP_DIR)
-	docker-compose -f $(COMPOSE_FILE) up -d --build
+	docker compose -f $(COMPOSE_FILE) up -d --build
 	@echo "$(YELLOW)⏳ Waiting for services to start...$(NC)"
 	@sleep 30
 	@$(MAKE) health
@@ -146,13 +146,13 @@ deploy:
 # Start services
 start:
 	@echo "$(BLUE)▶️  Starting services...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) up -d
+	docker compose -f $(COMPOSE_FILE) up -d
 	@echo "$(GREEN)✅ Services started$(NC)"
 
 # Stop services
 stop:
 	@echo "$(BLUE)⏹️  Stopping services...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) down
+	docker compose -f $(COMPOSE_FILE) down
 	@echo "$(GREEN)✅ Services stopped$(NC)"
 
 # Restart services
@@ -162,7 +162,7 @@ restart: stop start
 # Show service status
 status:
 	@echo "$(BLUE)📊 Service Status:$(NC)"
-	@docker-compose -f $(COMPOSE_FILE) ps
+	@docker compose -f $(COMPOSE_FILE) ps
 
 # Check service health
 health:
@@ -208,32 +208,32 @@ health:
 # Show logs for all services
 logs:
 	@echo "$(BLUE)📋 Showing logs for all services...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f
+	docker compose -f $(COMPOSE_FILE) logs -f
 
 # Show logs for market data server
 logs-server:
 	@echo "$(BLUE)📋 Showing logs for Market Data Server...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f market-data-server
+	docker compose -f $(COMPOSE_FILE) logs -f market-data-server
 
 # Show logs for InfluxDB
 logs-influx:
 	@echo "$(BLUE)📋 Showing logs for InfluxDB...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f influxdb
+	docker compose -f $(COMPOSE_FILE) logs -f influxdb
 
 # Show logs for Dashboard
 logs-dashboard:
 	@echo "$(BLUE)📋 Showing logs for Dashboard...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f dashboard
+	docker compose -f $(COMPOSE_FILE) logs -f dashboard
 
 # Show logs for Prometheus
 logs-prometheus:
 	@echo "$(BLUE)📋 Showing logs for Prometheus...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f prometheus
+	docker compose -f $(COMPOSE_FILE) logs -f prometheus
 
 # Show logs for Redis
 logs-redis:
 	@echo "$(BLUE)📋 Showing logs for Redis...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) logs -f redis
+	docker compose -f $(COMPOSE_FILE) logs -f redis
 
 ## Data Management
 
@@ -282,7 +282,7 @@ restore:
 # Clean up containers and networks
 clean:
 	@echo "$(BLUE)🧹 Cleaning up containers and networks...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) down --remove-orphans
+	docker compose -f $(COMPOSE_FILE) down --remove-orphans
 	docker system prune -f
 	@echo "$(GREEN)✅ Cleanup completed$(NC)"
 
@@ -291,7 +291,7 @@ clean-all:
 	@echo "$(RED)⚠️  This will remove ALL data including volumes!$(NC)"
 	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ] || exit 1
 	@echo "$(BLUE)🧹 Cleaning up everything...$(NC)"
-	docker-compose -f $(COMPOSE_FILE) down -v --remove-orphans
+	docker compose -f $(COMPOSE_FILE) down -v --remove-orphans
 	docker system prune -af --volumes
 	@echo "$(GREEN)✅ Complete cleanup finished$(NC)"
 
@@ -354,7 +354,7 @@ DEV_COMPOSE_FILE := docker/docker-compose.dev.yml
 # Build development containers
 dev-build:
 	@echo "$(BLUE)🔨 Building development containers...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) build
+	docker compose -f $(DEV_COMPOSE_FILE) build
 	@echo "$(GREEN)✅ Development containers built$(NC)"
 
 # Start development services (dashboard + server)
@@ -368,48 +368,48 @@ dev-up:
 	@echo "   - InfluxDB at localhost:8086"
 	@echo "   - Redis at localhost:6379"
 	@echo ""
-	docker-compose -f $(DEV_COMPOSE_FILE) up -d
+	docker compose -f $(DEV_COMPOSE_FILE) up -d
 	@echo "$(GREEN)✅ Development services started$(NC)"
 
 # Start only dashboard in development mode
 dev-dashboard:
 	@echo "$(BLUE)🚀 Starting Raven dashboard in development mode...$(NC)"
 	@echo "📊 Dashboard will be available at http://localhost:8050"
-	docker-compose -f $(DEV_COMPOSE_FILE) up -d dashboard-dev
+	docker compose -f $(DEV_COMPOSE_FILE) up -d dashboard-dev
 	@echo "$(GREEN)✅ Development dashboard started$(NC)"
 
 # Start only server in development mode
 dev-server:
 	@echo "$(BLUE)🚀 Starting Raven server in development mode...$(NC)"
 	@echo "🔌 Server will be available at localhost:50051"
-	docker-compose -f $(DEV_COMPOSE_FILE) up -d market-data-server-dev
+	docker compose -f $(DEV_COMPOSE_FILE) up -d market-data-server-dev
 	@echo "$(GREEN)✅ Development server started$(NC)"
 
 # Stop development services
 dev-down:
 	@echo "$(BLUE)⏹️  Stopping development services...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) down
+	docker compose -f $(DEV_COMPOSE_FILE) down
 	@echo "$(GREEN)✅ Development services stopped$(NC)"
 
 # View development logs
 dev-logs:
 	@echo "$(BLUE)📋 Showing development logs...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) logs -f
+	docker compose -f $(DEV_COMPOSE_FILE) logs -f
 
 # View dashboard logs only
 dev-logs-dashboard:
 	@echo "$(BLUE)📋 Showing dashboard logs...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) logs -f dashboard-dev
+	docker compose -f $(DEV_COMPOSE_FILE) logs -f dashboard-dev
 
 # View server logs only
 dev-logs-server:
 	@echo "$(BLUE)📋 Showing server logs...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) logs -f market-data-server-dev
+	docker compose -f $(DEV_COMPOSE_FILE) logs -f market-data-server-dev
 
 # Show development service status
 dev-status:
 	@echo "$(BLUE)📊 Development Service Status:$(NC)"
-	@docker-compose -f $(DEV_COMPOSE_FILE) ps
+	@docker compose -f $(DEV_COMPOSE_FILE) ps
 
 # Check development service health
 dev-health:
@@ -444,7 +444,7 @@ dev-health:
 # Clean development environment
 dev-clean:
 	@echo "$(BLUE)🧹 Cleaning development environment...$(NC)"
-	docker-compose -f $(DEV_COMPOSE_FILE) down -v
+	docker compose -f $(DEV_COMPOSE_FILE) down -v
 	docker system prune -f
 	@echo "$(GREEN)✅ Development environment cleaned$(NC)"
 

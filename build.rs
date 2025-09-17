@@ -6,11 +6,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     // Compile protobuf files together so imports work correctly
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
         .out_dir(&out_dir)
-        .compile(
+        .compile_protos(
             &["proto/market_data.proto", "proto/subscription.proto"],
             &["proto"],
         )?;

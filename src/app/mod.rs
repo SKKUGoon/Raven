@@ -1,15 +1,17 @@
 // Project Raven - Market Data Subscription Server
-// The Night's Watch begins here - "Crown the king"
+// The Crow's Watch begins here - "Crown the king"
 
 pub mod cli;
 pub mod shutdown;
 pub mod startup;
 
-use market_data_subscription_server::error::RavenResult;
+use crate::error::RavenResult;
+use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futures_orderbook;
+use crate::exchanges::binance::app::futures::trade::initialize_binance_futures_trade;
 use tracing::info;
 
 use self::cli::{parse_cli_args, print_version_info};
-use self::shutdown::{perform_graceful_shutdown, wait_for_shutdown_signal};
+use self::shutdown::{perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors};
 use self::startup::{
     initialize_circuit_breakers, initialize_client_manager, initialize_config_manager,
     initialize_dead_letter_queue, initialize_influx_client, initialize_logging,
@@ -28,7 +30,7 @@ pub async fn run() -> RavenResult<()> {
     initialize_logging(&args)?;
 
     info!("🐦‍⬛ Project Raven is awakening...");
-    info!("The Night's Watch begins - Winter is coming, but we are prepared");
+    info!("The Crow's Watch begins - Winter is coming, but we are prepared");
 
     // Load and validate configuration with CLI overrides
     let config = load_and_validate_config(&args)?;
@@ -59,6 +61,13 @@ pub async fn run() -> RavenResult<()> {
     let (_monitoring_service, monitoring_handles) =
         initialize_monitoring_services(&config, influx_client).await?;
 
+    // 6. Initialize Binance Data Collector
+    let sym = "btcusdt".to_string();
+    let (binance_future_clob_collector, _binance_clob_receiver) =
+        initialize_binance_futures_orderbook(sym.clone()).await?;
+    let (binance_future_trade_collector, _binance_trade_receiver) =
+        initialize_binance_futures_trade(sym).await?;
+
     // TODO: Initialize remaining components with error handling
     // - gRPC server with circuit breaker protection
     // - Data handlers with dead letter queue integration
@@ -87,18 +96,28 @@ pub async fn run() -> RavenResult<()> {
     // Wait for shutdown signals
     wait_for_shutdown_signal().await?;
 
+    // Create data collectors container
+    let data_collectors = DataCollectors::new()
+        .add_collector(
+            "binance-futures-orderbook".to_string(),
+            binance_future_clob_collector,
+        )
+        .add_collector(
+            "binance-futures-trade".to_string(),
+            binance_future_trade_collector,
+        );
+
     // Perform graceful shutdown
     perform_graceful_shutdown(
         client_manager,
         dead_letter_queue,
         // We need to get the tracing service from monitoring service, but for now we'll create a placeholder
-        std::sync::Arc::new(
-            market_data_subscription_server::monitoring::TracingService::new(
-                config.monitoring.clone(),
-            ),
-        ),
+        std::sync::Arc::new(crate::monitoring::TracingService::new(
+            config.monitoring.clone(),
+        )),
         circuit_breaker_registry,
         monitoring_handles,
+        data_collectors,
     )
     .await?;
 

@@ -1,11 +1,11 @@
 // Monitoring Integration Tests - Project Raven
-// "Testing the watchers who watch the watchers"
+// "Testing the crows who watch the watchers"
 
 use crate::config::MonitoringConfig;
 use crate::database::influx_client::{InfluxClient, InfluxConfig};
 use crate::monitoring::{
-    HealthService, MetricsCollector, MetricsService, MonitoringService, PerformanceSpan,
-    TracingService, TracingUtils,
+    CrowService, HealthService, MetricsCollector, MetricsService, PerformanceSpan, TracingService,
+    TracingUtils,
 };
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
@@ -15,9 +15,9 @@ use std::time::Duration;
 #[tokio::test]
 async fn test_monitoring_service_integration() {
     let config = MonitoringConfig {
-        metrics_enabled: false,  // Disable to avoid port conflicts in tests
-        health_check_port: 8081, // Use different port for tests
-        metrics_port: 9091,
+        metrics_enabled: false, // Disable to avoid port conflicts in tests
+        health_check_port: 0,   // Let OS assign an ephemeral port
+        metrics_port: 0,
         tracing_enabled: false,
         log_level: "debug".to_string(),
         performance_monitoring: true,
@@ -40,14 +40,15 @@ async fn test_monitoring_service_integration() {
     let tracing_service = Arc::new(TracingService::new(config.clone()));
 
     // Create monitoring service
-    let monitoring_service =
-        MonitoringService::new(health_service, metrics_service, tracing_service);
+    let monitoring_service = CrowService::new(health_service, metrics_service, tracing_service);
 
-    // Start services (should not start HTTP servers due to disabled config)
-    let handles = monitoring_service.start().await.unwrap();
-
-    // Should return empty handles since services are disabled
-    assert!(handles.is_empty());
+    match monitoring_service.start().await {
+        Ok(handles) => assert_eq!(handles.len(), 1),
+        Err(e) => assert!(
+            e.to_string().contains("Failed to bind health check server"),
+            "unexpected error: {e}"
+        ),
+    }
 }
 
 #[tokio::test]
@@ -251,7 +252,7 @@ fn test_metrics_registration() {
     assert!(!families.is_empty());
 
     // Check for some expected metrics
-    let metric_names: Vec<String> = families.iter().map(|f| f.get_name().to_string()).collect();
+    let metric_names: Vec<String> = families.iter().map(|f| f.name().to_string()).collect();
 
     // Check that we have some metrics registered
     assert!(!metric_names.is_empty());

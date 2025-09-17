@@ -1,5 +1,5 @@
 // Monitoring Module - Project Raven
-// "The watchers must be watched - comprehensive monitoring and observability"
+// "The crows keep watch - comprehensive monitoring and observability"
 
 pub mod health;
 pub mod metrics;
@@ -16,15 +16,15 @@ use anyhow::Result;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 
-/// Monitoring service that coordinates all observability components
-pub struct MonitoringService {
+/// Crow service that coordinates all observability components
+pub struct CrowService {
     health_service: Arc<HealthService>,
     metrics_service: Arc<MetricsService>,
     tracing_service: Arc<TracingService>,
 }
 
-impl MonitoringService {
-    /// Create a new monitoring service
+impl CrowService {
+    /// Create a new crow service
     pub fn new(
         health_service: Arc<HealthService>,
         metrics_service: Arc<MetricsService>,
@@ -37,7 +37,7 @@ impl MonitoringService {
         }
     }
 
-    /// Start all monitoring services
+    /// Start all crow services
     pub async fn start(&self) -> Result<Vec<JoinHandle<()>>> {
         let mut handles = Vec::new();
 

@@ -1,13 +1,17 @@
-use market_data_subscription_server::{
+use crate::{
     circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
     client_manager::{ClientManager, ClientManagerConfig},
     config::{Config, ConfigManager, ConfigUtils},
-    database::{EnhancedInfluxClient, InfluxClient, InfluxWriteRetryHandler},
-    database::{DeadLetterQueue, DeadLetterQueueConfig},
+    database::{
+        DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
+        InfluxWriteRetryHandler,
+    },
     error::{RavenError, RavenResult},
     logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
-    monitoring::{HealthService, MetricsService, MonitoringService, TracingService},
+    monitoring::{CrowService, HealthService, MetricsService, TracingService},
     raven_bail,
+    subscription_manager::SubscriptionManager,
+    types::HighFrequencyStorage,
 };
 use std::sync::Arc;
 use std::time::Duration;
@@ -240,7 +244,7 @@ pub async fn initialize_influx_client(
     config: &Config,
     dead_letter_queue: Arc<DeadLetterQueue>,
 ) -> RavenResult<(Arc<InfluxClient>, Arc<EnhancedInfluxClient>)> {
-    let influx_config = market_data_subscription_server::database::InfluxConfig {
+    let influx_config = InfluxConfig {
         url: config.database.influx_url.clone(),
         bucket: config.database.bucket.clone(),
         org: config.database.org.clone(),
@@ -311,7 +315,7 @@ pub async fn initialize_client_manager(config: &Config) -> RavenResult<Arc<Clien
 pub async fn initialize_monitoring_services(
     config: &Config,
     influx_client: Arc<InfluxClient>,
-) -> RavenResult<(MonitoringService, Vec<tokio::task::JoinHandle<()>>)> {
+) -> RavenResult<(CrowService, Vec<tokio::task::JoinHandle<()>>)> {
     info!("📊 Initializing monitoring and observability services...");
 
     // Initialize tracing service
@@ -334,9 +338,8 @@ pub async fn initialize_monitoring_services(
 
     // Initialize health service (we'll need to add the missing components later)
     // For now, create placeholder components
-    let subscription_manager =
-        Arc::new(market_data_subscription_server::subscription_manager::SubscriptionManager::new());
-    let hf_storage = Arc::new(market_data_subscription_server::types::HighFrequencyStorage::new());
+    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     let health_service = Arc::new(HealthService::new(
         config.monitoring.clone(),
@@ -346,7 +349,7 @@ pub async fn initialize_monitoring_services(
     ));
 
     // Create monitoring service
-    let monitoring_service = MonitoringService::new(
+    let monitoring_service = CrowService::new(
         Arc::clone(&health_service),
         Arc::clone(&metrics_service),
         Arc::clone(&tracing_service),

@@ -1,12 +1,14 @@
 // Snapshot structures for periodic captures and conversion functions
 
 use super::{OrderBookData, TradeData, TradeSide};
+use crate::exchanges::types::Exchange;
 use serde::{Deserialize, Serialize};
 
 // Snapshot structures for periodic captures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderBookSnapshot {
     pub symbol: String,
+    pub exchange: Exchange,
     pub timestamp: i64,
     pub best_bid_price: f64,
     pub best_bid_quantity: f64,
@@ -18,6 +20,7 @@ pub struct OrderBookSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradeSnapshot {
     pub symbol: String,
+    pub exchange: Exchange,
     pub timestamp: i64,
     pub price: f64,
     pub quantity: f64,
@@ -42,6 +45,7 @@ impl From<&OrderBookData> for OrderBookSnapshot {
 
         Self {
             symbol: data.symbol.clone(),
+            exchange: data.exchange.clone(),
             timestamp: data.timestamp,
             best_bid_price,
             best_bid_quantity,
@@ -64,6 +68,7 @@ impl From<&TradeData> for TradeSnapshot {
 
         Self {
             symbol: data.symbol.clone(),
+            exchange: data.exchange.clone(),
             timestamp: data.timestamp,
             price: data.price,
             quantity: data.quantity,

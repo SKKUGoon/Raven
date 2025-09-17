@@ -27,7 +27,7 @@ pub struct OrderBookData {
     pub bids: Vec<(f64, f64)>, // (price, quantity)
     pub asks: Vec<(f64, f64)>, // (price, quantity)
     pub sequence: u64,
-    pub exchange: Exchange,    // Use Exchange enum for consistency
+    pub exchange: Exchange, // Use Exchange enum for consistency
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub struct TradeData {
     pub timestamp: i64, // Unix timestamp in milliseconds
     pub price: f64,
     pub quantity: f64,
-    pub side: TradeSide,   // Use enum instead of string
+    pub side: TradeSide, // Use enum instead of string
     pub trade_id: String,
     pub exchange: Exchange, // Use Exchange enum for consistency
 }
@@ -50,7 +50,7 @@ pub struct CandleData {
     pub low: f64,
     pub close: f64,
     pub volume: f64,
-    pub interval: String, // "1m", "5m", "1h", etc.
+    pub interval: String,   // "1m", "5m", "1h", etc.
     pub exchange: Exchange, // Use Exchange enum for consistency
 }
 

@@ -79,7 +79,7 @@ The dashboard will be available at http://localhost:8050
 
 ```bash
 # From project root
-docker-compose -f docker/docker-compose.yml up dashboard
+docker compose -f docker/docker compose.yml up dashboard
 ```
 
 ### Production

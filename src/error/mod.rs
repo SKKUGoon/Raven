@@ -330,7 +330,11 @@ impl RavenError {
             Self::Authentication { .. } | Self::Authorization { .. } => "security",
             Self::DeadLetterQueueFull { .. } | Self::DeadLetterProcessing { .. } => "dead_letter",
             Self::Internal { .. } | Self::ExternalService { .. } => "general",
-            Self::ParseError { .. } | Self::ConnectionError { .. } | Self::ConfigError { .. } | Self::NotImplemented { .. } | Self::InternalError { .. } => "exchange",
+            Self::ParseError { .. }
+            | Self::ConnectionError { .. }
+            | Self::ConfigError { .. }
+            | Self::NotImplemented { .. }
+            | Self::InternalError { .. } => "exchange",
         }
     }
 

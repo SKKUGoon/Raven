@@ -1,13 +1,15 @@
 // Unit Tests - Project Raven
 // "Test your steel before battle"
 
-use market_data_subscription_server::{
+use raven::{
     circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState},
+    citadel::storage::{
+        AtomicOrderBook, AtomicTrade, HighFrequencyStorage, OrderBookData, TradeData, TradeSide,
+    },
     data_handlers::HighFrequencyHandler,
     error::RavenError,
-    subscription_manager::{SubscriptionDataType, SubscriptionManager},
-    citadel::storage::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage, OrderBookData, TradeData, TradeSide},
     exchanges::types::Exchange,
+    subscription_manager::{SubscriptionDataType, SubscriptionManager},
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,7 +24,7 @@ mod atomic_data_structures {
 
     #[test]
     fn test_atomic_orderbook_creation() {
-        let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+        let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
         assert_eq!(orderbook.symbol, "BTCUSDT");
         assert_eq!(orderbook.timestamp.load(Ordering::Relaxed), 0);
         assert_eq!(orderbook.sequence.load(Ordering::Relaxed), 0);
@@ -32,7 +34,7 @@ mod atomic_data_structures {
 
     #[test]
     fn test_atomic_orderbook_update_and_snapshot() {
-        let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+        let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
         let data = OrderBookData {
             symbol: "BTCUSDT".to_string(),
             timestamp: 1640995200000,
@@ -63,7 +65,7 @@ mod atomic_data_structures {
 
     #[test]
     fn test_atomic_trade_creation_and_operations() {
-        let trade = AtomicTrade::new("BTCUSDT".to_string());
+        let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
         assert_eq!(trade.symbol, "BTCUSDT");
         assert_eq!(trade.timestamp.load(Ordering::Relaxed), 0);
         assert_eq!(trade.side.load(Ordering::Relaxed), 0);
@@ -99,7 +101,7 @@ mod atomic_data_structures {
 
     #[test]
     fn test_atomic_trade_side_conversion() {
-        let trade = AtomicTrade::new("BTCUSDT".to_string());
+        let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
 
         // Test buy side
         let buy_data = TradeData {
@@ -156,7 +158,9 @@ mod atomic_data_structures {
         };
 
         storage.update_orderbook(&orderbook_data);
-        let snapshot = storage.get_orderbook_snapshot("BTCUSDT").unwrap();
+        let snapshot = storage
+            .get_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+            .unwrap();
         assert_eq!(snapshot.symbol, "BTCUSDT");
         assert_eq!(snapshot.best_bid_price, 45000.0);
 
@@ -172,20 +176,26 @@ mod atomic_data_structures {
         };
 
         storage.update_trade(&trade_data);
-        let trade_snapshot = storage.get_trade_snapshot("BTCUSDT").unwrap();
+        let trade_snapshot = storage
+            .get_trade_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+            .unwrap();
         assert_eq!(trade_snapshot.symbol, "BTCUSDT");
         assert_eq!(trade_snapshot.price, 45000.5);
 
         // Test symbol listing
         let orderbook_symbols = storage.get_orderbook_symbols();
         let trade_symbols = storage.get_trade_symbols();
-        assert!(orderbook_symbols.contains(&"BTCUSDT".to_string()));
-        assert!(trade_symbols.contains(&"BTCUSDT".to_string()));
+        let expected_key = format!("{}:{}", Exchange::BinanceSpot, "BTCUSDT");
+        assert!(orderbook_symbols.contains(&expected_key));
+        assert!(trade_symbols.contains(&expected_key));
     }
 
     #[test]
     fn test_concurrent_atomic_operations() {
-        let orderbook = Arc::new(AtomicOrderBook::new("BTCUSDT".to_string()));
+        let orderbook = Arc::new(AtomicOrderBook::new(
+            "BTCUSDT".to_string(),
+            Exchange::BinanceSpot,
+        ));
         let mut handles = vec![];
 
         // Spawn multiple threads to update the orderbook concurrently
@@ -231,7 +241,9 @@ mod atomic_data_structures {
         };
 
         storage.update_orderbook(&empty_data);
-        let snapshot = storage.get_orderbook_snapshot("BTCUSDT").unwrap();
+        let snapshot = storage
+            .get_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+            .unwrap();
         assert_eq!(snapshot.best_bid_price, 0.0);
         assert_eq!(snapshot.best_ask_price, 0.0);
     }
@@ -361,7 +373,7 @@ mod subscription_management {
 
     #[tokio::test]
     async fn test_subscription_data_type_conversion() {
-        use market_data_subscription_server::proto::DataType;
+        use raven::proto::DataType;
 
         let proto_type = DataType::Orderbook;
         let sub_type: SubscriptionDataType = proto_type.into();
@@ -393,7 +405,7 @@ mod subscription_management {
 
     #[test]
     fn test_client_subscription_matching() {
-        use market_data_subscription_server::subscription_manager::ClientSubscription;
+        use raven::subscription_manager::ClientSubscription;
 
         let (sender, _receiver) = mpsc::unbounded_channel();
         let subscription = ClientSubscription::new(
@@ -439,7 +451,7 @@ mod data_ingestion_handlers {
         assert!(result.is_ok());
 
         // Verify data was stored
-        let snapshot = handler.capture_orderbook_snapshot("binance:BTCUSDT");
+        let snapshot = handler.capture_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot);
         assert!(snapshot.is_ok());
         let snapshot = snapshot.unwrap();
         assert_eq!(snapshot.best_bid_price, 45000.0);
@@ -464,7 +476,7 @@ mod data_ingestion_handlers {
         assert!(result.is_ok());
 
         // Verify data was stored
-        let snapshot = handler.capture_trade_snapshot("binance:BTCUSDT");
+        let snapshot = handler.capture_trade_snapshot("BTCUSDT", &Exchange::BinanceSpot);
         assert!(snapshot.is_ok());
         let snapshot = snapshot.unwrap();
         assert_eq!(snapshot.price, 45000.5);
@@ -582,10 +594,10 @@ mod data_ingestion_handlers {
 
         // Test exchange-specific snapshots
         let binance_snapshot = handler
-            .capture_orderbook_snapshot_for_exchange("binance", "BTCUSDT")
+            .capture_orderbook_snapshot_for_exchange(&Exchange::BinanceSpot.to_string(), "BTCUSDT")
             .unwrap();
         let coinbase_snapshot = handler
-            .capture_orderbook_snapshot_for_exchange("coinbase", "BTCUSDT")
+            .capture_orderbook_snapshot_for_exchange(&Exchange::Coinbase.to_string(), "BTCUSDT")
             .unwrap();
 
         assert_eq!(binance_snapshot.best_bid_price, 45000.0);
@@ -593,11 +605,11 @@ mod data_ingestion_handlers {
 
         // Test active exchanges
         let exchanges = handler.get_active_exchanges();
-        assert!(exchanges.contains(&"binance".to_string()));
-        assert!(exchanges.contains(&"coinbase".to_string()));
+        assert!(exchanges.contains(&Exchange::BinanceSpot.to_string()));
+        assert!(exchanges.contains(&Exchange::Coinbase.to_string()));
 
         // Test symbols for specific exchange
-        let binance_symbols = handler.get_symbols_for_exchange("binance");
+        let binance_symbols = handler.get_symbols_for_exchange(&Exchange::BinanceSpot.to_string());
         assert!(binance_symbols.contains(&"BTCUSDT".to_string()));
     }
 }
@@ -849,16 +861,16 @@ mod edge_cases_and_validation {
         let storage = HighFrequencyStorage::new();
 
         // Test getting snapshot for non-existent symbol
-        let result = storage.get_orderbook_snapshot("NONEXISTENT");
+        let result = storage.get_orderbook_snapshot("NONEXISTENT", &Exchange::BinanceSpot);
         assert!(result.is_none());
 
-        let result = storage.get_trade_snapshot("NONEXISTENT");
+        let result = storage.get_trade_snapshot("NONEXISTENT", &Exchange::BinanceSpot);
         assert!(result.is_none());
     }
 
     #[test]
     fn test_price_quantity_conversion_edge_cases() {
-        use market_data_subscription_server::types::{
+        use raven::types::{
             atomic_to_price, atomic_to_quantity, price_to_atomic, quantity_to_atomic,
         };
 
@@ -896,7 +908,9 @@ mod edge_cases_and_validation {
         };
 
         storage.update_orderbook(&bids_only_data);
-        let snapshot = storage.get_orderbook_snapshot("BTCUSDT").unwrap();
+        let snapshot = storage
+            .get_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+            .unwrap();
         assert_eq!(snapshot.best_bid_price, 45000.0);
         assert_eq!(snapshot.best_ask_price, 0.0);
 
@@ -911,7 +925,9 @@ mod edge_cases_and_validation {
         };
 
         storage.update_orderbook(&asks_only_data);
-        let snapshot = storage.get_orderbook_snapshot("ETHUSDT").unwrap();
+        let snapshot = storage
+            .get_orderbook_snapshot("ETHUSDT", &Exchange::BinanceSpot)
+            .unwrap();
         assert_eq!(snapshot.best_bid_price, 0.0);
         assert_eq!(snapshot.best_ask_price, 3000.0);
     }
@@ -955,8 +971,8 @@ mod edge_cases_and_validation {
 
     #[test]
     fn test_trade_id_hashing_consistency() {
-        let trade1 = AtomicTrade::new("BTCUSDT".to_string());
-        let trade2 = AtomicTrade::new("BTCUSDT".to_string());
+        let trade1 = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
+        let trade2 = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
 
         let data = TradeData {
             symbol: "BTCUSDT".to_string(),

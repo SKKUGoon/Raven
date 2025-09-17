@@ -51,11 +51,11 @@ fn test_orderbook_ingestion() {
     let result = handler.ingest_orderbook_atomic("BTCUSDT", &data);
     assert!(result.is_ok());
 
-    let snapshot = handler.capture_orderbook_snapshot("binance:BTCUSDT");
+    let snapshot = handler.capture_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot);
     assert!(snapshot.is_ok());
 
     let snapshot = snapshot.unwrap();
-    assert_eq!(snapshot.symbol, "binance:BTCUSDT");
+    assert_eq!(snapshot.symbol, "BTCUSDT");
     assert_eq!(snapshot.sequence, 12345);
     assert_eq!(snapshot.best_bid_price, 45000.0 + 12345.0);
 }
@@ -68,11 +68,11 @@ fn test_trade_ingestion() {
     let result = handler.ingest_trade_atomic("BTCUSDT", &data);
     assert!(result.is_ok());
 
-    let snapshot = handler.capture_trade_snapshot("binance:BTCUSDT");
+    let snapshot = handler.capture_trade_snapshot("BTCUSDT", &Exchange::BinanceSpot);
     assert!(snapshot.is_ok());
 
     let snapshot = snapshot.unwrap();
-    assert_eq!(snapshot.symbol, "binance:BTCUSDT");
+    assert_eq!(snapshot.symbol, "BTCUSDT");
     assert_eq!(snapshot.price, 45000.5);
     assert_eq!(snapshot.side, "buy");
 }
@@ -186,10 +186,10 @@ fn test_concurrent_operations() {
     }
 
     // Verify data was updated
-    let orderbook_snapshot = handler.capture_orderbook_snapshot("binance:BTCUSDT");
+    let orderbook_snapshot = handler.capture_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot);
     assert!(orderbook_snapshot.is_ok());
 
-    let trade_snapshot = handler.capture_trade_snapshot("binance:BTCUSDT");
+    let trade_snapshot = handler.capture_trade_snapshot("BTCUSDT", &Exchange::BinanceSpot);
     assert!(trade_snapshot.is_ok());
 }
 
@@ -205,7 +205,7 @@ fn test_shared_storage() {
     assert!(result.is_ok());
 
     // Read through handler2
-    let snapshot = handler2.capture_orderbook_snapshot("binance:BTCUSDT");
+    let snapshot = handler2.capture_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot);
     assert!(snapshot.is_ok());
     assert_eq!(snapshot.unwrap().sequence, 12345);
 }
@@ -231,11 +231,14 @@ fn test_symbol_listing() {
     let orderbook_symbols = handler.get_orderbook_symbols();
     let trade_symbols = handler.get_trade_symbols();
 
+    let expected_orderbook = format!("{}:{}", Exchange::BinanceSpot, "BTCUSDT");
+    let expected_trade = format!("{}:{}", Exchange::BinanceSpot, "ETHUSDT");
+
     assert_eq!(orderbook_symbols.len(), 1);
-    assert!(orderbook_symbols.contains(&"binance:BTCUSDT".to_string()));
+    assert!(orderbook_symbols.contains(&expected_orderbook));
 
     assert_eq!(trade_symbols.len(), 1);
-    assert!(trade_symbols.contains(&"binance:ETHUSDT".to_string()));
+    assert!(trade_symbols.contains(&expected_trade));
 }
 
 #[test]
@@ -266,10 +269,10 @@ fn test_snapshot_not_found() {
     let handler = HighFrequencyHandler::new();
 
     // Try to capture snapshot for non-existent symbol
-    let result = handler.capture_orderbook_snapshot("NONEXISTENT");
+    let result = handler.capture_orderbook_snapshot("NONEXISTENT", &Exchange::BinanceSpot);
     assert!(result.is_err());
 
-    let result = handler.capture_trade_snapshot("NONEXISTENT");
+    let result = handler.capture_trade_snapshot("NONEXISTENT", &Exchange::BinanceSpot);
     assert!(result.is_err());
 }
 
@@ -300,27 +303,30 @@ fn test_multi_exchange_support() {
 
     // Check active exchanges
     let exchanges = handler.get_active_exchanges();
-    assert!(exchanges.contains(&"binance".to_string()));
-    assert!(exchanges.contains(&"coinbase".to_string()));
-    assert!(exchanges.contains(&"kraken".to_string()));
+    assert!(exchanges.contains(&Exchange::BinanceSpot.to_string()));
+    assert!(exchanges.contains(&Exchange::Coinbase.to_string()));
+    assert!(exchanges.contains(&Exchange::Kraken.to_string()));
 
     // Check symbols for specific exchange
-    let binance_symbols = handler.get_symbols_for_exchange("binance");
+    let binance_symbols = handler.get_symbols_for_exchange(&Exchange::BinanceSpot.to_string());
     assert!(binance_symbols.contains(&"BTCUSDT".to_string()));
 
-    let coinbase_symbols = handler.get_symbols_for_exchange("coinbase");
+    let coinbase_symbols = handler.get_symbols_for_exchange(&Exchange::Coinbase.to_string());
     assert!(coinbase_symbols.contains(&"BTCUSDT".to_string()));
 
     // Test exchange-specific snapshots
-    let binance_snapshot = handler.capture_orderbook_snapshot_for_exchange("binance", "BTCUSDT");
+    let binance_snapshot = handler
+        .capture_orderbook_snapshot_for_exchange(&Exchange::BinanceSpot.to_string(), "BTCUSDT");
     assert!(binance_snapshot.is_ok());
     assert_eq!(binance_snapshot.unwrap().sequence, 12345);
 
-    let coinbase_snapshot = handler.capture_orderbook_snapshot_for_exchange("coinbase", "BTCUSDT");
+    let coinbase_snapshot =
+        handler.capture_orderbook_snapshot_for_exchange(&Exchange::Coinbase.to_string(), "BTCUSDT");
     assert!(coinbase_snapshot.is_ok());
     assert_eq!(coinbase_snapshot.unwrap().sequence, 12346);
 
-    let kraken_trade_snapshot = handler.capture_trade_snapshot_for_exchange("kraken", "BTCUSDT");
+    let kraken_trade_snapshot =
+        handler.capture_trade_snapshot_for_exchange(&Exchange::Kraken.to_string(), "BTCUSDT");
     assert!(kraken_trade_snapshot.is_ok());
 }
 
@@ -349,10 +355,10 @@ fn test_exchange_isolation() {
 
     // Verify data isolation - each exchange should have different prices
     let binance_snapshot = handler
-        .capture_orderbook_snapshot_for_exchange("binance", "BTCUSDT")
+        .capture_orderbook_snapshot_for_exchange(&Exchange::BinanceSpot.to_string(), "BTCUSDT")
         .unwrap();
     let coinbase_snapshot = handler
-        .capture_orderbook_snapshot_for_exchange("coinbase", "BTCUSDT")
+        .capture_orderbook_snapshot_for_exchange(&Exchange::Coinbase.to_string(), "BTCUSDT")
         .unwrap();
 
     assert_eq!(binance_snapshot.best_bid_price, 50000.0);

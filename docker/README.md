@@ -220,7 +220,7 @@ docker system df    # Check disk space
 netstat -tulpn | grep :3000
 netstat -tulpn | grep :50051
 
-# Stop conflicting services or change ports in docker-compose.yml
+# Stop conflicting services or change ports in docker compose.yml
 ```
 
 **Out of memory:**
@@ -228,7 +228,7 @@ netstat -tulpn | grep :50051
 # Check container memory usage
 docker stats
 
-# Reduce resource limits in docker-compose.yml
+# Reduce resource limits in docker compose.yml
 # Or increase available system memory
 ```
 
@@ -274,7 +274,7 @@ make db-shell
 
 ### Security Considerations
 
-1. **Change default passwords** in docker-compose.yml
+1. **Change default passwords** in docker compose.yml
 2. **Use secrets management** for production credentials
 3. **Enable TLS** for gRPC and web interfaces
 4. **Configure firewall** rules for exposed ports
@@ -323,7 +323,7 @@ make bench             # Benchmarks
 For issues and questions:
 1. Check the logs: `make logs`
 2. Verify health: `make health`
-3. Review configuration in `docker-compose.yml`
+3. Review configuration in `docker compose.yml`
 4. Check resource usage: `docker stats`
 
 ## License

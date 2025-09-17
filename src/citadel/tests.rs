@@ -2,9 +2,9 @@
 // "Testing the fortress that guards our data"
 
 use super::*;
+use crate::citadel::storage::TradeSide;
 use crate::database::influx_client::InfluxConfig;
 use crate::exchanges::types::Exchange;
-use crate::citadel::storage::TradeSide;
 use std::sync::atomic::Ordering;
 
 fn create_test_citadel() -> Citadel {

@@ -11,7 +11,7 @@ use std::thread;
 
 #[test]
 fn test_atomic_orderbook_creation() {
-    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     assert_eq!(orderbook.symbol, "BTCUSDT");
     assert_eq!(orderbook.timestamp.load(Ordering::Relaxed), 0);
     assert_eq!(orderbook.sequence.load(Ordering::Relaxed), 0);
@@ -19,7 +19,7 @@ fn test_atomic_orderbook_creation() {
 
 #[test]
 fn test_atomic_orderbook_update() {
-    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = OrderBookData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000, // 2022-01-01 00:00:00 UTC
@@ -45,7 +45,7 @@ fn test_atomic_orderbook_update() {
 
 #[test]
 fn test_atomic_orderbook_snapshot() {
-    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = OrderBookData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000,
@@ -67,7 +67,7 @@ fn test_atomic_orderbook_snapshot() {
 
 #[test]
 fn test_atomic_orderbook_spread() {
-    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string());
+    let orderbook = AtomicOrderBook::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = OrderBookData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000,
@@ -84,7 +84,7 @@ fn test_atomic_orderbook_spread() {
 
 #[test]
 fn test_atomic_trade_creation() {
-    let trade = AtomicTrade::new("BTCUSDT".to_string());
+    let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     assert_eq!(trade.symbol, "BTCUSDT");
     assert_eq!(trade.timestamp.load(Ordering::Relaxed), 0);
     assert_eq!(trade.side.load(Ordering::Relaxed), 0);
@@ -92,7 +92,7 @@ fn test_atomic_trade_creation() {
 
 #[test]
 fn test_atomic_trade_update() {
-    let trade = AtomicTrade::new("BTCUSDT".to_string());
+    let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = TradeData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000,
@@ -119,7 +119,7 @@ fn test_atomic_trade_update() {
 
 #[test]
 fn test_atomic_trade_side_conversion() {
-    let trade = AtomicTrade::new("BTCUSDT".to_string());
+    let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
 
     // Test buy side
     let buy_data = TradeData {
@@ -150,7 +150,7 @@ fn test_atomic_trade_side_conversion() {
 
 #[test]
 fn test_atomic_trade_snapshot() {
-    let trade = AtomicTrade::new("BTCUSDT".to_string());
+    let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = TradeData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000,
@@ -173,7 +173,7 @@ fn test_atomic_trade_snapshot() {
 
 #[test]
 fn test_atomic_trade_value() {
-    let trade = AtomicTrade::new("BTCUSDT".to_string());
+    let trade = AtomicTrade::new("BTCUSDT".to_string(), Exchange::BinanceSpot);
     let data = TradeData {
         symbol: "BTCUSDT".to_string(),
         timestamp: 1640995200000,
@@ -204,7 +204,9 @@ fn test_high_frequency_storage() {
     };
 
     storage.update_orderbook(&orderbook_data);
-    let snapshot = storage.get_orderbook_snapshot("BTCUSDT").unwrap();
+    let snapshot = storage
+        .get_orderbook_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+        .unwrap();
     assert_eq!(snapshot.symbol, "BTCUSDT");
     assert_eq!(snapshot.best_bid_price, 45000.0);
 
@@ -220,14 +222,19 @@ fn test_high_frequency_storage() {
     };
 
     storage.update_trade(&trade_data);
-    let trade_snapshot = storage.get_trade_snapshot("BTCUSDT").unwrap();
+    let trade_snapshot = storage
+        .get_trade_snapshot("BTCUSDT", &Exchange::BinanceSpot)
+        .unwrap();
     assert_eq!(trade_snapshot.symbol, "BTCUSDT");
     assert_eq!(trade_snapshot.price, 45000.5);
 }
 
 #[test]
 fn test_concurrent_atomic_operations() {
-    let orderbook = Arc::new(AtomicOrderBook::new("BTCUSDT".to_string()));
+    let orderbook = Arc::new(AtomicOrderBook::new(
+        "BTCUSDT".to_string(),
+        Exchange::BinanceSpot,
+    ));
     let mut handles = vec![];
 
     // Spawn multiple threads to update the orderbook concurrently
@@ -337,6 +344,6 @@ fn test_high_frequency_storage_symbols() {
     let orderbook_symbols = storage.get_orderbook_symbols();
     let trade_symbols = storage.get_trade_symbols();
 
-    assert!(orderbook_symbols.contains(&"BTCUSDT".to_string()));
-    assert!(trade_symbols.contains(&"ETHUSDT".to_string()));
+    assert!(orderbook_symbols.contains(&format!("{}:{}", Exchange::BinanceSpot, "BTCUSDT")));
+    assert!(trade_symbols.contains(&format!("{}:{}", Exchange::BinanceSpot, "ETHUSDT")));
 }

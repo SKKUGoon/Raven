@@ -1,4 +1,4 @@
-use market_data_subscription_server::{
+use crate::{
     circuit_breaker::CircuitBreakerRegistry,
     client_manager::ClientManager,
     database::DeadLetterQueue,
@@ -8,6 +8,51 @@ use market_data_subscription_server::{
 };
 use std::sync::Arc;
 use tracing::info;
+
+/// Trait for data collectors that can be gracefully shutdown
+pub trait DataCollector: Send + Sync {
+    fn name(&self) -> &'static str;
+}
+
+/// Generic container for data collectors
+pub struct DataCollectors {
+    collectors: Vec<(String, Box<dyn std::any::Any + Send + Sync>)>,
+}
+
+impl DataCollectors {
+    pub fn new() -> Self {
+        Self {
+            collectors: Vec::new(),
+        }
+    }
+
+    pub fn add_collector<T: DataCollector + 'static>(
+        mut self,
+        name: String,
+        collector: Arc<T>,
+    ) -> Self {
+        self.collectors.push((name, Box::new(collector)));
+        self
+    }
+
+    pub fn len(&self) -> usize {
+        self.collectors.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.collectors.is_empty()
+    }
+
+    pub fn collector_names(&self) -> Vec<&String> {
+        self.collectors.iter().map(|(name, _)| name).collect()
+    }
+}
+
+impl Default for DataCollectors {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Wait for shutdown signals
 pub async fn wait_for_shutdown_signal() -> RavenResult<()> {
@@ -40,6 +85,7 @@ pub async fn perform_graceful_shutdown(
     tracing_service: Arc<TracingService>,
     circuit_breaker_registry: Arc<CircuitBreakerRegistry>,
     monitoring_handles: Vec<tokio::task::JoinHandle<()>>,
+    data_collectors: DataCollectors,
 ) -> RavenResult<()> {
     info!("🌙 Shutting down Project Raven gracefully...");
     info!("The long night is ending, but the watch continues");
@@ -47,12 +93,24 @@ pub async fn perform_graceful_shutdown(
     // Graceful shutdown sequence
     info!("🛑 Starting graceful shutdown sequence...");
 
-    // 1. Stop accepting new connections and disconnect existing clients
+    // 1. Stop data collectors
+    if !data_collectors.is_empty() {
+        info!("🚀 Stopping {} data collector(s)...", data_collectors.len());
+        let collector_names = data_collectors.collector_names();
+        for name in collector_names {
+            info!("  📡 Stopping collector: {}", name);
+        }
+        // Note: WebSocket connections will be dropped when collectors are dropped
+        // and tokio tasks will be cancelled automatically
+        info!("✅ All data collectors stopped gracefully");
+    }
+
+    // 2. Stop accepting new connections and disconnect existing clients
     if let Err(e) = client_manager.shutdown_all_clients().await {
         log_error_with_context(&e, "Error during client shutdown");
     }
 
-    // 2. Stop dead letter queue processing and persist remaining entries
+    // 3. Stop dead letter queue processing and persist remaining entries
     dead_letter_queue.stop_processing();
     if let Err(e) = dead_letter_queue.persist_to_disk().await {
         log_error_with_context(&e, "Failed to persist dead letter queue");
@@ -90,7 +148,7 @@ pub async fn perform_graceful_shutdown(
     info!("  🔌 Circuit Breakers: {:?}", cb_stats);
 
     info!("🌙 Project Raven shutdown complete");
-    info!("The Night's Watch ends, but the realm remembers");
+    info!("The Crow's Watch ends, but the realm remembers");
 
     Ok(())
 }

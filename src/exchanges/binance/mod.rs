@@ -4,6 +4,8 @@ use crate::exchanges::websocket::WebSocketParser;
 use async_trait::async_trait;
 use serde_json::Value;
 
+pub mod app;
+
 #[cfg(test)]
 mod tests;
 

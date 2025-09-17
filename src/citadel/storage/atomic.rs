@@ -13,6 +13,7 @@ use super::{OrderBookData, TradeData, PRICE_SCALE, QUANTITY_SCALE};
 #[derive(Debug)]
 pub struct AtomicOrderBook {
     pub symbol: String,
+    pub exchange: super::Exchange,
     // Group frequently accessed atomics together for cache efficiency
     pub timestamp: AtomicI64,
     pub sequence: AtomicU64,
@@ -26,9 +27,10 @@ pub struct AtomicOrderBook {
 
 impl AtomicOrderBook {
     /// Create a new AtomicOrderBook with default values
-    pub fn new(symbol: String) -> Self {
+    pub fn new(symbol: String, exchange: super::Exchange) -> Self {
         Self {
             symbol,
+            exchange,
             timestamp: AtomicI64::new(0),
             best_bid_price: AtomicU64::new(0),
             best_bid_quantity: AtomicU64::new(0),
@@ -64,6 +66,7 @@ impl AtomicOrderBook {
     pub fn to_snapshot(&self) -> OrderBookSnapshot {
         OrderBookSnapshot {
             symbol: self.symbol.clone(),
+            exchange: self.exchange.clone(),
             timestamp: self.timestamp.load(Ordering::Relaxed),
             best_bid_price: self.best_bid_price.load(Ordering::Relaxed) as f64 / PRICE_SCALE,
             best_bid_quantity: self.best_bid_quantity.load(Ordering::Relaxed) as f64
@@ -88,6 +91,7 @@ impl AtomicOrderBook {
 #[derive(Debug)]
 pub struct AtomicTrade {
     pub symbol: String,
+    pub exchange: super::Exchange,
     // Group frequently accessed atomics together for cache efficiency
     pub timestamp: AtomicI64,
     pub price: AtomicU64, // Store as integer (price * 100000000)
@@ -98,9 +102,10 @@ pub struct AtomicTrade {
 
 impl AtomicTrade {
     /// Create a new AtomicTrade with default values
-    pub fn new(symbol: String) -> Self {
+    pub fn new(symbol: String, exchange: super::Exchange) -> Self {
         Self {
             symbol,
+            exchange,
             timestamp: AtomicI64::new(0),
             price: AtomicU64::new(0),
             quantity: AtomicU64::new(0),
@@ -133,6 +138,7 @@ impl AtomicTrade {
     pub fn to_snapshot(&self) -> TradeSnapshot {
         TradeSnapshot {
             symbol: self.symbol.clone(),
+            exchange: self.exchange.clone(),
             timestamp: self.timestamp.load(Ordering::Relaxed),
             price: self.price.load(Ordering::Relaxed) as f64 / PRICE_SCALE,
             quantity: self.quantity.load(Ordering::Relaxed) as f64 / QUANTITY_SCALE,
@@ -178,43 +184,105 @@ impl HighFrequencyStorage {
         }
     }
 
-    /// Get or create an AtomicOrderBook for a symbol
-    pub fn get_or_create_orderbook(&self, symbol: &str) -> Arc<AtomicOrderBook> {
+    /// Get or create an AtomicOrderBook for a symbol and exchange
+    pub fn get_or_create_orderbook(
+        &self,
+        symbol: &str,
+        exchange: &super::Exchange,
+    ) -> Arc<AtomicOrderBook> {
+        let key = format!("{exchange}:{symbol}");
         self.orderbooks
-            .entry(symbol.to_string())
-            .or_insert_with(|| Arc::new(AtomicOrderBook::new(symbol.to_string())))
+            .entry(key)
+            .or_insert_with(|| Arc::new(AtomicOrderBook::new(symbol.to_string(), exchange.clone())))
             .clone()
     }
 
-    /// Get or create an AtomicTrade for a symbol
-    pub fn get_or_create_trade(&self, symbol: &str) -> Arc<AtomicTrade> {
+    /// Get or create an AtomicTrade for a symbol and exchange
+    pub fn get_or_create_trade(
+        &self,
+        symbol: &str,
+        exchange: &super::Exchange,
+    ) -> Arc<AtomicTrade> {
+        let key = format!("{exchange}:{symbol}");
+        self.latest_trades
+            .entry(key)
+            .or_insert_with(|| Arc::new(AtomicTrade::new(symbol.to_string(), exchange.clone())))
+            .clone()
+    }
+
+    /// Legacy methods for backward compatibility (will be deprecated)
+    #[deprecated(note = "Use get_or_create_orderbook with exchange parameter")]
+    pub fn get_or_create_orderbook_legacy(&self, symbol: &str) -> Arc<AtomicOrderBook> {
+        self.orderbooks
+            .entry(symbol.to_string())
+            .or_insert_with(|| {
+                Arc::new(AtomicOrderBook::new(
+                    symbol.to_string(),
+                    super::Exchange::BinanceSpot,
+                ))
+            })
+            .clone()
+    }
+
+    #[deprecated(note = "Use get_or_create_trade with exchange parameter")]
+    pub fn get_or_create_trade_legacy(&self, symbol: &str) -> Arc<AtomicTrade> {
         self.latest_trades
             .entry(symbol.to_string())
-            .or_insert_with(|| Arc::new(AtomicTrade::new(symbol.to_string())))
+            .or_insert_with(|| {
+                Arc::new(AtomicTrade::new(
+                    symbol.to_string(),
+                    super::Exchange::BinanceSpot,
+                ))
+            })
             .clone()
     }
 
     /// Update orderbook data atomically
     pub fn update_orderbook(&self, data: &OrderBookData) {
-        let orderbook = self.get_or_create_orderbook(&data.symbol);
+        let orderbook = self.get_or_create_orderbook(&data.symbol, &data.exchange);
         orderbook.update_from_data(data);
     }
 
     /// Update trade data atomically
     pub fn update_trade(&self, data: &TradeData) {
-        let trade = self.get_or_create_trade(&data.symbol);
+        let trade = self.get_or_create_trade(&data.symbol, &data.exchange);
         trade.update_from_data(data);
     }
 
-    /// Get orderbook snapshot for a symbol
-    pub fn get_orderbook_snapshot(&self, symbol: &str) -> Option<OrderBookSnapshot> {
+    /// Get orderbook snapshot for a symbol and exchange
+    pub fn get_orderbook_snapshot(
+        &self,
+        symbol: &str,
+        exchange: &super::Exchange,
+    ) -> Option<OrderBookSnapshot> {
+        let key = format!("{exchange}:{symbol}");
+        self.orderbooks
+            .get(&key)
+            .map(|orderbook| orderbook.to_snapshot())
+    }
+
+    /// Get trade snapshot for a symbol and exchange
+    pub fn get_trade_snapshot(
+        &self,
+        symbol: &str,
+        exchange: &super::Exchange,
+    ) -> Option<TradeSnapshot> {
+        let key = format!("{exchange}:{symbol}");
+        self.latest_trades
+            .get(&key)
+            .map(|trade| trade.to_snapshot())
+    }
+
+    /// Legacy methods for backward compatibility (will be deprecated)
+    #[deprecated(note = "Use get_orderbook_snapshot with exchange parameter")]
+    pub fn get_orderbook_snapshot_legacy(&self, symbol: &str) -> Option<OrderBookSnapshot> {
         self.orderbooks
             .get(symbol)
             .map(|orderbook| orderbook.to_snapshot())
     }
 
-    /// Get trade snapshot for a symbol
-    pub fn get_trade_snapshot(&self, symbol: &str) -> Option<TradeSnapshot> {
+    #[deprecated(note = "Use get_trade_snapshot with exchange parameter")]
+    pub fn get_trade_snapshot_legacy(&self, symbol: &str) -> Option<TradeSnapshot> {
         self.latest_trades
             .get(symbol)
             .map(|trade| trade.to_snapshot())

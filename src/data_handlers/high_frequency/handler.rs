@@ -1,6 +1,7 @@
 // High Frequency Handler
 // "The fastest ravens in the realm - delivering messages with sub-microsecond speed"
 
+use crate::exchanges::types::Exchange;
 use crate::types::{
     HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSnapshot,
 };
@@ -64,15 +65,8 @@ impl HighFrequencyHandler {
             return Err(anyhow::anyhow!("Invalid price level ordering"));
         }
 
-        // Create exchange-qualified symbol key for multi-exchange support
-        let exchange_symbol = format!("{}:{}", data.exchange, symbol);
-
-        // Create a modified data structure with the exchange-qualified symbol
-        let mut exchange_data = data.clone();
-        exchange_data.symbol = exchange_symbol;
-
-        // Perform lock-free atomic update - this is the critical path
-        self.storage.update_orderbook(&exchange_data);
+        // Perform lock-free atomic update - storage handles exchange scoping
+        self.storage.update_orderbook(data);
 
         let duration = start.elapsed();
         debug!(
@@ -122,15 +116,8 @@ impl HighFrequencyHandler {
             return Err(anyhow::anyhow!("Trade ID cannot be empty"));
         }
 
-        // Create exchange-qualified symbol key for multi-exchange support
-        let exchange_symbol = format!("{}:{}", data.exchange, symbol);
-
-        // Create a modified data structure with the exchange-qualified symbol
-        let mut exchange_data = data.clone();
-        exchange_data.symbol = exchange_symbol;
-
-        // Perform lock-free atomic update - this is the critical path
-        self.storage.update_trade(&exchange_data);
+        // Perform lock-free atomic update - storage handles exchange scoping
+        self.storage.update_trade(data);
 
         let duration = start.elapsed();
         debug!(
@@ -151,12 +138,16 @@ impl HighFrequencyHandler {
 
     /// Capture atomic snapshot of current orderbook state
     /// This function performs atomic reads without blocking writes
-    pub fn capture_orderbook_snapshot(&self, symbol: &str) -> Result<OrderBookSnapshot> {
+    pub fn capture_orderbook_snapshot(
+        &self,
+        symbol: &str,
+        exchange: &Exchange,
+    ) -> Result<OrderBookSnapshot> {
         let start = Instant::now();
 
         let snapshot = self
             .storage
-            .get_orderbook_snapshot(symbol)
+            .get_orderbook_snapshot(symbol, exchange)
             .with_context(|| format!("No orderbook data found for symbol: {symbol}"))?;
 
         let duration = start.elapsed();
@@ -170,12 +161,16 @@ impl HighFrequencyHandler {
 
     /// Capture atomic snapshot of latest trade state
     /// This function performs atomic reads without blocking writes
-    pub fn capture_trade_snapshot(&self, symbol: &str) -> Result<TradeSnapshot> {
+    pub fn capture_trade_snapshot(
+        &self,
+        symbol: &str,
+        exchange: &Exchange,
+    ) -> Result<TradeSnapshot> {
         let start = Instant::now();
 
         let snapshot = self
             .storage
-            .get_trade_snapshot(symbol)
+            .get_trade_snapshot(symbol, exchange)
             .with_context(|| format!("No trade data found for symbol: {symbol}"))?;
 
         let duration = start.elapsed();
@@ -342,8 +337,8 @@ impl HighFrequencyHandler {
         exchange: &str,
         symbol: &str,
     ) -> Result<OrderBookSnapshot> {
-        let exchange_symbol = format!("{exchange}:{symbol}");
-        self.capture_orderbook_snapshot(&exchange_symbol)
+        let exchange_enum = self.parse_exchange(exchange)?;
+        self.capture_orderbook_snapshot(symbol, &exchange_enum)
     }
 
     /// Capture trade snapshot for a specific exchange and symbol
@@ -352,8 +347,22 @@ impl HighFrequencyHandler {
         exchange: &str,
         symbol: &str,
     ) -> Result<TradeSnapshot> {
-        let exchange_symbol = format!("{exchange}:{symbol}");
-        self.capture_trade_snapshot(&exchange_symbol)
+        let exchange_enum = self.parse_exchange(exchange)?;
+        self.capture_trade_snapshot(symbol, &exchange_enum)
+    }
+
+    /// Parse exchange string to Exchange enum
+    fn parse_exchange(&self, exchange: &str) -> Result<Exchange> {
+        match exchange {
+            "binance_spot" => Ok(Exchange::BinanceSpot),
+            "binance_futures" => Ok(Exchange::BinanceFutures),
+            "coinbase" => Ok(Exchange::Coinbase),
+            "kraken" => Ok(Exchange::Kraken),
+            "bybit" => Ok(Exchange::Bybit),
+            "okx" => Ok(Exchange::OKX),
+            "deribit" => Ok(Exchange::Deribit),
+            _ => Err(anyhow::anyhow!("Unknown exchange: {}", exchange)),
+        }
     }
 }
 

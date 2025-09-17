@@ -1,5 +1,5 @@
+use crate::config::Config;
 use clap::{Arg, Command};
-use market_data_subscription_server::config::Config;
 use tracing::info;
 
 /// Application version information
@@ -24,7 +24,7 @@ pub struct CliArgs {
 pub fn parse_cli_args() -> CliArgs {
     let matches = Command::new("Project Raven")
         .version(VERSION)
-        .author("The Night's Watch")
+        .author("The Crow's Watch")
         .about("High-performance market data subscription server")
         .long_about(format!(
             "Project Raven - Market Data Subscription Server\n\

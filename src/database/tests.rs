@@ -21,6 +21,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 async fn test_database_dead_letter_helper_orderbook() {
     let snapshot = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         best_bid_price: 45000.0,
         best_bid_quantity: 1.5,
@@ -45,6 +46,7 @@ async fn test_database_dead_letter_helper_orderbook() {
 async fn test_database_dead_letter_helper_trade() {
     let snapshot = TradeSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
@@ -123,6 +125,7 @@ async fn test_circuit_breaker() {
 fn test_datapoint_creation_orderbook() {
     let snapshot = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         best_bid_price: 45000.0,
         best_bid_quantity: 1.5,
@@ -143,6 +146,7 @@ fn test_datapoint_creation_orderbook() {
 fn test_datapoint_creation_trade() {
     let snapshot = TradeSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,
@@ -216,6 +220,7 @@ async fn test_write_operations() {
     // Test orderbook snapshot write (will fail without real InfluxDB, but tests the structure)
     let snapshot = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -235,6 +240,7 @@ async fn test_write_operations() {
     // Test trade snapshot write
     let trade_snapshot = TradeSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -336,6 +342,7 @@ async fn test_batch_write_with_datapoints() {
     // Create some test datapoints
     let snapshot1 = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         best_bid_price: 45000.0,
         best_bid_quantity: 1.5,
@@ -346,6 +353,7 @@ async fn test_batch_write_with_datapoints() {
 
     let snapshot2 = OrderBookSnapshot {
         symbol: "ETHUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200001,
         best_bid_price: 3500.0,
         best_bid_quantity: 2.5,

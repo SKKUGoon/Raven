@@ -25,6 +25,7 @@ use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, Tr
 pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPoint> {
     DataPoint::builder("orderbook")
         .tag("symbol", &snapshot.symbol)
+        .tag("exchange", snapshot.exchange.to_string())
         .field("best_bid_price", snapshot.best_bid_price)
         .field("best_bid_quantity", snapshot.best_bid_quantity)
         .field("best_ask_price", snapshot.best_ask_price)
@@ -42,6 +43,7 @@ pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
     DataPoint::builder("trades")
         .tag("symbol", &snapshot.symbol)
         .tag("side", side_str)
+        .tag("exchange", snapshot.exchange.to_string())
         .field("price", snapshot.price)
         .field("quantity", snapshot.quantity)
         .field("trade_id", snapshot.trade_id as i64)

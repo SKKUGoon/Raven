@@ -14,7 +14,6 @@ pub use storage::{
 
 pub use streaming::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotService};
 
-
 use crate::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::error::{RavenError, RavenResult};
 use crate::exchanges::types::Exchange;

@@ -31,6 +31,7 @@ async fn test_snapshot_batch() {
 
     let orderbook_snapshot = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         best_bid_price: 45000.0,
         best_bid_quantity: 1.5,
@@ -45,6 +46,7 @@ async fn test_snapshot_batch() {
 
     let trade_snapshot = TradeSnapshot {
         symbol: "BTCUSDT".to_string(),
+        exchange: Exchange::BinanceSpot,
         timestamp: 1640995200000,
         price: 45000.5,
         quantity: 0.1,

@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 use clap::{Arg, Command};
-use market_data_subscription_server::config::{Config, ConfigManager, ConfigUtils};
+use raven::config::{Config, ConfigManager, ConfigUtils};
 use std::time::Duration;
 use tracing::{error, info};
 

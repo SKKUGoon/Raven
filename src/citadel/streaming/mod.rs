@@ -9,9 +9,10 @@ mod tests;
 pub use config::SnapshotConfig;
 pub use metrics::SnapshotMetrics;
 
-use crate::database::influx_client::InfluxClient;
-use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
+use crate::database::influx_client::InfluxClient;
+use crate::exchanges::types::Exchange;
+use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use anyhow::{Context, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -226,67 +227,71 @@ impl SnapshotService {
         let mut batch = self.current_batch.write().await;
 
         // Capture orderbook snapshots
-        for symbol in orderbook_symbols {
-            match self.storage.get_orderbook_snapshot(&symbol) {
-                Some(snapshot) => {
-                    // Add to batch for persistence
-                    if self.config.persistence_enabled {
-                        batch.add_orderbook_snapshot(snapshot.clone());
-                    }
-
-                    // Broadcast to subscribed clients
-                    if self.config.broadcast_enabled {
-                        if let Err(e) = self.broadcast_orderbook_snapshot(&snapshot).await {
-                            warn!(
-                                "⚠️ Failed to broadcast orderbook snapshot for {}: {}",
-                                symbol, e
-                            );
-                        } else {
-                            self.metrics
-                                .client_broadcasts
-                                .fetch_add(1, Ordering::Relaxed);
+        for key in orderbook_symbols {
+            if let Some((exchange, symbol)) = self.parse_key(&key) {
+                match self.storage.get_orderbook_snapshot(&symbol, &exchange) {
+                    Some(snapshot) => {
+                        // Add to batch for persistence
+                        if self.config.persistence_enabled {
+                            batch.add_orderbook_snapshot(snapshot.clone());
                         }
-                    }
 
-                    snapshot_count += 1;
-                    self.metrics
-                        .orderbook_snapshots
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-                None => {
-                    debug!("📸 No orderbook data available for symbol: {}", symbol);
+                        // Broadcast to subscribed clients
+                        if self.config.broadcast_enabled {
+                            if let Err(e) = self.broadcast_orderbook_snapshot(&snapshot).await {
+                                warn!(
+                                    "⚠️ Failed to broadcast orderbook snapshot for {}: {}",
+                                    symbol, e
+                                );
+                            } else {
+                                self.metrics
+                                    .client_broadcasts
+                                    .fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+
+                        snapshot_count += 1;
+                        self.metrics
+                            .orderbook_snapshots
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                    None => {
+                        debug!("📸 No orderbook data available for symbol: {}", symbol);
+                    }
                 }
             }
         }
 
         // Capture trade snapshots
-        for symbol in trade_symbols {
-            match self.storage.get_trade_snapshot(&symbol) {
-                Some(snapshot) => {
-                    // Add to batch for persistence
-                    if self.config.persistence_enabled {
-                        batch.add_trade_snapshot(snapshot.clone());
-                    }
-
-                    // Broadcast to subscribed clients
-                    if self.config.broadcast_enabled {
-                        if let Err(e) = self.broadcast_trade_snapshot(&snapshot).await {
-                            warn!(
-                                "⚠️ Failed to broadcast trade snapshot for {}: {}",
-                                symbol, e
-                            );
-                        } else {
-                            self.metrics
-                                .client_broadcasts
-                                .fetch_add(1, Ordering::Relaxed);
+        for key in trade_symbols {
+            if let Some((exchange, symbol)) = self.parse_key(&key) {
+                match self.storage.get_trade_snapshot(&symbol, &exchange) {
+                    Some(snapshot) => {
+                        // Add to batch for persistence
+                        if self.config.persistence_enabled {
+                            batch.add_trade_snapshot(snapshot.clone());
                         }
-                    }
 
-                    snapshot_count += 1;
-                    self.metrics.trade_snapshots.fetch_add(1, Ordering::Relaxed);
-                }
-                None => {
-                    debug!("📸 No trade data available for symbol: {}", symbol);
+                        // Broadcast to subscribed clients
+                        if self.config.broadcast_enabled {
+                            if let Err(e) = self.broadcast_trade_snapshot(&snapshot).await {
+                                warn!(
+                                    "⚠️ Failed to broadcast trade snapshot for {}: {}",
+                                    symbol, e
+                                );
+                            } else {
+                                self.metrics
+                                    .client_broadcasts
+                                    .fetch_add(1, Ordering::Relaxed);
+                            }
+                        }
+
+                        snapshot_count += 1;
+                        self.metrics.trade_snapshots.fetch_add(1, Ordering::Relaxed);
+                    }
+                    None => {
+                        debug!("📸 No trade data available for symbol: {}", symbol);
+                    }
                 }
             }
         }
@@ -491,6 +496,27 @@ impl SnapshotService {
     /// Get current batch size
     pub async fn get_current_batch_size(&self) -> usize {
         self.current_batch.read().await.len()
+    }
+
+    /// Parse exchange and symbol from storage key (format: "exchange:symbol")
+    fn parse_key(&self, key: &str) -> Option<(Exchange, String)> {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let exchange = match parts[0] {
+            "binance_spot" => Exchange::BinanceSpot,
+            "binance_futures" => Exchange::BinanceFutures,
+            "coinbase" => Exchange::Coinbase,
+            "kraken" => Exchange::Kraken,
+            "bybit" => Exchange::Bybit,
+            "okx" => Exchange::OKX,
+            "deribit" => Exchange::Deribit,
+            _ => return None,
+        };
+
+        Some((exchange, parts[1].to_string()))
     }
 }
 
