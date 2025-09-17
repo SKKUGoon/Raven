@@ -5,9 +5,16 @@ pub mod cli;
 pub mod shutdown;
 pub mod startup;
 
+use crate::citadel::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
+use crate::citadel::{Citadel, CitadelConfig};
+use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
 use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futures_orderbook;
 use crate::exchanges::binance::app::futures::trade::initialize_binance_futures_trade;
+use crate::subscription_manager::SubscriptionManager;
+use crate::types::HighFrequencyStorage;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
 use tracing::info;
 
 use self::cli::{parse_cli_args, print_version_info};
@@ -58,15 +65,43 @@ pub async fn run() -> RavenResult<()> {
     let client_manager = initialize_client_manager(&config).await?;
 
     // 5. Initialize Monitoring and Observability
-    let (_monitoring_service, monitoring_handles) =
-        initialize_monitoring_services(&config, influx_client).await?;
+    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let hf_storage = Arc::new(HighFrequencyStorage::new());
+    let high_freq_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
+    let citadel = Arc::new(Citadel::new(
+        CitadelConfig::default(),
+        Arc::clone(&influx_client),
+        Arc::clone(&subscription_manager),
+    ));
+
+    let (_monitoring_service, monitoring_handles) = initialize_monitoring_services(
+        &config,
+        influx_client,
+        Arc::clone(&subscription_manager),
+        Arc::clone(&hf_storage),
+    )
+    .await?;
 
     // 6. Initialize Binance Data Collector
     let sym = "btcusdt".to_string();
-    let (binance_future_clob_collector, _binance_clob_receiver) =
+    let (binance_future_clob_collector, binance_clob_receiver) =
         initialize_binance_futures_orderbook(sym.clone()).await?;
-    let (binance_future_trade_collector, _binance_trade_receiver) =
+    let (binance_future_trade_collector, binance_trade_receiver) =
         initialize_binance_futures_trade(sym).await?;
+
+    // Start market data ingestion pipelines
+    let collector_tasks: Vec<JoinHandle<()>> = vec![
+        spawn_orderbook_ingestor(
+            binance_clob_receiver,
+            Arc::clone(&high_freq_handler),
+            Arc::clone(&citadel),
+        ),
+        spawn_trade_ingestor(
+            binance_trade_receiver,
+            Arc::clone(&high_freq_handler),
+            Arc::clone(&citadel),
+        ),
+    ];
 
     // TODO: Initialize remaining components with error handling
     // - gRPC server with circuit breaker protection
@@ -95,6 +130,11 @@ pub async fn run() -> RavenResult<()> {
 
     // Wait for shutdown signals
     wait_for_shutdown_signal().await?;
+
+    // Stop background collector tasks before shutdown
+    for task in collector_tasks {
+        task.abort();
+    }
 
     // Create data collectors container
     let data_collectors = DataCollectors::new()

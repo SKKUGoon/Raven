@@ -2,6 +2,7 @@
 // "The fortress that guards the integrity of our data, stores it atomically, and streams it to the realm"
 
 // Sub-modules
+pub mod app; // Ingestion orchestration for data collectors
 pub mod storage; // Atomic data storage (formerly types)
 pub mod streaming; // Data streaming to clients (formerly snapshot_service)
 
@@ -135,7 +136,7 @@ impl Default for CitadelMetrics {
 pub struct Citadel {
     config: CitadelConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
-    _influx_client: Arc<InfluxClient>,
+    influx_client: Arc<InfluxClient>,
     _subscription_manager: Arc<SubscriptionManager>,
     _dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: CitadelMetrics,
@@ -155,7 +156,7 @@ impl Citadel {
         Self {
             config,
             validation_rules: Arc::new(RwLock::new(ValidationRules::default())),
-            _influx_client: influx_client,
+            influx_client,
             _subscription_manager: subscription_manager,
             _dead_letter_queue: dead_letter_queue,
             metrics: CitadelMetrics::default(),
@@ -443,19 +444,20 @@ impl Citadel {
 
     /// Write order book data to database
     async fn write_orderbook_data(&self, data: &OrderBookData) -> RavenResult<()> {
-        // TODO: Convert to proper snapshot format and write
-        debug!(
-            "💾 Would write orderbook data to database for {}",
-            data.symbol
-        );
-        Ok(())
+        let snapshot = OrderBookSnapshot::from(data);
+        self.influx_client
+            .write_orderbook_snapshot(&snapshot)
+            .await
+            .map_err(|e| RavenError::database_write(e.to_string()))
     }
 
     /// Write trade data to database
     async fn write_trade_data(&self, data: &TradeData) -> RavenResult<()> {
-        // TODO: Convert to proper snapshot format and write
-        debug!("💾 Would write trade data to database for {}", data.symbol);
-        Ok(())
+        let snapshot = TradeSnapshot::from(data);
+        self.influx_client
+            .write_trade_snapshot(&snapshot)
+            .await
+            .map_err(|e| RavenError::database_write(e.to_string()))
     }
 
     /// Round price to 8 decimal places

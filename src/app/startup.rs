@@ -315,6 +315,8 @@ pub async fn initialize_client_manager(config: &Config) -> RavenResult<Arc<Clien
 pub async fn initialize_monitoring_services(
     config: &Config,
     influx_client: Arc<InfluxClient>,
+    subscription_manager: Arc<SubscriptionManager>,
+    hf_storage: Arc<HighFrequencyStorage>,
 ) -> RavenResult<(CrowService, Vec<tokio::task::JoinHandle<()>>)> {
     info!("📊 Initializing monitoring and observability services...");
 
@@ -335,11 +337,6 @@ pub async fn initialize_monitoring_services(
         MetricsService::new(config.monitoring.clone())
             .map_err(|e| RavenError::internal(e.to_string()))?,
     );
-
-    // Initialize health service (we'll need to add the missing components later)
-    // For now, create placeholder components
-    let subscription_manager = Arc::new(SubscriptionManager::new());
-    let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     let health_service = Arc::new(HealthService::new(
         config.monitoring.clone(),

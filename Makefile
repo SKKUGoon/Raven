@@ -350,6 +350,7 @@ prod-deploy: backup deploy
 
 ## Development Environment Commands (uses external services)
 DEV_COMPOSE_FILE := docker/docker-compose.dev.yml
+DEV_LOG_LEVEL := debug
 
 # Build development containers
 dev-build:
@@ -368,6 +369,9 @@ dev-up:
 	@echo "   - InfluxDB at localhost:8086"
 	@echo "   - Redis at localhost:6379"
 	@echo ""
+	RUST_LOG=$(DEV_LOG_LEVEL) \
+	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
+	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
 	docker compose -f $(DEV_COMPOSE_FILE) up -d
 	@echo "$(GREEN)✅ Development services started$(NC)"
 
@@ -375,6 +379,9 @@ dev-up:
 dev-dashboard:
 	@echo "$(BLUE)🚀 Starting Raven dashboard in development mode...$(NC)"
 	@echo "📊 Dashboard will be available at http://localhost:8050"
+	RUST_LOG=$(DEV_LOG_LEVEL) \
+	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
+	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
 	docker compose -f $(DEV_COMPOSE_FILE) up -d dashboard-dev
 	@echo "$(GREEN)✅ Development dashboard started$(NC)"
 
@@ -382,6 +389,9 @@ dev-dashboard:
 dev-server:
 	@echo "$(BLUE)🚀 Starting Raven server in development mode...$(NC)"
 	@echo "🔌 Server will be available at localhost:50051"
+	RUST_LOG=$(DEV_LOG_LEVEL) \
+	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
+	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
 	docker compose -f $(DEV_COMPOSE_FILE) up -d market-data-server-dev
 	@echo "$(GREEN)✅ Development server started$(NC)"
 

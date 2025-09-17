@@ -3,8 +3,10 @@
 
 use anyhow::{anyhow, Result};
 use futures_util::stream;
-use influxdb2::models::DataPoint;
-use influxdb2::Client;
+use influxdb2::api::buckets::ListBucketsRequest;
+use influxdb2::api::organization::ListOrganizationRequest;
+use influxdb2::models::{DataPoint, PostBucketRequest};
+use influxdb2::{Client, RequestError};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -312,11 +314,18 @@ impl InfluxClient {
             }
         }
 
+        let pool_size = pool.len();
+
+        // Release locks before performing operations that require them again
+        drop(health);
+        drop(pool);
+
         info!(
             "🎯 Connection pool initialized with {} connections",
-            pool.len()
+            pool_size
         );
         self.ping().await?;
+        self.ensure_bucket_exists().await?;
 
         // Start health monitoring
         self.start_health_monitoring().await;
@@ -334,6 +343,105 @@ impl InfluxClient {
         };
 
         Ok(client)
+    }
+
+    async fn ensure_bucket_exists(&self) -> Result<()> {
+        let client = self.create_client().await?;
+
+        if self.bucket_exists(&client).await? {
+            debug!("📦 InfluxDB bucket '{}' already exists", self.config.bucket);
+            return Ok(());
+        }
+
+        let org_id = self.fetch_org_id(&client).await?;
+        let request = PostBucketRequest::new(org_id, self.config.bucket.clone());
+
+        match client.create_bucket(Some(request)).await {
+            Ok(_) => {
+                info!(
+                    "📦 Created InfluxDB bucket '{}' for org '{}'",
+                    self.config.bucket, self.config.org
+                );
+                Ok(())
+            }
+            Err(RequestError::Http { status, text: _ }) if status.as_u16() == 409 => {
+                info!(
+                    "📦 Bucket '{}' already exists (HTTP 409)",
+                    self.config.bucket
+                );
+                Ok(())
+            }
+            Err(e) => Err(anyhow!(
+                "Failed to create bucket '{}': {}",
+                self.config.bucket,
+                e
+            )),
+        }
+    }
+
+    async fn bucket_exists(&self, client: &Client) -> Result<bool> {
+        let request = ListBucketsRequest {
+            name: Some(self.config.bucket.clone()),
+            org: Some(self.config.org.clone()),
+            limit: Some(1),
+            ..Default::default()
+        };
+
+        let response = client
+            .list_buckets(Some(request))
+            .await
+            .map_err(|e| anyhow!("Failed to list buckets: {}", e))?;
+
+        Ok(response
+            .buckets
+            .iter()
+            .any(|bucket| bucket.name == self.config.bucket))
+    }
+
+    async fn fetch_org_id(&self, client: &Client) -> Result<String> {
+        let request = ListOrganizationRequest {
+            org: Some(self.config.org.clone()),
+            limit: Some(1),
+            ..Default::default()
+        };
+
+        let organizations = client
+            .list_organizations(request)
+            .await
+            .map_err(|e| anyhow!("Failed to list organizations: {}", e))?;
+
+        if let Some(org) = organizations
+            .orgs
+            .iter()
+            .find(|org| org.name == self.config.org)
+        {
+            if let Some(id) = &org.id {
+                return Ok(id.clone());
+            }
+        }
+
+        // Fallback: treat configured org as an ID
+        let fallback_request = ListOrganizationRequest {
+            org_id: Some(self.config.org.clone()),
+            limit: Some(1),
+            ..Default::default()
+        };
+
+        let organizations = client
+            .list_organizations(fallback_request)
+            .await
+            .map_err(|e| anyhow!("Failed to look up organization by ID: {}", e))?;
+
+        organizations
+            .orgs
+            .into_iter()
+            .find_map(|org| org.id)
+            .ok_or_else(|| anyhow!("Organization '{}' not found", self.config.org))
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn ensure_bucket_exists_for_tests(&self) -> Result<()> {
+        self.ensure_bucket_exists().await
     }
 
     async fn get_connection(&self) -> Result<(Client, usize)> {
@@ -364,9 +472,15 @@ impl InfluxClient {
     pub async fn ping(&self) -> Result<()> {
         debug!("🏓 Pinging the Iron Bank...");
 
+        debug!("🔍 Fetching connection from pool for health check");
         let (client, connection_index) = self.get_connection().await?;
+        debug!(
+            connection_index = connection_index,
+            "🔌 Acquired pooled connection"
+        );
 
         // Use InfluxDB v2 health check endpoint
+        debug!("🌐 Issuing InfluxDB health request");
         match client.health().await {
             Ok(_) => {
                 self.circuit_breaker.record_success().await;

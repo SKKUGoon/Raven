@@ -11,6 +11,10 @@ use crate::database::{DatabaseDeadLetterHelper, EnhancedInfluxClient, InfluxClie
 #[cfg(test)]
 use crate::exchanges::types::Exchange;
 #[cfg(test)]
+use mockito::{Matcher, Server};
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
 use std::sync::atomic::Ordering;
 #[cfg(test)]
 use std::sync::Arc;
@@ -196,6 +200,155 @@ fn test_datapoint_creation_wallet_update() {
         create_wallet_update_datapoint("user123", "BTC", 1.5, 0.1, 1640995200000).unwrap();
 
     assert!(format!("{datapoint:?}").contains("wallet_updates"));
+}
+
+#[tokio::test]
+async fn test_bucket_provision_creates_bucket_when_missing() {
+    let mut server = Server::new_async().await;
+    let base_url = server.url();
+
+    let list_mock = server
+        .mock("GET", "/api/v2/buckets")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("name".into(), "test_bucket".into()),
+            Matcher::UrlEncoded("org".into(), "test_org".into()),
+            Matcher::UrlEncoded("limit".into(), "1".into()),
+        ]))
+        .match_header("Authorization", "Token test_token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(json!({"buckets": []}).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let org_mock = server
+        .mock("GET", "/api/v2/orgs")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("org".into(), "test_org".into()),
+            Matcher::UrlEncoded("limit".into(), "1".into()),
+        ]))
+        .match_header("Authorization", "Token test_token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            json!({
+                "orgs": [{"id": "org_id_123", "name": "test_org"}]
+            })
+            .to_string(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+
+    let create_mock = server
+        .mock("POST", "/api/v2/buckets")
+        .match_header("Authorization", "Token test_token")
+        .match_header("content-type", "application/json")
+        .match_body(Matcher::PartialJson(json!({
+            "orgID": "org_id_123",
+            "name": "test_bucket"
+        })))
+        .with_status(201)
+        .with_header("content-type", "application/json")
+        .with_body("{}")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let config = InfluxConfig {
+        url: base_url,
+        bucket: "test_bucket".into(),
+        org: "test_org".into(),
+        token: Some("test_token".into()),
+        pool_size: 1,
+        ..InfluxConfig::default()
+    };
+
+    let client = InfluxClient::new(config);
+    client.ensure_bucket_exists_for_tests().await.unwrap();
+
+    list_mock.assert_async().await;
+    org_mock.assert_async().await;
+    create_mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_bucket_provision_noop_when_bucket_exists() {
+    let mut server = Server::new_async().await;
+    let base_url = server.url();
+
+    let list_mock = server
+        .mock("GET", "/api/v2/buckets")
+        .match_query(Matcher::AllOf(vec![
+            Matcher::UrlEncoded("name".into(), "existing_bucket".into()),
+            Matcher::UrlEncoded("org".into(), "test_org".into()),
+            Matcher::UrlEncoded("limit".into(), "1".into()),
+        ]))
+        .match_header("Authorization", "Token test_token")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(
+            json!({
+                "buckets": [{"name": "existing_bucket"}]
+            })
+            .to_string(),
+        )
+        .expect(1)
+        .create_async()
+        .await;
+
+    let create_mock = server
+        .mock("POST", "/api/v2/buckets")
+        .expect(0)
+        .create_async()
+        .await;
+
+    let config = InfluxConfig {
+        url: base_url,
+        bucket: "existing_bucket".into(),
+        org: "test_org".into(),
+        token: Some("test_token".into()),
+        pool_size: 1,
+        ..InfluxConfig::default()
+    };
+
+    let client = InfluxClient::new(config);
+    client.ensure_bucket_exists_for_tests().await.unwrap();
+
+    list_mock.assert_async().await;
+    create_mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_bucket_provision_unauthorized_error() {
+    let mut server = Server::new_async().await;
+    let base_url = server.url();
+
+    let list_mock = server
+        .mock("GET", "/api/v2/buckets")
+        .match_header("Authorization", "Token bad_token")
+        .with_status(401)
+        .with_header("content-type", "application/json")
+        .with_body(json!({"code": "unauthorized", "message": "unauthorized"}).to_string())
+        .expect(1)
+        .create_async()
+        .await;
+
+    let config = InfluxConfig {
+        url: base_url,
+        bucket: "test_bucket".into(),
+        org: "test_org".into(),
+        token: Some("bad_token".into()),
+        pool_size: 1,
+        ..InfluxConfig::default()
+    };
+
+    let client = InfluxClient::new(config);
+    let result = client.ensure_bucket_exists_for_tests().await;
+
+    assert!(result.is_err());
+    list_mock.assert_async().await;
 }
 
 #[tokio::test]
