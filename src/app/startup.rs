@@ -28,13 +28,13 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
     match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(listener) => {
             drop(listener);
-            info!("Port {} is available for binding", config.server.port);
+            info!("  * Port {} is available for binding", config.server.port);
         }
         Err(e) => {
-            error!("Cannot bind to {}: {}", bind_addr, e);
+            error!("  * Cannot bind to {}: {}", bind_addr, e);
             return Err(RavenError::configuration(format!(
-                "Port {} is not available: {}",
-                config.server.port, e
+                "  * Port {} is not available: {e}",
+                config.server.port
             )));
         }
     }
@@ -45,18 +45,18 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
         Ok(listener) => {
             drop(listener);
             info!(
-                "Metrics port {} is available",
+                "  * Metrics port {} is available",
                 config.monitoring.metrics_port
             );
         }
         Err(e) => {
             error!(
-                "Cannot bind to metrics port {}: {}",
-                config.monitoring.metrics_port, e
+                "  * Cannot bind to metrics port {}: {e}",
+                config.monitoring.metrics_port,
             );
             return Err(RavenError::configuration(format!(
-                "Metrics port {} is not available: {}",
-                config.monitoring.metrics_port, e
+                "  * Metrics port {} is not available: {e}",
+                config.monitoring.metrics_port,
             )));
         }
     }
@@ -70,17 +70,17 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
         Ok(listener) => {
             drop(listener);
             info!(
-                "Health check port {} is available",
+                "  * Health check port {} is available",
                 config.monitoring.health_check_port
             );
         }
         Err(e) => {
             error!(
-                "Cannot bind to health check port {}: {}",
+                "  * Cannot bind to health check port {}: {}",
                 config.monitoring.health_check_port, e
             );
             return Err(RavenError::configuration(format!(
-                "Health check port {} is not available: {}",
+                "  * Health check port {} is not available: {}",
                 config.monitoring.health_check_port, e
             )));
         }

@@ -36,8 +36,7 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Development Environment (uses external services):$(NC)"
 	@echo "  dev-build      Build development containers"
-	@echo "  dev-up         Start development services (dashboard + server)"
-	@echo "  dev-dashboard  Start only dashboard in dev mode"
+	@echo "  dev-up         Start development services (server only)"
 	@echo "  dev-server     Start only server in dev mode"
 	@echo "  dev-down       Stop development services"
 	@echo "  dev-logs       View development logs"
@@ -58,7 +57,6 @@ help:
 	@echo "  logs           Show logs for all services"
 	@echo "  logs-server    Show logs for market data server"
 	@echo "  logs-influx    Show logs for InfluxDB"
-	@echo "  logs-grafana   Show logs for Grafana"
 	@echo ""
 	@echo "$(YELLOW)Data Management:$(NC)"
 	@echo "  backup         Create backup of data volumes"
@@ -183,25 +181,19 @@ health:
 	fi
 	@echo ""
 	@echo "$(YELLOW)Market Data Server:$(NC)"
-	@if curl -sf http://localhost:8080/health >/dev/null 2>&1; then \
+	@if curl -sf http://localhost:9091/health >/dev/null 2>&1; then \
 		echo "$(GREEN)✅ Market Data Server is healthy$(NC)"; \
 	else \
 		echo "$(RED)❌ Market Data Server is not responding$(NC)"; \
 	fi
 	@echo ""
 	@echo "$(YELLOW)Prometheus:$(NC)"
-	@if curl -sf http://localhost:9091/-/healthy >/dev/null 2>&1; then \
+	@if curl -sf http://localhost:9092/-/healthy >/dev/null 2>&1; then \
 		echo "$(GREEN)✅ Prometheus is healthy$(NC)"; \
 	else \
 		echo "$(RED)❌ Prometheus is not responding$(NC)"; \
 	fi
-	@echo ""
-	@echo "$(YELLOW)Dashboard:$(NC)"
-	@if curl -sf http://localhost:8050 >/dev/null 2>&1; then \
-		echo "$(GREEN)✅ Dashboard is healthy$(NC)"; \
-	else \
-		echo "$(RED)❌ Dashboard is not responding$(NC)"; \
-	fi
+
 
 ## Monitoring & Logs
 
@@ -220,10 +212,7 @@ logs-influx:
 	@echo "$(BLUE)📋 Showing logs for InfluxDB...$(NC)"
 	docker compose -f $(COMPOSE_FILE) logs -f influxdb
 
-# Show logs for Dashboard
-logs-dashboard:
-	@echo "$(BLUE)📋 Showing logs for Dashboard...$(NC)"
-	docker compose -f $(COMPOSE_FILE) logs -f dashboard
+
 
 # Show logs for Prometheus
 logs-prometheus:
@@ -248,10 +237,7 @@ backup:
 	if docker volume ls | grep -q "docker_influxdb_data"; then \
 		docker run --rm -v docker_influxdb_data:/source -v "$$(pwd)/$(BACKUP_DIR)/$$BACKUP_NAME":/backup alpine tar czf /backup/influxdb_data.tar.gz -C /source .; \
 	fi && \
-	echo "$(YELLOW)📦 Backing up Grafana data...$(NC)" && \
-	if docker volume ls | grep -q "docker_grafana_data"; then \
-		docker run --rm -v docker_grafana_data:/source -v "$$(pwd)/$(BACKUP_DIR)/$$BACKUP_NAME":/backup alpine tar czf /backup/grafana_data.tar.gz -C /source .; \
-	fi && \
+
 	echo "$(GREEN)✅ Backup created at $(BACKUP_DIR)/$$BACKUP_NAME$(NC)"
 
 # Restore from backup (requires BACKUP_NAME parameter)
@@ -271,10 +257,7 @@ restore:
 	@if [ -f "$(BACKUP_DIR)/$(BACKUP_NAME)/influxdb_data.tar.gz" ]; then \
 		docker run --rm -v docker_influxdb_data:/target -v "$$(pwd)/$(BACKUP_DIR)/$(BACKUP_NAME)":/backup alpine tar xzf /backup/influxdb_data.tar.gz -C /target; \
 	fi
-	@echo "$(YELLOW)📥 Restoring Grafana data...$(NC)"
-	@if [ -f "$(BACKUP_DIR)/$(BACKUP_NAME)/grafana_data.tar.gz" ]; then \
-		docker run --rm -v docker_grafana_data:/target -v "$$(pwd)/$(BACKUP_DIR)/$(BACKUP_NAME)":/backup alpine tar xzf /backup/grafana_data.tar.gz -C /target; \
-	fi
+
 	@echo "$(YELLOW)▶️  Starting services...$(NC)"
 	@$(MAKE) start
 	@echo "$(GREEN)✅ Restore completed$(NC)"
@@ -301,13 +284,11 @@ clean-all:
 urls:
 	@echo "$(BLUE)🌐 Service URLs:$(NC)"
 	@echo ""
-	@echo "$(GREEN)📊 Raven Dashboard:$(NC)        http://localhost:8050"
-	@echo ""
-	@echo "$(GREEN)📈 Prometheus:$(NC)             http://localhost:9091"
+	@echo "$(GREEN)📈 Prometheus:$(NC)             http://localhost:9092"
 	@echo "$(GREEN)🔍 Jaeger Tracing:$(NC)         http://localhost:16686"
 	@echo "$(GREEN)💾 InfluxDB UI:$(NC)             http://localhost:8086"
 	@echo "$(GREEN)🐦 Raven gRPC Server:$(NC)      localhost:50051"
-	@echo "$(GREEN)❤️  Health Check:$(NC)           http://localhost:8080/health"
+	@echo "$(GREEN)❤️  Health Check:$(NC)           http://localhost:9091/health"
 	@echo "$(GREEN)📊 Metrics Endpoint:$(NC)       http://localhost:9090/metrics"
 
 # Open shell in running container
@@ -358,12 +339,11 @@ dev-build:
 	docker compose -f $(DEV_COMPOSE_FILE) build
 	@echo "$(GREEN)✅ Development containers built$(NC)"
 
-# Start development services (dashboard + server)
+# Start development services (server only)
 dev-up:
 	@echo "$(BLUE)🚀 Starting Raven development services...$(NC)"
-	@echo "📊 Dashboard will be available at http://localhost:8050"
 	@echo "🔌 Server will be available at localhost:50051"
-	@echo "📡 Health check at http://localhost:8080/health"
+	@echo "📡 Health check at http://localhost:9091/health"
 	@echo ""
 	@echo "⚠️  Make sure your external services are running:"
 	@echo "   - InfluxDB at localhost:8086"
@@ -372,18 +352,10 @@ dev-up:
 	RUST_LOG=$(DEV_LOG_LEVEL) \
 	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
 	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
-	docker compose -f $(DEV_COMPOSE_FILE) up -d
+	docker compose -f $(DEV_COMPOSE_FILE) up -d raven
 	@echo "$(GREEN)✅ Development services started$(NC)"
 
-# Start only dashboard in development mode
-dev-dashboard:
-	@echo "$(BLUE)🚀 Starting Raven dashboard in development mode...$(NC)"
-	@echo "📊 Dashboard will be available at http://localhost:8050"
-	RUST_LOG=$(DEV_LOG_LEVEL) \
-	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
-	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
-	docker compose -f $(DEV_COMPOSE_FILE) up -d dashboard-dev
-	@echo "$(GREEN)✅ Development dashboard started$(NC)"
+
 
 # Start only server in development mode
 dev-server:
@@ -392,7 +364,7 @@ dev-server:
 	RUST_LOG=$(DEV_LOG_LEVEL) \
 	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
 	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
-	docker compose -f $(DEV_COMPOSE_FILE) up -d market-data-server-dev
+	docker compose -f $(DEV_COMPOSE_FILE) up -d raven
 	@echo "$(GREEN)✅ Development server started$(NC)"
 
 # Stop development services
@@ -406,15 +378,12 @@ dev-logs:
 	@echo "$(BLUE)📋 Showing development logs...$(NC)"
 	docker compose -f $(DEV_COMPOSE_FILE) logs -f
 
-# View dashboard logs only
-dev-logs-dashboard:
-	@echo "$(BLUE)📋 Showing dashboard logs...$(NC)"
-	docker compose -f $(DEV_COMPOSE_FILE) logs -f dashboard-dev
+
 
 # View server logs only
 dev-logs-server:
 	@echo "$(BLUE)📋 Showing server logs...$(NC)"
-	docker compose -f $(DEV_COMPOSE_FILE) logs -f market-data-server-dev
+	docker compose -f $(DEV_COMPOSE_FILE) logs -f raven
 
 # Show development service status
 dev-status:
@@ -424,16 +393,10 @@ dev-status:
 # Check development service health
 dev-health:
 	@echo "$(BLUE)❤️  Checking development service health...$(NC)"
-	@echo ""
-	@echo "$(YELLOW)Dashboard Health:$(NC)"
-	@if curl -sf http://localhost:8050 >/dev/null 2>&1; then \
-		echo "$(GREEN)✅ Dashboard is healthy$(NC)"; \
-	else \
-		echo "$(RED)❌ Dashboard is not responding$(NC)"; \
-	fi
+
 	@echo ""
 	@echo "$(YELLOW)Server Health:$(NC)"
-	@if curl -sf http://localhost:8080/health >/dev/null 2>&1; then \
+	@if curl -sf http://localhost:9091/health >/dev/null 2>&1; then \
 		echo "$(GREEN)✅ Server is healthy$(NC)"; \
 	else \
 		echo "$(RED)❌ Server is not responding$(NC)"; \

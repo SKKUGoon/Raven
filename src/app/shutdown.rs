@@ -65,13 +65,13 @@ pub async fn wait_for_shutdown_signal() -> RavenResult<()> {
     // Keep the server running and wait for shutdown signals
     tokio::select! {
         _ = sigint.recv() => {
-            info!("📡 Received SIGINT (Ctrl+C) shutdown signal");
+            info!("!!! Received SIGINT (Ctrl+C) shutdown signal");
         }
         _ = sigterm.recv() => {
-            info!("📡 Received SIGTERM shutdown signal");
+            info!("!!! Received SIGTERM shutdown signal");
         }
         _ = tokio::signal::ctrl_c() => {
-            info!("📡 Received CTRL+C shutdown signal");
+            info!("!!! Received CTRL+C shutdown signal");
         }
     }
 
@@ -87,44 +87,37 @@ pub async fn perform_graceful_shutdown(
     monitoring_handles: Vec<tokio::task::JoinHandle<()>>,
     data_collectors: DataCollectors,
 ) -> RavenResult<()> {
-    info!("🌙 Shutting down Project Raven gracefully...");
-    info!("The long night is ending, but the watch continues");
+    info!("Shutting down Raven gracefully...");
 
-    // Graceful shutdown sequence
-    info!("🛑 Starting graceful shutdown sequence...");
-
-    // 1. Stop data collectors
+    // Stop data collectors
     if !data_collectors.is_empty() {
         info!("Stopping {} data collector(s)...", data_collectors.len());
         let collector_names = data_collectors.collector_names();
         for name in collector_names {
-            info!("  📡 Stopping collector: {}", name);
+            info!("  * Stopping collector: {}", name);
         }
         // Note: WebSocket connections will be dropped when collectors are dropped
         // and tokio tasks will be cancelled automatically
-        info!("✅ All data collectors stopped gracefully");
+        info!("All data collectors stopped gracefully");
     }
 
-    // 2. Stop accepting new connections and disconnect existing clients
+    // Stop accepting new connections and disconnect existing clients
     if let Err(e) = client_manager.shutdown_all_clients().await {
         log_error_with_context(&e, "Error during client shutdown");
     }
 
-    // 3. Stop dead letter queue processing and persist remaining entries
+    // Stop dead letter queue processing and persist remaining entries
     dead_letter_queue.stop_processing();
     if let Err(e) = dead_letter_queue.persist_to_disk().await {
         log_error_with_context(&e, "Failed to persist dead letter queue");
     }
 
-    // 3. Process any remaining dead letter entries
+    // TODO: Process any remaining dead letter entries
     // Note: The process_dead_letter_queue method doesn't exist in the current implementation
     // This would be handled by the background processing loop that was already stopped
-    info!("📮 Dead letter queue processing stopped, remaining entries persisted to disk");
 
-    // 4. Shutdown monitoring services
+    // Shutdown monitoring services
     info!("Shutting down monitoring services...");
-
-    // Stop monitoring handles
     for handle in monitoring_handles {
         handle.abort();
     }
@@ -137,18 +130,17 @@ pub async fn perform_graceful_shutdown(
         );
     }
 
-    // 5. Get final statistics
+    // Get final statistics
     let client_stats = client_manager.get_client_stats().await;
     let dlq_stats = dead_letter_queue.get_statistics().await;
     let cb_stats = circuit_breaker_registry.get_all_stats().await;
 
     info!("Final statistics:");
-    info!("  Clients: {:?}", client_stats);
-    info!("  Dead Letter Queue: {:?}", dlq_stats);
-    info!("  🔌 Circuit Breakers: {:?}", cb_stats);
+    info!("  * Clients: {:?}", client_stats);
+    info!("  * Dead Letter Queue: {:?}", dlq_stats);
+    info!("  * Circuit Breakers: {:?}", cb_stats);
 
-    info!("🌙 Project Raven shutdown complete");
-    info!("The Crow's Watch ends, but the realm remembers");
+    info!("Raven shutdown complete");
 
     Ok(())
 }

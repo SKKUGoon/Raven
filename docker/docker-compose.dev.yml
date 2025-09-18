@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     ports:
       - "50051:50051"  # gRPC port
-      - "8080:8080"    # Health check port
+      - "9091:9091"    # Health check port
       - "9090:9090"    # Metrics port
     environment:
       - RUST_LOG=debug
@@ -19,6 +19,8 @@ services:
       - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
       - RAVEN_SERVER__HOST=0.0.0.0
       - RAVEN_SERVER__PORT=50051
+      - RAVEN_MONITORING__HEALTH_CHECK_PORT=9091
+      - RAVEN_MONITORING__METRICS_PORT=9090
       - RAVEN_REDIS__URL=redis://host.docker.internal:6379
       - RAVEN_RETENTION_POLICIES__PRIVATE_DATA__AUTO_CLEANUP=true
     extra_hosts:
@@ -28,7 +30,7 @@ services:
       - raven_logs_dev:/app/logs
       - raven_data_dev:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:9091/health"]
       interval: 30s
       timeout: 10s
       retries: 3

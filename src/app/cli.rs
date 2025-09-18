@@ -162,7 +162,6 @@ pub fn print_raven_ascii_art() {
 pub fn print_version_info() {
     print_raven_ascii_art();
     println!();
-    println!("🐦‍⬛ Project Raven - Market Data Subscription Server");
     println!("Version: {VERSION}");
     println!("Build Timestamp: {BUILD_TIMESTAMP}");
     println!("Git SHA: {GIT_SHA}");
