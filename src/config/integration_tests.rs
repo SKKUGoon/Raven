@@ -50,7 +50,7 @@ metrics_enabled = true
     // This is expected behavior for the current implementation
     assert_eq!(config.server.host, "0.0.0.0"); // Default value
     assert_eq!(config.server.port, 50051); // Default value
-    assert_eq!(config.database.bucket, "market_data"); // Default value
+    assert_eq!(config.database.bucket, "crypto"); // Default value
     assert_eq!(config.database.org, "raven"); // Default value
 
     // Test configuration validation
@@ -298,7 +298,7 @@ log_level = "info"
 
     // Get initial config
     let config = manager.get_config().await;
-    assert_eq!(config.database.bucket, "market_data"); // Uses default
+    assert_eq!(config.database.bucket, "crypto"); // Uses default
 
     // Test force reload
     assert!(manager.force_reload().await.is_ok());

@@ -356,11 +356,11 @@ impl HighFrequencyHandler {
         match exchange {
             "binance_spot" => Ok(Exchange::BinanceSpot),
             "binance_futures" => Ok(Exchange::BinanceFutures),
-            "coinbase" => Ok(Exchange::Coinbase),
-            "kraken" => Ok(Exchange::Kraken),
-            "bybit" => Ok(Exchange::Bybit),
-            "okx" => Ok(Exchange::OKX),
-            "deribit" => Ok(Exchange::Deribit),
+            // "coinbase" => Ok(Exchange::Coinbase),
+            // "kraken" => Ok(Exchange::Kraken),
+            // "bybit" => Ok(Exchange::Bybit),
+            // "okx" => Ok(Exchange::OKX),
+            // "deribit" => Ok(Exchange::Deribit),
             _ => Err(anyhow::anyhow!("Unknown exchange: {}", exchange)),
         }
     }

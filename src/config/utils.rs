@@ -177,23 +177,27 @@ impl ConfigUtils {
 
     /// Validate environment variables are properly set
     pub fn validate_environment() -> Result<()> {
-        let required_vars = vec![
-            "RAVEN_DATABASE__INFLUX_URL",
-            "RAVEN_DATABASE__BUCKET",
-            "RAVEN_DATABASE__ORG",
-        ];
-
-        let mut missing_vars = Vec::new();
-
-        for var in required_vars {
-            if env::var(var).is_err() {
-                missing_vars.push(var);
-            }
+        // With TOML-first configuration, environment variables are optional
+        // Only check for ENVIRONMENT variable
+        if env::var("ENVIRONMENT").is_err() {
+            info!("ENVIRONMENT variable not set, defaulting to 'development'");
+            info!("Set ENVIRONMENT=production for production deployment");
         }
 
-        if !missing_vars.is_empty() {
-            warn!("Missing environment variables: {:?}", missing_vars);
-            warn!("Consider setting these variables or using config files");
+        // Check if required config files exist
+        let env_name = env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
+        let config_file = match env_name.as_str() {
+            "production" => "config/secret.toml",
+            _ => "config/development.toml",
+        };
+
+        if !std::path::Path::new(config_file).exists() {
+            warn!("Configuration file not found: {}", config_file);
+            if env_name == "production" {
+                warn!("For production, copy config/example.toml to config/secret.toml and fill in secrets");
+            } else {
+                warn!("For development, copy config/example.toml to config/development.toml");
+            }
         }
 
         // Check for common misconfigurations

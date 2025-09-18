@@ -5,11 +5,11 @@ use std::fmt;
 pub enum Exchange {
     BinanceSpot,
     BinanceFutures,
-    Coinbase,
-    Kraken,
-    Bybit,
-    OKX,
-    Deribit,
+    // Coinbase,
+    // Kraken,
+    // Bybit,
+    // OKX,
+    // Deribit,
 }
 
 impl fmt::Display for Exchange {
@@ -17,11 +17,11 @@ impl fmt::Display for Exchange {
         match self {
             Exchange::BinanceSpot => write!(f, "binance_spot"),
             Exchange::BinanceFutures => write!(f, "binance_futures"),
-            Exchange::Coinbase => write!(f, "coinbase"),
-            Exchange::Kraken => write!(f, "kraken"),
-            Exchange::Bybit => write!(f, "bybit"),
-            Exchange::OKX => write!(f, "okx"),
-            Exchange::Deribit => write!(f, "deribit"),
+            // Exchange::Coinbase => write!(f, "coinbase"),
+            // Exchange::Kraken => write!(f, "kraken"),
+            // Exchange::Bybit => write!(f, "bybit"),
+            // Exchange::OKX => write!(f, "okx"),
+            // Exchange::Deribit => write!(f, "deribit"),
         }
     }
 }
@@ -31,11 +31,11 @@ impl Exchange {
         match self {
             Exchange::BinanceSpot => "wss://stream.binance.com:9443/ws",
             Exchange::BinanceFutures => "wss://fstream.binance.com/stream",
-            Exchange::Coinbase => "wss://ws-feed.exchange.coinbase.com",
-            Exchange::Kraken => "wss://ws.kraken.com",
-            Exchange::Bybit => "wss://stream.bybit.com/v5/public/spot",
-            Exchange::OKX => "wss://ws.okx.com:8443/ws/v5/public",
-            Exchange::Deribit => "wss://www.deribit.com/ws/api/v2",
+            // Exchange::Coinbase => "wss://ws-feed.exchange.coinbase.com",
+            // Exchange::Kraken => "wss://ws.kraken.com",
+            // Exchange::Bybit => "wss://stream.bybit.com/v5/public/spot",
+            // Exchange::OKX => "wss://ws.okx.com:8443/ws/v5/public",
+            // Exchange::Deribit => "wss://www.deribit.com/ws/api/v2",
         }
     }
 }

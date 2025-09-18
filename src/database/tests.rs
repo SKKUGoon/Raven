@@ -102,7 +102,7 @@ async fn test_influx_client_creation() {
     let config = InfluxConfig::default();
     let client = InfluxClient::new(config);
 
-    assert_eq!(client.config.bucket, "market_data");
+    assert_eq!(client.config.bucket, "crypto");
     assert_eq!(client.config.pool_size, 10);
     assert!(!client.health_check_running.load(Ordering::Relaxed));
 }
@@ -469,7 +469,7 @@ async fn test_config_defaults() {
     let config = InfluxConfig::default();
 
     assert_eq!(config.url, "http://localhost:8086");
-    assert_eq!(config.bucket, "market_data");
+    assert_eq!(config.bucket, "crypto");
     assert_eq!(config.org, "raven");
     assert_eq!(config.pool_size, 10);
     assert_eq!(config.retry_attempts, 3);

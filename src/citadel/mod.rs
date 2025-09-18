@@ -94,8 +94,8 @@ impl Default for ValidationRules {
             allowed_exchanges: vec![
                 Exchange::BinanceSpot,
                 Exchange::BinanceFutures,
-                Exchange::Coinbase,
-                Exchange::Kraken,
+                // Exchange::Coinbase,
+                // Exchange::Kraken,
             ],
             allowed_symbols: vec![
                 "BTCUSDT".to_string(),

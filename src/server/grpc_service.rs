@@ -32,11 +32,11 @@ fn parse_key(key: &str) -> Option<(Exchange, String)> {
     let exchange = match parts[0] {
         "binance_spot" => Exchange::BinanceSpot,
         "binance_futures" => Exchange::BinanceFutures,
-        "coinbase" => Exchange::Coinbase,
-        "kraken" => Exchange::Kraken,
-        "bybit" => Exchange::Bybit,
-        "okx" => Exchange::OKX,
-        "deribit" => Exchange::Deribit,
+        // "coinbase" => Exchange::Coinbase,
+        // "kraken" => Exchange::Kraken,
+        // "bybit" => Exchange::Bybit,
+        // "okx" => Exchange::OKX,
+        // "deribit" => Exchange::Deribit,
         _ => return None,
     };
 

@@ -12,7 +12,7 @@ fn test_default_config_creation() {
     assert_eq!(config.server.port, 50051);
     assert_eq!(config.server.max_connections, 1000);
     assert_eq!(config.database.influx_url, "http://localhost:8086");
-    assert_eq!(config.database.bucket, "market_data");
+    assert_eq!(config.database.bucket, "crypto");
     assert_eq!(config.database.org, "raven");
     assert_eq!(config.data_processing.snapshot_interval_ms, 5);
 }
