@@ -30,7 +30,7 @@ impl Exchange {
     pub fn websocket_url(&self) -> &'static str {
         match self {
             Exchange::BinanceSpot => "wss://stream.binance.com:9443/ws",
-            Exchange::BinanceFutures => "wss://fstream.binance.com/ws",
+            Exchange::BinanceFutures => "wss://fstream.binance.com/stream",
             Exchange::Coinbase => "wss://ws-feed.exchange.coinbase.com",
             Exchange::Kraken => "wss://ws.kraken.com",
             Exchange::Bybit => "wss://stream.bybit.com/v5/public/spot",

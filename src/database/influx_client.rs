@@ -324,14 +324,15 @@ impl InfluxClient {
         // Start health monitoring
         self.start_health_monitoring().await;
 
-        info!("🏦 The Iron Bank is ready for business!");
         Ok(())
     }
 
     async fn create_client(&self) -> Result<Client> {
         let client = if let Some(token) = &self.config.token {
+            debug!("Creating InfluxDB client with token: {}", token);
             Client::new(&self.config.url, &self.config.org, token)
         } else {
+            debug!("Creating InfluxDB client without authentication");
             // For development/testing without authentication
             Client::new(&self.config.url, &self.config.org, "")
         };

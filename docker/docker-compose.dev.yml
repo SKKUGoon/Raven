@@ -13,16 +13,7 @@ services:
     environment:
       - RUST_LOG=debug
       - RUST_BACKTRACE=full
-      - RAVEN_DATABASE__INFLUX_URL=http://host.docker.internal:8086
-      - RAVEN_DATABASE__BUCKET=market_data
-      - RAVEN_DATABASE__ORG=house_raven
-      - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
-      - RAVEN_SERVER__HOST=0.0.0.0
-      - RAVEN_SERVER__PORT=50051
-      - RAVEN_MONITORING__HEALTH_CHECK_PORT=9091
-      - RAVEN_MONITORING__METRICS_PORT=9090
-      - RAVEN_REDIS__URL=redis://host.docker.internal:6379
-      - RAVEN_RETENTION_POLICIES__PRIVATE_DATA__AUTO_CLEANUP=true
+      - ENVIRONMENT=development
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -41,3 +32,5 @@ volumes:
     driver: local
   raven_data_dev:
     driver: local
+
+  

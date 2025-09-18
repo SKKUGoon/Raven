@@ -220,7 +220,7 @@ max_connections = 1000
 
 [database]
 influx_url = "http://localhost:8086"
-bucket = "market_data"
+bucket = "crypto"
 org = "raven"
 # token = "your_influxdb_v2_token"
 

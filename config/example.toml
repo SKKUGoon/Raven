@@ -1,5 +1,11 @@
-# Default Configuration for Project Raven
-# "The foundation upon which the realm is built"
+# Example Configuration for Project Raven
+# "Copy this file and fill in your values"
+# 
+# Usage:
+#   cp config/example.toml config/development.toml
+#   cp config/example.toml config/secret.toml
+#   
+# Then edit the copied files with your actual values.
 
 [server]
 host = "0.0.0.0"
@@ -11,9 +17,10 @@ enable_compression = true
 max_message_size = 4194304  # 4MB
 
 [database]
-influx_url = "http://localhost:8086"
-bucket = "market_data"
-org = "raven"
+influx_url = "http://localhost:8086"  # CHANGE THIS: Your InfluxDB URL
+bucket = "crypto"                     # CHANGE THIS: Your bucket name
+org = "raven"                         # CHANGE THIS: Your organization
+# token = "your_token_here"           # REQUIRED: Uncomment and set your InfluxDB token
 connection_pool_size = 20
 connection_timeout_seconds = 10
 write_timeout_seconds = 5
@@ -32,7 +39,7 @@ data_validation_enabled = true
 sanitization_enabled = true
 dead_letter_queue_size = 1000
 
-# Retention Policies - "How long shall the ravens remember?"
+# Retention Policies
 [retention_policies.high_frequency]
 full_resolution_days = 7
 downsampled_days = 30
@@ -61,7 +68,7 @@ archive_days = 180
 auto_cleanup = true
 compression_enabled = true
 
-# Batching Configuration - "Efficiency in numbers"
+# Batching Configuration
 [batching.database_writes]
 size = 1000
 timeout_ms = 5
@@ -89,7 +96,7 @@ compression_threshold = 250
 [monitoring]
 metrics_enabled = true
 metrics_port = 9090
-health_check_port = 8080
+health_check_port = 9091
 tracing_enabled = true
-log_level = "info"
+log_level = "info"  # CHANGE THIS: debug, info, warn, error
 performance_monitoring = true

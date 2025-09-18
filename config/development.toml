@@ -1,5 +1,5 @@
 # Development Configuration for Project Raven
-# "The testing grounds where ravens learn to fly"
+# "Local development settings aligned with your current setup"
 
 [server]
 host = "127.0.0.1"
@@ -12,8 +12,9 @@ max_message_size = 2097152  # 2MB
 
 [database]
 influx_url = "http://localhost:8086"
-bucket = "market_data_dev"
-org = "raven"
+bucket = "crypto_dev"
+org = "influx"
+token = "admin-token-banana"  # Your current dev token
 connection_pool_size = 5
 connection_timeout_seconds = 30
 write_timeout_seconds = 10
@@ -89,7 +90,7 @@ compression_threshold = 10
 [monitoring]
 metrics_enabled = true
 metrics_port = 9090
-health_check_port = 8080
+health_check_port = 9091
 tracing_enabled = true
 log_level = "debug"  # Verbose logging for development
 performance_monitoring = false  # Less overhead in dev

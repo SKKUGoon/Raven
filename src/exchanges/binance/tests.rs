@@ -1,5 +1,89 @@
 use super::*;
+use crate::exchanges::binance::app::BinanceFuturesTrade;
 use crate::exchanges::websocket::WebSocketParser;
+use std::time::Duration;
+use tokio::time::timeout;
+
+#[tokio::test]
+async fn test_binance_websocket_60_second_integration() {
+    // Simple 60-second WebSocket integration test
+    let symbol = "btcusdt".to_string();
+
+    println!("🚀 Starting 60-second Binance Futures WebSocket test...");
+
+    let mut client = BinanceFuturesTrade::new(symbol.clone()).expect("Failed to create client");
+    let mut rx = client
+        .start_streaming()
+        .await
+        .expect("Failed to start streaming");
+
+    let start_time = std::time::Instant::now();
+    let mut message_count = 0;
+    let mut connection_confirmed = false;
+
+    // Run for 60 seconds or until we get enough messages
+    while start_time.elapsed() < Duration::from_secs(60) {
+        match timeout(Duration::from_secs(1), rx.recv()).await {
+            Ok(Some(msg)) => {
+                if !connection_confirmed {
+                    println!("✅ Connection confirmed!");
+                    connection_confirmed = true;
+                }
+
+                message_count += 1;
+
+                // Basic validation
+                assert_eq!(
+                    msg.exchange,
+                    crate::exchanges::types::Exchange::BinanceFutures
+                );
+
+                if let crate::exchanges::types::MarketData::FutureTrade { price, .. } = &msg.data {
+                    assert!(*price > 0.0);
+
+                    if message_count % 10 == 0 {
+                        println!("📊 Message #{message_count}: ${price:.2}");
+                    }
+                }
+
+                // Early exit if we get enough data
+                if message_count >= 20 {
+                    println!(
+                        "🎉 Success! Received {} messages in {:.1}s",
+                        message_count,
+                        start_time.elapsed().as_secs_f64()
+                    );
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(_) => {
+                // Timeout - continue
+                if start_time.elapsed().as_secs() % 15 == 0 {
+                    println!(
+                        "⏳ {}s elapsed, {} messages...",
+                        start_time.elapsed().as_secs(),
+                        message_count
+                    );
+                }
+            }
+        }
+    }
+
+    // Results
+    let elapsed = start_time.elapsed();
+    println!(
+        "\n📈 Results: {:.1}s, {} messages",
+        elapsed.as_secs_f64(),
+        message_count
+    );
+
+    if connection_confirmed && message_count > 0 {
+        println!("✅ TEST PASSED!");
+    } else {
+        panic!("❌ TEST FAILED - No connection or data");
+    }
+}
 
 #[test]
 fn test_binance_subscription_ticker() {
@@ -109,7 +193,7 @@ fn test_binance_parse_spot_trade() {
     let message = r#"{
             "stream": "btcusdt@trade",
             "data": {
-                "s": "BTCUSDT",
+                "s": "btcusdt",
                 "p": "45000.00",
                 "q": "0.1",
                 "t": 12345,

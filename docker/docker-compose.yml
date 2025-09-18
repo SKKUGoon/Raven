@@ -13,15 +13,7 @@ services:
     environment:
       - RUST_LOG=info
       - RUST_BACKTRACE=1
-      - RAVEN_DATABASE__INFLUX_URL=http://influxdb:8086
-      - RAVEN_DATABASE__BUCKET=market_data
-      - RAVEN_DATABASE__ORG=raven
-      - RAVEN_DATABASE__TOKEN=raven_master_token_for_the_iron_bank
-      - RAVEN_SERVER__HOST=0.0.0.0
-      - RAVEN_SERVER__PORT=50051
-      - RAVEN_MONITORING__HEALTH_CHECK_PORT=9091
-      - RAVEN_MONITORING__METRICS_PORT=9090
-      - RAVEN_RETENTION_POLICIES__PRIVATE_DATA__AUTO_CLEANUP=false
+      - ENVIRONMENT=production
     volumes:
       - ./config:/app/config:ro
       - raven_logs:/app/logs
@@ -60,7 +52,7 @@ services:
       - DOCKER_INFLUXDB_INIT_USERNAME=raven
       - DOCKER_INFLUXDB_INIT_PASSWORD=ravens_fly_at_dawn
       - DOCKER_INFLUXDB_INIT_ORG=house_raven
-      - DOCKER_INFLUXDB_INIT_BUCKET=market_data
+      - DOCKER_INFLUXDB_INIT_BUCKET=crypto
       - DOCKER_INFLUXDB_INIT_RETENTION=7d
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=raven_master_token_for_the_iron_bank
     volumes:

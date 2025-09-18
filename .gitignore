@@ -181,4 +181,16 @@ __marimo__/
 .env
 .env.dev
 .kiro
+.claude
 
+#############################################
+###########   Project Raven       ###########
+#############################################
+
+# Secret production configuration - NEVER COMMIT!
+config/secret.toml
+
+# Runtime data
+logs/
+data/
+*.log

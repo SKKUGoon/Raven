@@ -142,7 +142,7 @@ impl Default for DatabaseConfig {
     fn default() -> Self {
         DatabaseConfig {
             influx_url: "http://localhost:8086".to_string(),
-            bucket: "market_data".to_string(),
+            bucket: "crypto".to_string(),
             org: "raven".to_string(),
             token: None,
             connection_pool_size: 20,
@@ -269,16 +269,17 @@ impl Config {
             info!("Using custom config file: {}", config_path);
             builder = builder.add_source(File::with_name(config_path).required(true));
         } else {
-            // Add config file if it exists
-            builder = builder
-                .add_source(File::with_name("config/default").required(false))
-                .add_source(File::with_name("config/local").required(false));
+            // Load environment-specific config file
+            let env = std::env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string());
 
-            // Add environment-specific config file
-            if let Ok(env) = std::env::var("ENVIRONMENT") {
-                builder =
-                    builder.add_source(File::with_name(&format!("config/{env}")).required(false));
-            }
+            let config_file = match env.as_str() {
+                "production" => "config/secret",       // Production uses secret.toml
+                "development" => "config/development", // Development uses development.toml
+                _ => "config/development",             // Default to development
+            };
+
+            info!("Loading configuration from: {}.toml", config_file);
+            builder = builder.add_source(File::with_name(config_file).required(true));
         }
 
         // Add environment variables with prefix
