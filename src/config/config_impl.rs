@@ -266,7 +266,7 @@ impl Config {
 
         // Add custom config file if specified, otherwise use default locations
         if let Some(config_path) = config_file {
-            info!("🔧 Using custom config file: {}", config_path);
+            info!("Using custom config file: {}", config_path);
             builder = builder.add_source(File::with_name(config_path).required(true));
         } else {
             // Add config file if it exists

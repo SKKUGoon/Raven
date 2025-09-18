@@ -317,7 +317,7 @@ impl CircuitBreaker {
     /// Force circuit breaker to closed state (for testing/recovery)
     pub async fn force_close(&self) {
         self.transition_to_closed().await;
-        info!("🔧 Circuit breaker {} forced to closed state", self.name);
+        info!("Circuit breaker {} forced to closed state", self.name);
     }
 
     /// Transition to closed state

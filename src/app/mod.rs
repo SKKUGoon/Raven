@@ -117,7 +117,7 @@ pub async fn run() -> RavenResult<()> {
         config.server.host, config.server.port
     );
     info!(
-        "📊 Metrics will be available on port {}",
+        "Metrics will be available on port {}",
         config.monitoring.metrics_port
     );
     info!(

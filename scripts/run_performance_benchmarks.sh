@@ -5,7 +5,7 @@
 
 set -e
 
-echo "🏟️  Starting Performance Benchmarks for Project Raven"
+echo "Starting Performance Benchmarks for Project Raven"
 echo "=================================================="
 
 # Colors for output
@@ -19,34 +19,34 @@ NC='\033[0m' # No Color
 RESULTS_DIR="benchmark_results/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RESULTS_DIR"
 
-echo -e "${BLUE}📊 Results will be saved to: $RESULTS_DIR${NC}"
+echo -e "${BLUE}Results will be saved to: $RESULTS_DIR${NC}"
 
 # Function to run benchmark and capture results
 run_benchmark() {
     local bench_name=$1
     local description=$2
     
-    echo -e "\n${YELLOW}🚀 Running $description${NC}"
+    echo -e "\n${YELLOW}Running $description${NC}"
     echo "----------------------------------------"
     
     # Run benchmark and capture output
     if cargo bench --bench "$bench_name" -- --output-format json > "$RESULTS_DIR/${bench_name}_results.json" 2>&1; then
-        echo -e "${GREEN}✅ $description completed successfully${NC}"
+        echo -e "${GREEN}$description completed successfully${NC}"
         
         # Generate HTML report if available
         if [ -f "target/criterion/$bench_name/report/index.html" ]; then
             cp -r "target/criterion/$bench_name" "$RESULTS_DIR/"
-            echo -e "${BLUE}📈 HTML report available at: $RESULTS_DIR/$bench_name/report/index.html${NC}"
+            echo -e "${BLUE}HTML report available at: $RESULTS_DIR/$bench_name/report/index.html${NC}"
         fi
     else
-        echo -e "${RED}❌ $description failed${NC}"
+        echo -e "${RED}$description failed${NC}"
         return 1
     fi
 }
 
 # Function to validate performance requirements
 validate_requirements() {
-    echo -e "\n${BLUE}🔍 Validating Performance Requirements${NC}"
+    echo -e "\n${BLUE}Validating Performance Requirements${NC}"
     echo "======================================"
     
     local all_passed=true
@@ -54,51 +54,51 @@ validate_requirements() {
     # Requirement 8.1: 1000+ concurrent client connections
     echo -e "${YELLOW}Checking Requirement 8.1: 1000+ concurrent connections${NC}"
     if grep -q "concurrent_clients.*1000" "$RESULTS_DIR"/*_results.json 2>/dev/null; then
-        echo -e "${GREEN}✅ 1000+ concurrent connections supported${NC}"
+        echo -e "${GREEN}1000+ concurrent connections supported${NC}"
     else
-        echo -e "${RED}❌ 1000+ concurrent connections requirement not met${NC}"
+        echo -e "${RED}1000+ concurrent connections requirement not met${NC}"
         all_passed=false
     fi
     
     # Requirement 8.2: Sub-millisecond latency
     echo -e "${YELLOW}Checking Requirement 8.2: Sub-millisecond latency${NC}"
     if grep -q "sub_millisecond_latency" "$RESULTS_DIR"/*_results.json 2>/dev/null; then
-        echo -e "${GREEN}✅ Sub-millisecond latency achieved${NC}"
+        echo -e "${GREEN}Sub-millisecond latency achieved${NC}"
     else
-        echo -e "${RED}❌ Sub-millisecond latency requirement not met${NC}"
+        echo -e "${RED}Sub-millisecond latency requirement not met${NC}"
         all_passed=false
     fi
     
     # Requirement 8.3: 10,000+ messages per second
     echo -e "${YELLOW}Checking Requirement 8.3: 10,000+ messages per second${NC}"
     if grep -q "10000.*messages_per_second" "$RESULTS_DIR"/*_results.json 2>/dev/null; then
-        echo -e "${GREEN}✅ 10,000+ messages per second achieved${NC}"
+        echo -e "${GREEN}10,000+ messages per second achieved${NC}"
     else
-        echo -e "${RED}❌ 10,000+ messages per second requirement not met${NC}"
+        echo -e "${RED}10,000+ messages per second requirement not met${NC}"
         all_passed=false
     fi
     
     # Requirement 8.4: Memory efficiency
     echo -e "${YELLOW}Checking Requirement 8.4: Memory efficiency${NC}"
     if grep -q "memory_efficiency" "$RESULTS_DIR"/*_results.json 2>/dev/null; then
-        echo -e "${GREEN}✅ Memory efficiency validated${NC}"
+        echo -e "${GREEN}Memory efficiency validated${NC}"
     else
-        echo -e "${RED}❌ Memory efficiency requirement not validated${NC}"
+        echo -e "${RED}Memory efficiency requirement not validated${NC}"
         all_passed=false
     fi
     
     if [ "$all_passed" = true ]; then
-        echo -e "\n${GREEN}🎉 All performance requirements validated successfully!${NC}"
+        echo -e "\n${GREEN}All performance requirements validated successfully!${NC}"
         return 0
     else
-        echo -e "\n${RED}💥 Some performance requirements were not met${NC}"
+        echo -e "\n${RED}Some performance requirements were not met${NC}"
         return 1
     fi
 }
 
 # Function to generate summary report
 generate_summary() {
-    echo -e "\n${BLUE}📋 Generating Performance Summary${NC}"
+    echo -e "\n${BLUE}Generating Performance Summary${NC}"
     echo "================================="
     
     local summary_file="$RESULTS_DIR/performance_summary.md"
@@ -158,15 +158,15 @@ EOF
         echo "- $(basename "$file")" >> "$summary_file"
     done
     
-    echo -e "${GREEN}📄 Summary report generated: $summary_file${NC}"
+    echo -e "${GREEN}Summary report generated: $summary_file${NC}"
 }
 
 # Main execution
 main() {
-    echo -e "${BLUE}🔧 Building project in release mode for accurate benchmarks${NC}"
+    echo -e "${BLUE}Building project in release mode for accurate benchmarks${NC}"
     cargo build --release
     
-    echo -e "\n${BLUE}🧹 Cleaning previous benchmark results${NC}"
+    echo -e "\n${BLUE}Cleaning previous benchmark results${NC}"
     cargo clean --target-dir target/criterion
     
     # Run all benchmark suites
@@ -190,20 +190,20 @@ main() {
     # Generate summary
     generate_summary
     
-    echo -e "\n${GREEN}🏁 All benchmarks completed!${NC}"
-    echo -e "${BLUE}📊 Results available in: $RESULTS_DIR${NC}"
-    echo -e "${BLUE}📈 Open HTML reports for detailed analysis${NC}"
+    echo -e "\n${GREEN}All benchmarks completed!${NC}"
+    echo -e "${BLUE}Results available in: $RESULTS_DIR${NC}"
+    echo -e "${BLUE}Open HTML reports for detailed analysis${NC}"
 }
 
 # Check if cargo is available
 if ! command -v cargo &> /dev/null; then
-    echo -e "${RED}❌ Cargo not found. Please install Rust and Cargo.${NC}"
+    echo -e "${RED}Cargo not found. Please install Rust and Cargo.${NC}"
     exit 1
 fi
 
 # Check if we're in the right directory
 if [ ! -f "Cargo.toml" ]; then
-    echo -e "${RED}❌ Cargo.toml not found. Please run from project root.${NC}"
+    echo -e "${RED}Cargo.toml not found. Please run from project root.${NC}"
     exit 1
 fi
 

@@ -95,7 +95,7 @@ pub async fn perform_graceful_shutdown(
 
     // 1. Stop data collectors
     if !data_collectors.is_empty() {
-        info!("🚀 Stopping {} data collector(s)...", data_collectors.len());
+        info!("Stopping {} data collector(s)...", data_collectors.len());
         let collector_names = data_collectors.collector_names();
         for name in collector_names {
             info!("  📡 Stopping collector: {}", name);
@@ -122,7 +122,7 @@ pub async fn perform_graceful_shutdown(
     info!("📮 Dead letter queue processing stopped, remaining entries persisted to disk");
 
     // 4. Shutdown monitoring services
-    info!("📊 Shutting down monitoring services...");
+    info!("Shutting down monitoring services...");
 
     // Stop monitoring handles
     for handle in monitoring_handles {
@@ -142,9 +142,9 @@ pub async fn perform_graceful_shutdown(
     let dlq_stats = dead_letter_queue.get_statistics().await;
     let cb_stats = circuit_breaker_registry.get_all_stats().await;
 
-    info!("📊 Final statistics:");
-    info!("  👥 Clients: {:?}", client_stats);
-    info!("  📮 Dead Letter Queue: {:?}", dlq_stats);
+    info!("Final statistics:");
+    info!("  Clients: {:?}", client_stats);
+    info!("  Dead Letter Queue: {:?}", dlq_stats);
     info!("  🔌 Circuit Breakers: {:?}", cb_stats);
 
     info!("🌙 Project Raven shutdown complete");

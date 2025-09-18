@@ -647,7 +647,7 @@ impl ClientManager {
         }
 
         info!(
-            "📊 Client disconnection: {} (reason: {}, duration: {:?}, messages: sent={}, received={})",
+            "Client disconnection: {} (reason: {}, duration: {:?}, messages: sent={}, received={})",
             event.client_id,
             event.reason,
             event.connection_duration,

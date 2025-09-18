@@ -85,7 +85,7 @@ impl MetricsService {
     /// Start the metrics HTTP server
     pub async fn start(&self) -> Result<Option<JoinHandle<()>>> {
         if !self.config.metrics_enabled {
-            info!("📊 Metrics collection disabled in configuration");
+            info!("Metrics collection disabled in configuration");
             return Ok(None);
         }
 
@@ -98,7 +98,7 @@ impl MetricsService {
             .await
             .with_context(|| format!("Failed to bind metrics server to {addr}"))?;
 
-        info!("📊 Metrics server starting on {}", addr);
+        info!("Metrics server starting on {}", addr);
 
         let handle = tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {

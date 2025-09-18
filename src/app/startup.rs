@@ -21,17 +21,17 @@ use crate::app::cli::CliArgs;
 
 /// Validate system dependencies and requirements
 pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
-    info!("🔍 Validating system dependencies...");
+    info!("Validating system dependencies...");
 
     // Check if we can bind to the specified port
     let bind_addr = format!("{}:{}", config.server.host, config.server.port);
     match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(listener) => {
             drop(listener);
-            info!("✅ Port {} is available for binding", config.server.port);
+            info!("Port {} is available for binding", config.server.port);
         }
         Err(e) => {
-            error!("❌ Cannot bind to {}: {}", bind_addr, e);
+            error!("Cannot bind to {}: {}", bind_addr, e);
             return Err(RavenError::configuration(format!(
                 "Port {} is not available: {}",
                 config.server.port, e
@@ -45,13 +45,13 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
         Ok(listener) => {
             drop(listener);
             info!(
-                "✅ Metrics port {} is available",
+                "Metrics port {} is available",
                 config.monitoring.metrics_port
             );
         }
         Err(e) => {
             error!(
-                "❌ Cannot bind to metrics port {}: {}",
+                "Cannot bind to metrics port {}: {}",
                 config.monitoring.metrics_port, e
             );
             return Err(RavenError::configuration(format!(
@@ -70,13 +70,13 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
         Ok(listener) => {
             drop(listener);
             info!(
-                "✅ Health check port {} is available",
+                "Health check port {} is available",
                 config.monitoring.health_check_port
             );
         }
         Err(e) => {
             error!(
-                "❌ Cannot bind to health check port {}: {}",
+                "Cannot bind to health check port {}: {}",
                 config.monitoring.health_check_port, e
             );
             return Err(RavenError::configuration(format!(
@@ -86,7 +86,7 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
         }
     }
 
-    info!("✅ All system dependencies validated successfully");
+    info!("All system dependencies validated successfully");
     Ok(())
 }
 
@@ -99,7 +99,7 @@ pub fn initialize_logging(args: &CliArgs) -> RavenResult<()> {
     };
 
     if let Err(e) = init_logging(&basic_logging) {
-        eprintln!("❌ Failed to initialize logging: {e}");
+        eprintln!("Failed to initialize logging: {e}");
         return Err(e);
     }
 
@@ -111,12 +111,12 @@ pub fn load_and_validate_config(args: &CliArgs) -> RavenResult<Config> {
     // Initialize configuration with optional custom config file
     let mut config = match Config::load_with_file(args.config_file.as_deref()) {
         Ok(config) => {
-            info!("✅ Configuration loaded successfully");
+            info!("Configuration loaded successfully");
             config
         }
         Err(e) => {
-            error!("❌ Failed to load configuration: {}", e);
-            error!("💡 Try running with --validate to check configuration");
+            error!("Failed to load configuration: {}", e);
+            error!("Try running with --validate to check configuration");
             raven_bail!(RavenError::configuration(e.to_string()));
         }
     };
@@ -126,18 +126,18 @@ pub fn load_and_validate_config(args: &CliArgs) -> RavenResult<Config> {
 
     // Handle special CLI modes
     if args.validate_only {
-        info!("🔍 Validating configuration only...");
+        info!("Validating configuration only...");
         if let Err(e) = config.validate() {
-            error!("❌ Configuration validation failed: {}", e);
+            error!("Configuration validation failed: {}", e);
             return Err(RavenError::configuration(e.to_string()));
         }
-        info!("✅ Configuration validation passed");
+        info!("Configuration validation passed");
         println!("Configuration is valid!");
         std::process::exit(0);
     }
 
     if args.print_config {
-        info!("📋 Printing configuration...");
+        info!("Printing configuration...");
         ConfigUtils::print_config(&config);
         std::process::exit(0);
     }
@@ -318,7 +318,7 @@ pub async fn initialize_monitoring_services(
     subscription_manager: Arc<SubscriptionManager>,
     hf_storage: Arc<HighFrequencyStorage>,
 ) -> RavenResult<(CrowService, Vec<tokio::task::JoinHandle<()>>)> {
-    info!("📊 Initializing monitoring and observability services...");
+    info!("Initializing monitoring and observability services...");
 
     // Initialize tracing service
     let tracing_service = Arc::new(TracingService::new(config.monitoring.clone()));
@@ -329,7 +329,7 @@ pub async fn initialize_monitoring_services(
         );
         warn!("Continuing without distributed tracing");
     } else {
-        info!("🔍 Distributed tracing initialized successfully");
+        info!("Distributed tracing initialized successfully");
     }
 
     // Initialize metrics service
@@ -358,14 +358,14 @@ pub async fn initialize_monitoring_services(
         .await
         .map_err(|e| RavenError::internal(e.to_string()))?;
 
-    info!("📊 Monitoring services started:");
+    info!("Monitoring services started:");
     info!(
-        "  🏥 Health checks on port {}",
+        "  Health checks on port {}",
         config.monitoring.health_check_port
     );
-    info!("  📈 Metrics on port {}", config.monitoring.metrics_port);
+    info!("  Metrics on port {}", config.monitoring.metrics_port);
     info!(
-        "  🔍 Distributed tracing enabled: {}",
+        "  Distributed tracing enabled: {}",
         config.monitoring.tracing_enabled
     );
 

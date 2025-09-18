@@ -1,6 +1,6 @@
 services:
   # Project Raven - Market Data Subscription Server
-  market-data-server:
+  raven:
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -141,40 +141,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  # Dashboard - Real-time Market Data Visualization
-  dashboard:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.dashboard
-    container_name: raven-dashboard
-    restart: unless-stopped
-    ports:
-      - "8050:8050"
-    environment:
-      - INFLUX_URL=http://influxdb:8086
-      - INFLUX_TOKEN=raven_master_token_for_the_iron_bank
-      - INFLUX_ORG=house_raven
-      - INFLUX_BUCKET=market_data
-    networks:
-      - raven_network
-    depends_on:
-      influxdb:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   # Jaeger - Distributed Tracing
   jaeger:

@@ -22,7 +22,7 @@ pub struct HighFrequencyHandler {
 impl HighFrequencyHandler {
     /// Create a new HighFrequencyHandler with atomic storage
     pub fn new() -> Self {
-        info!("⚡ High frequency ravens are taking flight...");
+        info!("High frequency ravens are taking flight...");
         Self {
             storage: Arc::new(HighFrequencyStorage::new()),
         }
@@ -30,7 +30,7 @@ impl HighFrequencyHandler {
 
     /// Create a new HighFrequencyHandler with shared storage
     pub fn with_storage(storage: Arc<HighFrequencyStorage>) -> Self {
-        info!("⚡ High frequency ravens joining the existing flock...");
+        info!("High frequency ravens joining the existing flock...");
         Self { storage }
     }
 
@@ -70,7 +70,7 @@ impl HighFrequencyHandler {
 
         let duration = start.elapsed();
         debug!(
-            "📊 Orderbook atomic update for {} completed in {:?} (sequence: {})",
+            "Orderbook atomic update for {} completed in {:?} (sequence: {})",
             symbol, duration, data.sequence
         );
 

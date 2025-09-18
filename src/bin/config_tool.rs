@@ -183,7 +183,7 @@ async fn check_health() -> Result<()> {
     }
 
     let summary = ConfigUtils::get_config_summary(&config);
-    info!("📊 Configuration Summary:");
+    info!("Configuration Summary:");
     for (key, value) in summary {
         info!("  {}: {}", key, value);
     }
@@ -218,7 +218,7 @@ fn show_recommendations(environment: &str) -> Result<()> {
     let recommendations = ConfigUtils::get_environment_recommendations();
 
     if let Some(env_recs) = recommendations.get(environment) {
-        info!("💡 Recommendations for {} environment:", environment);
+        info!("Recommendations for {} environment:", environment);
         for (i, rec) in env_recs.iter().enumerate() {
             info!("  {}. {}", i + 1, rec);
         }

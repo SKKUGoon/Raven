@@ -275,11 +275,8 @@ pub struct InfluxClient {
 
 impl InfluxClient {
     pub fn new(config: InfluxConfig) -> Self {
-        info!("🏦 The Iron Bank is opening its vaults...");
-        info!(
-            "📊 Bucket: {}, Pool size: {}",
-            config.bucket, config.pool_size
-        );
+        info!("The Iron Bank is opening its vaults...");
+        info!("Bucket: {}, Pool size: {}", config.bucket, config.pool_size);
 
         Self {
             config,
@@ -320,10 +317,7 @@ impl InfluxClient {
         drop(health);
         drop(pool);
 
-        info!(
-            "🎯 Connection pool initialized with {} connections",
-            pool_size
-        );
+        info!("Connection pool initialized with {} connections", pool_size);
         self.ping().await?;
         self.ensure_bucket_exists().await?;
 

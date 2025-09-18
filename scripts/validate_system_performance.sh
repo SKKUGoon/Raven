@@ -14,7 +14,7 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-echo -e "${PURPLE}🎯 Project Raven - System Performance Validation${NC}"
+echo -e "${PURPLE}Project Raven - System Performance Validation${NC}"
 echo -e "${PURPLE}===============================================${NC}"
 echo ""
 
@@ -38,50 +38,50 @@ validate_requirement() {
     local description="$2"
     local test_command="$3"
     
-    echo -e "${BLUE}📋 Requirement $req_id: $description${NC}"
+    echo -e "${BLUE}Requirement $req_id: $description${NC}"
     echo -e "${BLUE}   Test: $test_command${NC}"
     echo ""
     
     if eval "$test_command"; then
-        echo -e "${GREEN}✅ REQUIREMENT $req_id VALIDATED${NC}"
+        echo -e "${GREEN}REQUIREMENT $req_id VALIDATED${NC}"
         return 0
     else
-        echo -e "${RED}❌ REQUIREMENT $req_id FAILED${NC}"
+        echo -e "${RED}REQUIREMENT $req_id FAILED${NC}"
         return 1
     fi
 }
 
 # Function to run quick performance check
 quick_performance_check() {
-    print_section "⚡ Quick Performance Check"
+    print_section "Quick Performance Check"
     
-    echo -e "${BLUE}🔍 Running quick performance validation...${NC}"
+    echo -e "${BLUE}Running quick performance validation...${NC}"
     echo ""
     
     # Check if benchmarks compile and run
-    echo -e "${YELLOW}📊 Validating benchmark compilation...${NC}"
+    echo -e "${YELLOW}Validating benchmark compilation...${NC}"
     if cargo check --benches --quiet; then
-        echo -e "${GREEN}✅ All benchmarks compile successfully${NC}"
+        echo -e "${GREEN}All benchmarks compile successfully${NC}"
     else
-        echo -e "${RED}❌ Benchmark compilation failed${NC}"
+        echo -e "${RED}Benchmark compilation failed${NC}"
         return 1
     fi
     
     # Run a quick atomic operations test
-    echo -e "${YELLOW}⚡ Testing atomic operations performance...${NC}"
+    echo -e "${YELLOW}Testing atomic operations performance...${NC}"
     if timeout 30 cargo test --test unit_tests atomic_data_structures::test_atomic_orderbook_update_and_snapshot --release --quiet; then
-        echo -e "${GREEN}✅ Atomic operations working correctly${NC}"
+        echo -e "${GREEN}Atomic operations working correctly${NC}"
     else
-        echo -e "${RED}❌ Atomic operations test failed${NC}"
+        echo -e "${RED}Atomic operations test failed${NC}"
         return 1
     fi
     
     # Test basic system functionality
-    echo -e "${YELLOW}🧪 Testing basic system functionality...${NC}"
+    echo -e "${YELLOW}Testing basic system functionality...${NC}"
     if timeout 60 cargo test --test integration_tests test_server_startup_and_shutdown --release --quiet; then
-        echo -e "${GREEN}✅ Basic system functionality working${NC}"
+        echo -e "${GREEN}Basic system functionality working${NC}"
     else
-        echo -e "${RED}❌ Basic system functionality test failed${NC}"
+        echo -e "${RED}Basic system functionality test failed${NC}"
         return 1
     fi
     
@@ -90,7 +90,7 @@ quick_performance_check() {
 
 # Function to validate all performance requirements
 validate_all_requirements() {
-    print_section "📋 Performance Requirements Validation"
+    print_section "Performance Requirements Validation"
     
     local failed_requirements=0
     local total_requirements=${#REQUIREMENTS[@]}
@@ -140,18 +140,18 @@ validate_all_requirements() {
 
 # Function to run comprehensive system test
 run_comprehensive_system_test() {
-    print_section "🚀 Comprehensive System Test"
+    print_section "Comprehensive System Test"
     
-    echo -e "${BLUE}⚔️ Running comprehensive system validation...${NC}"
+    echo -e "${BLUE}Running comprehensive system validation...${NC}"
     echo ""
     
     # Run one comprehensive test that validates multiple requirements
-    echo -e "${YELLOW}🎯 Running end-to-end system validation...${NC}"
+    echo -e "${YELLOW}Running end-to-end system validation...${NC}"
     if timeout 300 cargo test --test final_system_tests test_performance_requirements_under_load --release -- --nocapture; then
-        echo -e "${GREEN}✅ Comprehensive system test passed${NC}"
+        echo -e "${GREEN}Comprehensive system test passed${NC}"
         return 0
     else
-        echo -e "${RED}❌ Comprehensive system test failed${NC}"
+        echo -e "${RED}Comprehensive system test failed${NC}"
         return 1
     fi
 }
@@ -160,7 +160,7 @@ run_comprehensive_system_test() {
 generate_performance_report() {
     local validation_result="$1"
     
-    print_section "📊 Performance Validation Report"
+    print_section "Performance Validation Report"
     
     local report_file="performance_validation_$(date +%Y%m%d_%H%M%S).md"
     
@@ -177,10 +177,10 @@ EOF
 
     for req_id in "${!REQUIREMENTS[@]}"; do
         if [ "$validation_result" -eq 0 ]; then
-            echo "### ✅ Requirement $req_id: ${REQUIREMENTS[$req_id]}" >> "$report_file"
+            echo "### Requirement $req_id: ${REQUIREMENTS[$req_id]}" >> "$report_file"
             echo "**Status:** VALIDATED" >> "$report_file"
         else
-            echo "### ❌ Requirement $req_id: ${REQUIREMENTS[$req_id]}" >> "$report_file"
+            echo "### Requirement $req_id: ${REQUIREMENTS[$req_id]}" >> "$report_file"
             echo "**Status:** NEEDS ATTENTION" >> "$report_file"
         fi
         echo "" >> "$report_file"
@@ -267,13 +267,13 @@ EOF
 main() {
     local start_time=$(date +%s)
     
-    echo -e "${PURPLE}🎯 Starting Performance Validation for Project Raven${NC}"
+    echo -e "${PURPLE}Starting Performance Validation for Project Raven${NC}"
     echo -e "${PURPLE}Validation started at: $(date)${NC}"
     echo ""
     
     # Quick performance check
     if ! quick_performance_check; then
-        echo -e "${RED}❌ Quick performance check failed${NC}"
+        echo -e "${RED}Quick performance check failed${NC}"
         exit 1
     fi
     
@@ -302,21 +302,21 @@ main() {
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
     
-    print_section "🏁 Validation Results"
+    print_section "Validation Results"
     
-    echo -e "${BLUE}📊 Validation Statistics:${NC}"
-    echo -e "  ⏱️ Total Duration: ${duration}s"
-    echo -e "  📋 Requirements Tested: ${#REQUIREMENTS[@]}"
-    echo -e "  ❌ Failed Requirements: $failed_requirements"
+    echo -e "${BLUE}Validation Statistics:${NC}"
+    echo -e "  Total Duration: ${duration}s"
+    echo -e "  Requirements Tested: ${#REQUIREMENTS[@]}"
+    echo -e "  Failed Requirements: $failed_requirements"
     echo ""
     
     if [ $final_result -eq 0 ]; then
-        echo -e "${GREEN}🏆 ALL PERFORMANCE REQUIREMENTS VALIDATED!${NC}"
-        echo -e "${GREEN}⚡ Project Raven is performance-ready for production!${NC}"
+        echo -e "${GREEN}ALL PERFORMANCE REQUIREMENTS VALIDATED!${NC}"
+        echo -e "${GREEN}Project Raven is performance-ready for production!${NC}"
         exit 0
     else
-        echo -e "${RED}💥 Performance validation failed${NC}"
-        echo -e "${RED}🔧 Review the issues and optimize before deployment${NC}"
+        echo -e "${RED}Performance validation failed${NC}"
+        echo -e "${RED}Review the issues and optimize before deployment${NC}"
         exit 1
     fi
 }

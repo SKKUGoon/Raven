@@ -474,7 +474,7 @@ impl Citadel {
     pub async fn update_validation_rules(&self, rules: ValidationRules) -> RavenResult<()> {
         let mut current_rules = self.validation_rules.write().await;
         *current_rules = rules;
-        info!("🔧 Updated validation rules");
+        info!("Updated validation rules");
         Ok(())
     }
 

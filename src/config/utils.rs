@@ -20,9 +20,9 @@ impl ConfigUtils {
         info!("  🔗 Max Connections: {}", config.server.max_connections);
         info!("  🗄️  Database: {}", config.database.influx_url);
         info!("  🪣 Bucket: {}", config.database.bucket);
-        info!("  🏢 Organization: {}", config.database.org);
+        info!("  Organization: {}", config.database.org);
         info!(
-            "  ⚡ Snapshot Interval: {}ms",
+            "  Snapshot Interval: {}ms",
             config.data_processing.snapshot_interval_ms
         );
         info!(
@@ -192,8 +192,8 @@ impl ConfigUtils {
         }
 
         if !missing_vars.is_empty() {
-            warn!("⚠️  Missing environment variables: {:?}", missing_vars);
-            warn!("💡 Consider setting these variables or using config files");
+            warn!("Missing environment variables: {:?}", missing_vars);
+            warn!("Consider setting these variables or using config files");
         }
 
         // Check for common misconfigurations

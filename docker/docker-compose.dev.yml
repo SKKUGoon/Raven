@@ -1,32 +1,6 @@
 services:
-  # Development Dashboard - connects to external services
-  dashboard-dev:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.dashboard
-    container_name: raven-dashboard-dev
-    restart: unless-stopped
-    ports:
-      - "8050:8050"
-    environment:
-      - INFLUX_URL=http://host.docker.internal:8086  # Connect to local InfluxDB
-      - INFLUX_TOKEN=raven_master_token_for_the_iron_bank
-      - INFLUX_ORG=house_raven
-      - INFLUX_BUCKET=market_data
-      - DEVELOPMENT=true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ../dashboard:/app/dashboard:ro
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8050"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
   # Development Market Data Server - connects to external services
-  market-data-server-dev:
+  raven:
     build:
       context: ..
       dockerfile: docker/Dockerfile

@@ -116,27 +116,27 @@ pub fn parse_cli_args() -> CliArgs {
 /// Apply CLI overrides to configuration
 pub fn apply_cli_overrides(mut config: Config, args: &CliArgs) -> Config {
     if let Some(host) = &args.host {
-        info!("🔧 CLI override: host = {}", host);
+        info!("CLI override: host = {}", host);
         config.server.host = host.clone();
     }
 
     if let Some(port) = args.port {
-        info!("🔧 CLI override: port = {}", port);
+        info!("CLI override: port = {}", port);
         config.server.port = port;
     }
 
     if let Some(log_level) = &args.log_level {
-        info!("🔧 CLI override: log_level = {}", log_level);
+        info!("CLI override: log_level = {}", log_level);
         config.monitoring.log_level = log_level.clone();
     }
 
     if let Some(database_url) = &args.database_url {
-        info!("🔧 CLI override: database_url = {}", database_url);
+        info!("CLI override: database_url = {}", database_url);
         config.database.influx_url = database_url.clone();
     }
 
     if let Some(max_connections) = args.max_connections {
-        info!("🔧 CLI override: max_connections = {}", max_connections);
+        info!("CLI override: max_connections = {}", max_connections);
         config.server.max_connections = max_connections;
     }
 

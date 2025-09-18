@@ -37,7 +37,7 @@ A high-performance, real-time market data distribution system built in Rust, des
 - **Error Handling** (`src/error/`): Comprehensive error types with context and conversion implementations
 - **Types System** (`src/types/`): Core data structures with atomic operations and snapshot support
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -76,7 +76,7 @@ make bench-latency
 make bench-high-freq
 ```
 
-## 📊 Deployment & Operations
+## Deployment & Operations
 
 ### Docker Deployment
 
@@ -286,7 +286,7 @@ let mut stream = client.stream_market_data(tokio_stream::wrappers::ReceiverStrea
 while let Some(message) = stream.message().await? {
     match message.data {
         Some(market_data_message::Data::Orderbook(orderbook)) => {
-            println!("📊 Orderbook: {} @ {} (seq: {})",
+            println!("Orderbook: {} @ {} (seq: {})",
                 orderbook.symbol, orderbook.timestamp, orderbook.sequence);
         }
         Some(market_data_message::Data::Trade(trade)) => {
@@ -500,7 +500,7 @@ make lint
 make check
 ```
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 

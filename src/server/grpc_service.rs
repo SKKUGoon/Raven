@@ -229,7 +229,7 @@ impl MarketDataServiceImpl {
                     Ok(results) => {
                         if !results.is_empty() {
                             debug!(
-                                "📊 Retrieved {} historical records for {}::{:?}",
+                                "Retrieved {} historical records for {}::{:?}",
                                 results.len(),
                                 symbol,
                                 data_type
@@ -554,7 +554,7 @@ impl MarketDataService for MarketDataServiceImpl {
         let req = request.into_inner();
 
         info!(
-            "📊 Historical data request for symbols: {:?}, types: {:?}",
+            "Historical data request for symbols: {:?}, types: {:?}",
             req.symbols, req.data_types
         );
 
@@ -591,7 +591,7 @@ impl MarketDataService for MarketDataServiceImpl {
                 limit,
             ).await {
                 Ok(messages) => {
-                    info!("📊 Returning {} historical messages", messages.len());
+                    info!("Returning {} historical messages", messages.len());
                     for message in messages {
                         yield Ok(message);
                     }
