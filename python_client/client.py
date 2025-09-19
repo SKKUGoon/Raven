@@ -32,11 +32,11 @@ class RavenClient:
         try:
             self.channel = grpc.insecure_channel(self.server_address)
             self.stub = subscription_pb2_grpc.MarketDataServiceStub(self.channel)
-            print(f"✅ Connected to Raven server at {self.server_address}")
-            print(f"📱 Client ID: {self.client_id}")
+            print(f"Connected to Raven server at {self.server_address}")
+            print(f"Client ID: {self.client_id}")
             return True
         except Exception as e:
-            print(f"❌ Failed to connect: {e}")
+            print(f"Failed to connect: {e}")
             return False
     
     def disconnect(self):
@@ -44,12 +44,12 @@ class RavenClient:
         self.running = False
         if self.channel:
             self.channel.close()
-            print("🔌 Disconnected from server")
+            print("Disconnected from server")
     
     def stream_market_data(self, symbols: List[str], duration_seconds: int = 30):
         """Stream real-time market data for specified symbols"""
         if not self.stub:
-            print("❌ Not connected to server")
+            print("Not connected to server")
             return
         
         try:
@@ -70,7 +70,7 @@ class RavenClient:
                     subscribe=subscribe_req
                 )
                 
-                print(f"📡 Subscribing to {len(symbols)} symbols: {', '.join(symbols)}")
+                print(f"Subscribing to {len(symbols)} symbols: {', '.join(symbols)}")
                 yield subscription_req
                 
                 # Send initial heartbeat
@@ -108,12 +108,12 @@ class RavenClient:
             trade_count = 0
             orderbook_count = 0
             
-            print(f"🚀 Starting {duration_seconds}s market data stream...")
+            print(f"Starting {duration_seconds}s market data stream...")
             print("=" * 80)
             
             for message in stream:
                 if time.time() - start_time > duration_seconds:
-                    print(f"\n⏰ {duration_seconds} seconds elapsed, stopping stream...")
+                    print(f"\n{duration_seconds} seconds elapsed, stopping stream...")
                     break
                 
                 message_count += 1
@@ -122,7 +122,7 @@ class RavenClient:
                 if message.HasField('trade'):
                     trade = message.trade
                     trade_count += 1
-                    print(f"[{timestamp}] 📈 TRADE #{trade_count}: {trade.symbol} - "
+                    print(f"[{timestamp}] TRADE #{trade_count}: {trade.symbol} - "
                           f"${trade.price:.4f} x {trade.quantity:.4f} ({trade.side})")
                 
                 elif message.HasField('orderbook'):
@@ -134,7 +134,7 @@ class RavenClient:
                         best_ask = orderbook.asks[0]
                         spread = best_ask.price - best_bid.price
                         
-                        print(f"[{timestamp}] 📊 BOOK #{orderbook_count}: {orderbook.symbol} "
+                        print(f"[{timestamp}] BOOK #{orderbook_count}: {orderbook.symbol} "
                               f"(seq:{orderbook.sequence})")
                         print(f"    Bid: ${best_bid.price:.4f} x {best_bid.quantity:.4f}")
                         print(f"    Ask: ${best_ask.price:.4f} x {best_ask.quantity:.4f}")
@@ -145,7 +145,7 @@ class RavenClient:
             rate = message_count / total_time if total_time > 0 else 0
             
             print("=" * 80)
-            print("📊 STREAMING SUMMARY:")
+            print("STREAMING SUMMARY:")
             print(f"   Duration: {total_time:.2f} seconds")
             print(f"   Total Messages: {message_count}")
             print(f"   Trades: {trade_count}")
@@ -153,16 +153,16 @@ class RavenClient:
             print(f"   Message Rate: {rate:.2f} msg/sec")
             
             if message_count > 10:
-                print("✅ Real-time streaming successful!")
+                print("Real-time streaming successful!")
             else:
-                print("⚠️  Low message count - check server connection")
+                print("Low message count - check server connection")
                 
         except grpc.RpcError as e:
-            print(f"❌ gRPC Error: {e}")
+            print(f"gRPC Error: {e}")
         except KeyboardInterrupt:
-            print("\n⏹️  Stream stopped by user")
+            print("\nStream stopped by user")
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
         finally:
             self.running = False
 
@@ -181,7 +181,7 @@ def main():
         client.stream_market_data(symbols, duration_seconds=30)
         
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        print("\nGoodbye!")
     finally:
         client.disconnect()
 
