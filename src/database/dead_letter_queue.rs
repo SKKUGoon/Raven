@@ -177,7 +177,7 @@ impl DeadLetterQueue {
     /// Create a new dead letter queue
     pub fn new(config: DeadLetterQueueConfig) -> Self {
         info!(
-            "📮 Initializing dead letter queue with max size: {}",
+            "⚬ Initializing dead letter queue with max size: {}",
             config.max_size
         );
 
@@ -209,7 +209,7 @@ impl DeadLetterQueue {
             // Remove oldest entry to make space
             if let Some(removed) = entries.pop_front() {
                 warn!(
-                    "📮 Dead letter queue full, removing oldest entry: {} (age: {}ms)",
+                    "⚬ Dead letter queue full, removing oldest entry: {} (age: {}ms)",
                     removed.id,
                     removed.age_ms()
                 );
@@ -228,7 +228,7 @@ impl DeadLetterQueue {
             .or_insert(0) += 1;
 
         info!(
-            "📮 Added entry to dead letter queue: {} (type: {}, retry: {}/{})",
+            "⚬ Added entry to dead letter queue: {} (type: {}, retry: {}/{})",
             entry.id, entry.operation_type, entry.retry_count, entry.max_retries
         );
 
@@ -242,7 +242,7 @@ impl DeadLetterQueue {
         handlers.insert(operation_type.clone(), handler);
 
         info!(
-            "📮 Registered retry handler for operation type: {}",
+            "⚬ Registered retry handler for operation type: {}",
             operation_type
         );
     }
@@ -264,7 +264,7 @@ impl DeadLetterQueue {
                 queue.processing_loop().await;
             });
 
-            info!("📮 Dead letter queue processing started");
+            info!("⚬ Dead letter queue processing started");
         }
 
         Ok(())
@@ -274,7 +274,7 @@ impl DeadLetterQueue {
     pub fn stop_processing(&self) {
         self.processing_active
             .store(false, std::sync::atomic::Ordering::Relaxed);
-        info!("📮 Dead letter queue processing stopped");
+        info!("⚬ Dead letter queue processing stopped");
     }
 
     /// Background processing loop
@@ -288,11 +288,11 @@ impl DeadLetterQueue {
             interval.tick().await;
 
             if let Err(e) = self.process_entries().await {
-                error!("📮 Error processing dead letter queue: {}", e);
+                error!("⚬ Error processing dead letter queue: {}", e);
             }
 
             if let Err(e) = self.cleanup_old_entries().await {
-                error!("📮 Error cleaning up old entries: {}", e);
+                error!("⚬ Error cleaning up old entries: {}", e);
             }
 
             self.update_statistics().await;
@@ -320,7 +320,7 @@ impl DeadLetterQueue {
                         stats.successful_retries += 1;
                         processed_indices.push(index);
                         info!(
-                            "✅ Successfully retried dead letter entry: {} (type: {})",
+                            "✓ Successfully retried dead letter entry: {} (type: {})",
                             entry.id, entry.operation_type
                         );
                     }
@@ -330,12 +330,12 @@ impl DeadLetterQueue {
 
                         if entry.is_exhausted() {
                             warn!(
-                                "💀 Dead letter entry exhausted after {} retries: {} (type: {})",
+                                "⚬ Dead letter entry exhausted after {} retries: {} (type: {})",
                                 entry.retry_count, entry.id, entry.operation_type
                             );
                         } else {
                             debug!(
-                                "🔄 Will retry dead letter entry: {} in {}ms (attempt {}/{})",
+                                "⟲ Will retry dead letter entry: {} in {}ms (attempt {}/{})",
                                 entry.id,
                                 entry.next_retry_timestamp
                                     - SystemTime::now()
@@ -350,7 +350,7 @@ impl DeadLetterQueue {
                 }
             } else {
                 warn!(
-                    "📮 No retry handler found for operation type: {} (entry: {})",
+                    "⚬ No retry handler found for operation type: {} (entry: {})",
                     entry.operation_type, entry.id
                 );
             }
@@ -377,7 +377,7 @@ impl DeadLetterQueue {
             let age = now - entry.dead_letter_timestamp;
             if age > self.config.max_age_ms {
                 warn!(
-                    "🗑️ Removing expired dead letter entry: {} (age: {}ms, type: {})",
+                    "⚬ Removing expired dead letter entry: {} (age: {}ms, type: {})",
                     entry.id, age, entry.operation_type
                 );
                 false
@@ -388,10 +388,7 @@ impl DeadLetterQueue {
 
         let removed_count = initial_count - entries.len();
         if removed_count > 0 {
-            info!(
-                "🗑️ Cleaned up {} expired dead letter entries",
-                removed_count
-            );
+            info!("⚬ Cleaned up {} expired dead letter entries", removed_count);
         }
 
         Ok(())
@@ -456,7 +453,7 @@ impl DeadLetterQueue {
                     Ok(()) => {
                         // Remove the successfully processed entry
                         entries.retain(|e| e.id != entry_id);
-                        info!("✅ Manually retried dead letter entry: {}", entry_id);
+                        info!("✓ Manually retried dead letter entry: {}", entry_id);
                         Ok(())
                     }
                     Err(e) => {
@@ -485,7 +482,7 @@ impl DeadLetterQueue {
         let count = entries.len();
         entries.clear();
 
-        warn!("🗑️ Cleared all {} dead letter entries", count);
+        warn!("⚬ Cleared all {} dead letter entries", count);
         count
     }
 
@@ -509,7 +506,7 @@ impl DeadLetterQueue {
             RavenError::internal(format!("Failed to persist dead letter queue: {e}"))
         })?;
 
-        debug!("💾 Persisted {} dead letter entries to disk", entries.len());
+        debug!("⚬ Persisted {} dead letter entries to disk", entries.len());
         Ok(())
     }
 
@@ -537,7 +534,7 @@ impl DeadLetterQueue {
         let mut entries = self.entries.lock().await;
         *entries = loaded_entries;
 
-        info!("💾 Loaded {} dead letter entries from disk", entries.len());
+        info!("⚬ Loaded {} dead letter entries from disk", entries.len());
         Ok(())
     }
 }

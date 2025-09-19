@@ -6,6 +6,7 @@ pub mod shutdown;
 pub mod startup;
 
 use crate::citadel::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
+use crate::citadel::streaming::{SnapshotConfig, SnapshotService};
 use crate::citadel::{Citadel, CitadelConfig};
 use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
@@ -15,7 +16,7 @@ use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::info;
+use tracing::{error, info};
 
 use self::cli::{parse_cli_args, print_version_info};
 use self::shutdown::{perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors};
@@ -54,10 +55,31 @@ pub async fn run() -> RavenResult<()> {
         Arc::clone(&subscription_manager),
     ));
 
+    // Initialize and start the snapshot service for live data distribution
+    let snapshot_config = SnapshotConfig {
+        snapshot_interval: std::time::Duration::from_millis(100), // 100ms snapshots
+        max_batch_size: 1000,
+        write_timeout: std::time::Duration::from_millis(100),
+        broadcast_enabled: true, // Enable broadcasting to gRPC clients
+        persistence_enabled: true,
+    };
+
+    let snapshot_service = Arc::new(SnapshotService::new(
+        snapshot_config,
+        Arc::clone(&hf_storage),
+        Arc::clone(&influx_client),
+        Arc::clone(&subscription_manager),
+    ));
+
+    info!("[Citadel] Starting snapshot service for live data distribution");
+    if let Err(e) = snapshot_service.start().await {
+        error!("!!! Failed to start snapshot service: {}", e);
+    }
+
     info!("[Kingsguards] On guard");
     let (_monitoring_service, monitoring_handles) = initialize_monitoring_services(
         &config,
-        influx_client,
+        Arc::clone(&influx_client),
         Arc::clone(&subscription_manager),
         Arc::clone(&hf_storage),
     )
@@ -84,18 +106,39 @@ pub async fn run() -> RavenResult<()> {
         ),
     ];
 
-    // TODO: Initialize remaining components with error handling
-    // - gRPC server with circuit breaker protection
-    // - Data handlers with dead letter queue integration
-    // - Subscription manager with client manager integration
-
+    // Initialize gRPC server with circuit breaker protection
     info!("[Raven] 'Send out the ravens'");
     info!("Server {}:{}", config.server.host, config.server.port);
     info!("Metric check :{}", config.monitoring.metrics_port);
     info!("Health check :{}", config.monitoring.health_check_port);
 
+    // Start the gRPC server
+    let server = crate::server::MarketDataServer::new(
+        Arc::clone(&subscription_manager),
+        Arc::clone(&influx_client),
+        Arc::clone(&hf_storage),
+        config.server.max_connections,
+    );
+
+    // Spawn the gRPC server in a separate task
+    let server_handle = {
+        let host = "0.0.0.0".to_string(); // Bind to all interfaces
+        let port = config.server.port;
+        tokio::spawn(async move {
+            info!("▶ Starting gRPC server on {}:{}", host, port);
+            if let Err(e) = server.start(&host, port).await {
+                tracing::error!("✗ gRPC server failed: {}", e);
+            } else {
+                info!("✓ gRPC server started successfully");
+            }
+        })
+    };
+
     // Wait for shutdown signals
     wait_for_shutdown_signal().await?;
+
+    // Stop gRPC server
+    server_handle.abort();
 
     // Stop background collector tasks before shutdown
     for task in collector_tasks {

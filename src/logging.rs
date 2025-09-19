@@ -246,14 +246,14 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
     }
 
     tracing::info!(
-        "📝 Logging initialized with level: {}, format: {}",
+        "⚬ Logging initialized with level: {}, format: {}",
         config.level,
         config.format
     );
 
     // Log custom fields if any
     if !config.custom_fields.is_empty() {
-        tracing::info!("📝 Custom log fields: {:?}", config.custom_fields);
+        tracing::info!("⚬ Custom log fields: {:?}", config.custom_fields);
     }
 
     Ok(())

@@ -23,7 +23,7 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build the application
 COPY . .
-RUN cargo build --release --bin market-data-server
+RUN cargo build --release --bin raven
 
 # Stage 4: Runtime image
 FROM debian:bookworm-slim AS runtime
@@ -46,7 +46,7 @@ RUN mkdir -p /app/config /app/logs /app/data \
 WORKDIR /app
 
 # Copy the binary from builder stage
-COPY --from=builder /app/target/release/market-data-server /app/
+COPY --from=builder /app/target/release/raven /app/
 COPY --from=builder /app/config/ /app/config/
 
 # Copy health check script
@@ -72,4 +72,4 @@ ENV RUST_BACKTRACE=1
 ENV CONFIG_PATH=/app/config
 
 # Run the application
-CMD ["/app/market-data-server"]
+CMD ["/app/raven"]

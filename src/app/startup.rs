@@ -168,7 +168,7 @@ pub async fn initialize_config_manager() -> RavenResult<ConfigManager> {
         );
         warn!("Continuing without hot-reload capability");
     } else {
-        info!("🔄 Configuration hot-reloading enabled");
+        info!("Configuration hot-reloading enabled");
     }
 
     Ok(config_manager)
@@ -198,7 +198,7 @@ pub async fn initialize_dead_letter_queue() -> RavenResult<Arc<DeadLetterQueue>>
         raven_bail!(e);
     }
 
-    info!("📮 Dead letter queue initialized and processing started");
+    info!("Dead letter queue initialized and processing started");
     Ok(dead_letter_queue)
 }
 
@@ -235,7 +235,7 @@ pub async fn initialize_circuit_breakers() -> RavenResult<Arc<CircuitBreakerRegi
         .register(Arc::clone(&grpc_circuit_breaker))
         .await;
 
-    info!("🔌 Circuit breakers initialized for database and gRPC components");
+    info!("Circuit breakers initialized for database and gRPC components");
     Ok(circuit_breaker_registry)
 }
 
@@ -278,7 +278,7 @@ pub async fn initialize_influx_client(
         raven_bail!(RavenError::database_connection(e.to_string()));
     }
 
-    info!("🏦 InfluxDB client initialized with enhanced error handling");
+    info!("InfluxDB client initialized with enhanced error handling");
     Ok((influx_client, enhanced_influx_client))
 }
 
@@ -307,7 +307,7 @@ pub async fn initialize_client_manager(config: &Config) -> RavenResult<Arc<Clien
         raven_bail!(e);
     }
 
-    info!("👥 Client manager initialized with graceful disconnection handling");
+    info!("⚮ Client manager initialized with graceful disconnection handling");
     Ok(client_manager)
 }
 

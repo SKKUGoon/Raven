@@ -205,7 +205,7 @@ logs:
 # Show logs for market data server
 logs-server:
 	@echo "$(BLUE)📋 Showing logs for Market Data Server...$(NC)"
-	docker compose -f $(COMPOSE_FILE) logs -f market-data-server
+	docker compose -f $(COMPOSE_FILE) logs -f raven
 
 # Show logs for InfluxDB
 logs-influx:
@@ -331,7 +331,7 @@ prod-deploy: backup deploy
 
 ## Development Environment Commands (uses external services)
 DEV_COMPOSE_FILE := docker/docker-compose.dev.yml
-DEV_LOG_LEVEL := debug
+DEV_LOG_LEVEL := info
 
 # Build development containers
 dev-build:

@@ -122,25 +122,25 @@ async fn main() -> Result<()> {
 }
 
 async fn validate_config(_config_path: Option<&String>) -> Result<()> {
-    info!("🔍 Validating configuration...");
+    info!("⚬ Validating configuration...");
 
     match Config::load() {
         Ok(config) => {
-            info!("✅ Configuration loaded successfully");
+            info!("✓ Configuration loaded successfully");
 
             match config.validate() {
                 Ok(_) => {
-                    info!("✅ Configuration validation passed");
+                    info!("✓ Configuration validation passed");
                     ConfigUtils::print_config(&config);
                 }
                 Err(e) => {
-                    error!("❌ Configuration validation failed: {}", e);
+                    error!("✗ Configuration validation failed: {}", e);
                     return Err(e);
                 }
             }
         }
         Err(e) => {
-            error!("❌ Failed to load configuration: {}", e);
+            error!("✗ Failed to load configuration: {}", e);
             return Err(e);
         }
     }
@@ -168,15 +168,15 @@ async fn show_config(format: &str) -> Result<()> {
 }
 
 async fn check_health() -> Result<()> {
-    info!("🏥 Checking configuration health...");
+    info!("⚕ Checking configuration health...");
 
     let config = Config::load()?;
     let warnings = ConfigUtils::check_configuration_health(&config);
 
     if warnings.is_empty() {
-        info!("✅ No configuration health issues found");
+        info!("✓ No configuration health issues found");
     } else {
-        info!("⚠️  Found {} configuration warnings:", warnings.len());
+        info!("⚠ Found {} configuration warnings:", warnings.len());
         for (i, warning) in warnings.iter().enumerate() {
             info!("  {}. {}", i + 1, warning);
         }
@@ -197,7 +197,7 @@ fn generate_template(output_path: Option<&String>) -> Result<()> {
     match output_path {
         Some(path) => {
             std::fs::write(path, template)?;
-            info!("✅ Configuration template written to: {}", path);
+            info!("✓ Configuration template written to: {}", path);
         }
         None => {
             println!("{template}");
@@ -210,7 +210,7 @@ fn generate_template(output_path: Option<&String>) -> Result<()> {
 fn check_environment() -> Result<()> {
     info!("🌍 Checking environment variables...");
     ConfigUtils::validate_environment()?;
-    info!("✅ Environment check completed");
+    info!("✓ Environment check completed");
     Ok(())
 }
 
@@ -223,7 +223,7 @@ fn show_recommendations(environment: &str) -> Result<()> {
             info!("  {}. {}", i + 1, rec);
         }
     } else {
-        error!("❌ Unknown environment: {}", environment);
+        error!("✗ Unknown environment: {}", environment);
         info!("Available environments: development, production, staging");
     }
 
@@ -231,8 +231,8 @@ fn show_recommendations(environment: &str) -> Result<()> {
 }
 
 async fn watch_config(config_path: &str, interval_seconds: u64) -> Result<()> {
-    info!("👁️  Watching configuration file: {}", config_path);
-    info!("🔄 Check interval: {} seconds", interval_seconds);
+    info!("⚬ Watching configuration file: {}", config_path);
+    info!("⟲ Check interval: {} seconds", interval_seconds);
     info!("Press Ctrl+C to stop watching");
 
     let manager = ConfigManager::new(
@@ -245,7 +245,7 @@ async fn watch_config(config_path: &str, interval_seconds: u64) -> Result<()> {
 
     // Keep the program running
     tokio::signal::ctrl_c().await?;
-    info!("👋 Stopping configuration watcher");
+    info!("⚬ Stopping configuration watcher");
 
     Ok(())
 }

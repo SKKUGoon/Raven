@@ -160,7 +160,7 @@ impl CircuitBreaker {
                         let mut state = self.state.write().await;
                         *state = CircuitBreakerState::HalfOpen;
                         self.success_count.store(0, Ordering::Relaxed);
-                        info!("🔄 Circuit breaker transitioning to half-open state");
+                        info!("⟲ Circuit breaker transitioning to half-open state");
                         return true;
                     }
                 }
@@ -183,7 +183,7 @@ impl CircuitBreaker {
                     let mut state = self.state.write().await;
                     *state = CircuitBreakerState::Closed;
                     self.failure_count.store(0, Ordering::Relaxed);
-                    info!("✅ Circuit breaker closed - service recovered");
+                    info!("✓ Circuit breaker closed - service recovered");
                 }
             }
             CircuitBreakerState::Open => {}
@@ -202,7 +202,7 @@ impl CircuitBreaker {
                     let mut state = self.state.write().await;
                     *state = CircuitBreakerState::Open;
                     warn!(
-                        "🚨 Circuit breaker opened due to failures: {}",
+                        "⚠ Circuit breaker opened due to failures: {}",
                         failure_count
                     );
                 }
@@ -211,7 +211,7 @@ impl CircuitBreaker {
                 drop(state);
                 let mut state = self.state.write().await;
                 *state = CircuitBreakerState::Open;
-                warn!("🚨 Circuit breaker opened during half-open test");
+                warn!("⚠ Circuit breaker opened during half-open test");
             }
             CircuitBreakerState::Open => {}
         }
@@ -289,7 +289,7 @@ impl InfluxClient {
     }
 
     pub async fn connect(&self) -> Result<()> {
-        info!("🔗 Connecting to the Iron Bank at {}...", self.config.url);
+        info!("⟐ Connecting to the Iron Bank at {}...", self.config.url);
 
         let mut pool = self.connection_pool.lock().await;
         let mut health = self.connection_health.write().await;
@@ -301,10 +301,10 @@ impl InfluxClient {
                 Ok(client) => {
                     pool.push(client);
                     health.insert(i, true);
-                    debug!("✅ Connection {} established", i + 1);
+                    debug!("✓ Connection {} established", i + 1);
                 }
                 Err(e) => {
-                    error!("❌ Failed to create connection {}: {}", i + 1, e);
+                    error!("✗ Failed to create connection {}: {}", i + 1, e);
                     health.insert(i, false);
                     return Err(e);
                 }
@@ -344,7 +344,7 @@ impl InfluxClient {
         let client = self.create_client().await?;
 
         if self.bucket_exists(&client).await? {
-            debug!("📦 InfluxDB bucket '{}' already exists", self.config.bucket);
+            debug!("⚬ InfluxDB bucket '{}' already exists", self.config.bucket);
             return Ok(());
         }
 
@@ -354,14 +354,14 @@ impl InfluxClient {
         match client.create_bucket(Some(request)).await {
             Ok(_) => {
                 info!(
-                    "📦 Created InfluxDB bucket '{}' for org '{}'",
+                    "⚬ Created InfluxDB bucket '{}' for org '{}'",
                     self.config.bucket, self.config.org
                 );
                 Ok(())
             }
             Err(RequestError::Http { status, text: _ }) if status.as_u16() == 409 => {
                 info!(
-                    "📦 Bucket '{}' already exists (HTTP 409)",
+                    "⚬ Bucket '{}' already exists (HTTP 409)",
                     self.config.bucket
                 );
                 Ok(())
@@ -465,13 +465,13 @@ impl InfluxClient {
     }
 
     pub async fn ping(&self) -> Result<()> {
-        debug!("🏓 Pinging the Iron Bank...");
+        debug!("⚬ Pinging the Iron Bank...");
 
-        debug!("🔍 Fetching connection from pool for health check");
+        debug!("⚬ Fetching connection from pool for health check");
         let (client, connection_index) = self.get_connection().await?;
         debug!(
             connection_index = connection_index,
-            "🔌 Acquired pooled connection"
+            "⟐ Acquired pooled connection"
         );
 
         // Use InfluxDB v2 health check endpoint
@@ -480,13 +480,13 @@ impl InfluxClient {
             Ok(_) => {
                 self.circuit_breaker.record_success().await;
                 self.mark_connection_healthy(connection_index, true).await;
-                debug!("✅ Iron Bank responded to ping");
+                debug!("✓ Iron Bank responded to ping");
                 Ok(())
             }
             Err(e) => {
                 self.circuit_breaker.record_failure().await;
                 self.mark_connection_healthy(connection_index, false).await;
-                error!("❌ Iron Bank ping failed: {}", e);
+                error!("✗ Iron Bank ping failed: {}", e);
                 Err(anyhow!("Ping failed: {}", e))
             }
         }
@@ -494,7 +494,7 @@ impl InfluxClient {
 
     /// Health check method for monitoring service
     pub async fn health_check(&self) -> Result<()> {
-        debug!("🏥 Performing health check on the Iron Bank...");
+        debug!("⚕ Performing health check on the Iron Bank...");
 
         // Check circuit breaker state first
         let cb_state = self.circuit_breaker.get_state().await;
@@ -515,10 +515,10 @@ impl InfluxClient {
         }
 
         if *healthy_connections < (*total_connections / 2) {
-            warn!("⚠️ Less than 50% of database connections are healthy");
+            warn!("⚠ Less than 50% of database connections are healthy");
         }
 
-        debug!("✅ Iron Bank health check passed");
+        debug!("✓ Iron Bank health check passed");
         Ok(())
     }
 
@@ -586,13 +586,13 @@ impl InfluxClient {
                     self.circuit_breaker.record_success().await;
                     self.mark_connection_healthy(connection_index, true).await;
                     debug!(
-                        "✅ Batch write successful: {} data points",
+                        "✓ Batch write successful: {} data points",
                         data_points.len()
                     );
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("⚠️ Batch write attempt {} failed: {}", attempt, e);
+                    warn!("⚠ Batch write attempt {} failed: {}", attempt, e);
                     self.mark_connection_healthy(connection_index, false).await;
 
                     if attempt == self.config.retry_attempts {
@@ -647,7 +647,7 @@ impl InfluxClient {
 
         // Return empty results for now - this needs proper implementation
         let results = Vec::new();
-        debug!("✅ Query executed (placeholder implementation)");
+        debug!("✓ Query executed (placeholder implementation)");
         Ok(results)
     }
 
@@ -666,7 +666,7 @@ impl InfluxClient {
                     return Ok(());
                 }
                 Err(e) => {
-                    warn!("⚠️ Write attempt {} failed: {}", attempt, e);
+                    warn!("⚠ Write attempt {} failed: {}", attempt, e);
                     self.mark_connection_healthy(connection_index, false).await;
 
                     if attempt == self.config.retry_attempts {
@@ -700,7 +700,7 @@ impl InfluxClient {
         queue.push(entry);
 
         warn!(
-            "📮 Added failed write to dead letter queue. Queue size: {}",
+            "⚬ Added failed write to dead letter queue. Queue size: {}",
             queue.len()
         );
     }
@@ -749,9 +749,9 @@ impl InfluxClient {
         health.insert(connection_index, healthy);
 
         if !healthy {
-            debug!("🔴 Connection {} marked as unhealthy", connection_index);
+            debug!("⚬ Connection {} marked as unhealthy", connection_index);
         } else {
-            debug!("🟢 Connection {} marked as healthy", connection_index);
+            debug!("⚬ Connection {} marked as healthy", connection_index);
         }
     }
 
@@ -766,7 +766,7 @@ impl InfluxClient {
             tokio::spawn(async move {
                 client.health_monitor_loop().await;
             });
-            info!("🏥 Health monitoring started for Iron Bank connections");
+            info!("⚕ Health monitoring started for Iron Bank connections");
         }
     }
 
@@ -778,7 +778,7 @@ impl InfluxClient {
             interval.tick().await;
 
             if let Err(e) = self.check_all_connections().await {
-                warn!("⚠️ Health check failed: {}", e);
+                warn!("⚠ Health check failed: {}", e);
             }
         }
     }
@@ -800,15 +800,15 @@ impl InfluxClient {
         }
 
         debug!(
-            "🏥 Health check: {}/{} connections healthy",
+            "⚕ Health check: {}/{} connections healthy",
             healthy_count, pool_size
         );
 
         if healthy_count == 0 {
-            warn!("🚨 All connections are unhealthy!");
+            warn!("⚠ All connections are unhealthy!");
             // Attempt to reconnect
             if let Err(e) = self.reconnect_unhealthy_connections().await {
-                error!("❌ Failed to reconnect: {}", e);
+                error!("✗ Failed to reconnect: {}", e);
             }
         }
 
@@ -840,7 +840,7 @@ impl InfluxClient {
 
     // Reconnect unhealthy connections
     async fn reconnect_unhealthy_connections(&self) -> Result<()> {
-        info!("🔄 Attempting to reconnect unhealthy connections...");
+        info!("⟲ Attempting to reconnect unhealthy connections...");
 
         let mut pool = self.connection_pool.lock().await;
 
@@ -859,12 +859,12 @@ impl InfluxClient {
                     if let Some(client) = pool.get_mut(index) {
                         *client = new_client;
                         self.mark_connection_healthy(index, true).await;
-                        info!("✅ Reconnected connection {}", index);
+                        info!("✓ Reconnected connection {}", index);
                         return Ok(());
                     }
                 }
                 Err(e) => {
-                    warn!("⚠️ Failed to reconnect connection {}: {}", index, e);
+                    warn!("⚠ Failed to reconnect connection {}: {}", index, e);
                 }
             }
         }
@@ -881,7 +881,7 @@ impl InfluxClient {
         for entry in queue.drain(..) {
             if entry.retry_count < 3 {
                 // Try to reprocess the entry
-                debug!("🔄 Retrying dead letter entry: {}", entry.data);
+                debug!("⟲ Retrying dead letter entry: {}", entry.data);
                 // For now, just mark as processed - in a real implementation,
                 // you would parse and re-execute the query
                 processed += 1;
@@ -898,7 +898,7 @@ impl InfluxClient {
         queue.extend(failed_entries);
 
         if processed > 0 {
-            info!("📮 Processed {} entries from dead letter queue", processed);
+            info!("⚬ Processed {} entries from dead letter queue", processed);
         }
 
         Ok(processed)
@@ -906,7 +906,7 @@ impl InfluxClient {
 
     // Create bucket and setup v2 configuration
     pub async fn setup_database(&self) -> Result<()> {
-        info!("🏗️ Setting up Iron Bank bucket and v2 configuration...");
+        info!("⚬ Setting up Iron Bank bucket and v2 configuration...");
 
         let (_client, _) = self.get_connection().await?;
 
@@ -924,11 +924,11 @@ impl InfluxClient {
         // For now, assume bucket exists - proper verification needs correct API understanding
         match Ok(()) as Result<(), anyhow::Error> {
             Ok(_) => {
-                info!("✅ Bucket '{}' is accessible", self.config.bucket);
+                info!("✓ Bucket '{}' is accessible", self.config.bucket);
             }
             Err(e) => {
                 warn!(
-                    "⚠️ Bucket '{}' may not exist or is not accessible: {}",
+                    "⚠ Bucket '{}' may not exist or is not accessible: {}",
                     self.config.bucket, e
                 );
 
@@ -936,11 +936,11 @@ impl InfluxClient {
                 // Note: This requires admin privileges and proper token
                 match self.create_bucket_if_needed().await {
                     Ok(_) => {
-                        info!("✅ Bucket '{}' created successfully", self.config.bucket);
+                        info!("✓ Bucket '{}' created successfully", self.config.bucket);
                     }
                     Err(create_err) => {
                         warn!(
-                            "⚠️ Could not create bucket '{}': {}. Please create it manually through the InfluxDB UI or API",
+                            "⚠ Could not create bucket '{}': {}. Please create it manually through the InfluxDB UI or API",
                             self.config.bucket, create_err
                         );
                         // Don't fail setup if bucket creation fails - it might already exist
@@ -950,7 +950,7 @@ impl InfluxClient {
             }
         }
 
-        info!("✅ Iron Bank v2 setup completed");
+        info!("✓ Iron Bank v2 setup completed");
         Ok(())
     }
 
@@ -958,9 +958,9 @@ impl InfluxClient {
     async fn create_bucket_if_needed(&self) -> Result<()> {
         // In a production environment, you would use the InfluxDB v2 management API
         // to create buckets programmatically. For now, we'll just log the requirement.
-        info!("📋 Bucket creation should be done through InfluxDB v2 management API");
+        info!("⚬ Bucket creation should be done through InfluxDB v2 management API");
         info!(
-            "📋 Please ensure bucket '{}' exists in organization '{}'",
+            "⚬ Please ensure bucket '{}' exists in organization '{}'",
             self.config.bucket, self.config.org
         );
 

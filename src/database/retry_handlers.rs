@@ -26,7 +26,7 @@ impl InfluxWriteRetryHandler {
 #[async_trait::async_trait]
 impl RetryHandler for InfluxWriteRetryHandler {
     async fn retry_operation(&self, entry: &DeadLetterEntry) -> RavenResult<()> {
-        debug!("🔄 Retrying InfluxDB write operation: {}", entry.id);
+        debug!("⟲ Retrying InfluxDB write operation: {}", entry.id);
 
         // Parse the operation data based on metadata
         let operation_subtype = entry
@@ -297,7 +297,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!(
-                    "📮 Orderbook write failed, adding to dead letter queue: {}",
+                    "⚬ Orderbook write failed, adding to dead letter queue: {}",
                     e
                 );
                 let raven_error = RavenError::database_write(e.to_string());
@@ -316,7 +316,7 @@ impl EnhancedInfluxClient {
         match self.client.write_trade_snapshot(snapshot).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                warn!("📮 Trade write failed, adding to dead letter queue: {}", e);
+                warn!("⚬ Trade write failed, adding to dead letter queue: {}", e);
                 let raven_error = RavenError::database_write(e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_trade_entry(
                     snapshot,
@@ -333,7 +333,7 @@ impl EnhancedInfluxClient {
         match self.client.write_candle(candle).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                warn!("📮 Candle write failed, adding to dead letter queue: {}", e);
+                warn!("⚬ Candle write failed, adding to dead letter queue: {}", e);
                 let raven_error = RavenError::database_write(e.to_string());
                 let entry =
                     DatabaseDeadLetterHelper::create_candle_entry(candle, raven_error.to_string())?;
@@ -349,7 +349,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!(
-                    "📮 Funding rate write failed, adding to dead letter queue: {}",
+                    "⚬ Funding rate write failed, adding to dead letter queue: {}",
                     e
                 );
                 let raven_error = RavenError::database_write(e.to_string());
@@ -378,7 +378,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!(
-                    "📮 Wallet update write failed, adding to dead letter queue: {}",
+                    "⚬ Wallet update write failed, adding to dead letter queue: {}",
                     e
                 );
                 let raven_error = RavenError::database_write(e.to_string());
@@ -399,7 +399,7 @@ impl EnhancedInfluxClient {
         match self.client.write_batch(data_points.clone()).await {
             Ok(()) => Ok(()),
             Err(e) => {
-                warn!("📮 Batch write failed, adding to dead letter queue: {}", e);
+                warn!("⚬ Batch write failed, adding to dead letter queue: {}", e);
                 let raven_error = RavenError::database_write(e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_batch_write_entry(
                     &data_points,

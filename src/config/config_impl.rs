@@ -258,7 +258,7 @@ impl Config {
 
     /// Load configuration from environment variables and config files with optional custom config file
     pub fn load_with_file(config_file: Option<&str>) -> Result<Self> {
-        info!("📜 Loading configuration for the realm...");
+        info!("⚬ Loading configuration for the realm...");
 
         let mut builder = ConfigBuilder::builder()
             // Start with default values
@@ -298,13 +298,13 @@ impl Config {
         // Validate configuration
         config.validate()?;
 
-        info!("✅ Configuration loaded successfully");
+        info!("✓ Configuration loaded successfully");
         Ok(config)
     }
 
     /// Validate configuration values
     pub fn validate(&self) -> Result<()> {
-        info!("🔍 Validating configuration...");
+        info!("⚬ Validating configuration...");
 
         // Validate server configuration
         if self.server.port == 0 {
@@ -354,7 +354,7 @@ impl Config {
             ));
         }
 
-        info!("✅ Configuration validation passed");
+        info!("✓ Configuration validation passed");
         Ok(())
     }
 
@@ -499,7 +499,7 @@ impl ConfigManager {
         });
 
         info!(
-            "🔄 Configuration hot-reloading started (interval: {:?})",
+            "⟲ Configuration hot-reloading started (interval: {:?})",
             self.reload_interval
         );
         Ok(())
@@ -520,17 +520,17 @@ impl ConfigManager {
         let last_mod = *last_modified.read().await;
 
         if current_modified > last_mod {
-            info!("📝 Configuration file changed, reloading...");
+            info!("⚬ Configuration file changed, reloading...");
 
             match Config::load() {
                 Ok(new_config) => {
                     *config.write().await = new_config;
                     *last_modified.write().await = current_modified;
-                    info!("✅ Configuration reloaded successfully");
+                    info!("✓ Configuration reloaded successfully");
                 }
                 Err(e) => {
-                    error!("❌ Failed to reload configuration: {}", e);
-                    warn!("🔄 Keeping current configuration");
+                    error!("✗ Failed to reload configuration: {}", e);
+                    warn!("⟲ Keeping current configuration");
                 }
             }
         }
@@ -540,7 +540,7 @@ impl ConfigManager {
 
     /// Force reload configuration
     pub async fn force_reload(&self) -> Result<()> {
-        info!("🔄 Force reloading configuration...");
+        info!("⟲ Force reloading configuration...");
         let new_config = Config::load()?;
         *self.config.write().await = new_config;
 
@@ -549,7 +549,7 @@ impl ConfigManager {
             *self.last_modified.write().await = metadata.modified()?;
         }
 
-        info!("✅ Configuration force reloaded successfully");
+        info!("✓ Configuration force reloaded successfully");
         Ok(())
     }
 }

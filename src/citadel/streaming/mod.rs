@@ -92,7 +92,7 @@ impl SnapshotService {
         subscription_manager: Arc<SubscriptionManager>,
     ) -> Self {
         info!(
-            "📸 Initializing snapshot service with {:?} interval",
+            "◉ Initializing snapshot service with {:?} interval",
             config.snapshot_interval
         );
 
@@ -115,7 +115,7 @@ impl SnapshotService {
             .is_ok()
         {
             info!(
-                "📸 Starting snapshot service - ravens will fly every {:?}",
+                "[Raven Cage] Starting snapshot service - ravens will fly every {:?}",
                 self.config.snapshot_interval
             );
 
@@ -133,9 +133,9 @@ impl SnapshotService {
                 });
             }
 
-            info!("✅ Snapshot service started successfully");
+            info!("[Raven Cage] Snapshot service started successfully");
         } else {
-            warn!("⚠️ Snapshot service is already running");
+            warn!("!!! Snapshot service is already running");
         }
 
         Ok(())
@@ -148,16 +148,16 @@ impl SnapshotService {
             .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
         {
-            info!("📸 Stopping snapshot service...");
+            info!("[Raven Cage] Stopping snapshot service...");
 
             // Flush any remaining batches
             if self.config.persistence_enabled {
                 if let Err(e) = self.flush_current_batch().await {
-                    error!("❌ Failed to flush final batch: {}", e);
+                    error!("✗ Failed to flush final batch: {}", e);
                 }
             }
 
-            info!("✅ Snapshot service stopped");
+            info!("[Raven Cage] Snapshot service stopped");
         }
 
         Ok(())
@@ -167,7 +167,7 @@ impl SnapshotService {
     async fn snapshot_loop(&self) {
         let mut interval = interval(self.config.snapshot_interval);
         info!(
-            "📸 Snapshot loop started - capturing data every {:?}",
+            "[Raven Cage] Snapshot loop started - capturing data every {:?}",
             self.config.snapshot_interval
         );
 
@@ -192,20 +192,20 @@ impl SnapshotService {
                     );
 
                     debug!(
-                        "📸 Captured {} snapshots in {:?}",
+                        "[Raven Cage] Captured {} snapshots in {:?}",
                         snapshot_count, capture_duration
                     );
 
                     // Log warning if capture took longer than expected
                     if capture_duration > self.config.snapshot_interval / 2 {
                         warn!(
-                            "⚠️ Snapshot capture took {:?}, which is more than half the interval ({:?})",
+            "⚠ Snapshot capture took {:?}, which is more than half the interval ({:?})",
                             capture_duration, self.config.snapshot_interval
                         );
                     }
                 }
                 Err(e) => {
-                    error!("❌ Snapshot capture failed: {}", e);
+                    error!("✗ Snapshot capture failed: {}", e);
                     self.metrics
                         .failed_operations
                         .fetch_add(1, Ordering::Relaxed);
@@ -213,7 +213,7 @@ impl SnapshotService {
             }
         }
 
-        info!("📸 Snapshot loop stopped");
+        info!("[Raven Cage] Snapshot loop stopped");
     }
 
     /// Capture snapshots from atomic storage
@@ -223,6 +223,20 @@ impl SnapshotService {
         // Get all active symbols for orderbooks and trades
         let orderbook_symbols = self.storage.get_orderbook_symbols();
         let trade_symbols = self.storage.get_trade_symbols();
+
+        // Debug logging to see what symbols are available
+        if orderbook_symbols.is_empty() && trade_symbols.is_empty() {
+            info!(
+                "[Raven Cage] No symbols found in storage - orderbook: {}, trades: {}",
+                orderbook_symbols.len(),
+                trade_symbols.len()
+            );
+        } else {
+            info!(
+                "[Raven Cage] Found symbols - orderbook: {:?}, trades: {:?}",
+                orderbook_symbols, trade_symbols
+            );
+        }
 
         let mut batch = self.current_batch.write().await;
 
@@ -238,15 +252,22 @@ impl SnapshotService {
 
                         // Broadcast to subscribed clients
                         if self.config.broadcast_enabled {
-                            if let Err(e) = self.broadcast_orderbook_snapshot(&snapshot).await {
-                                warn!(
-                                    "⚠️ Failed to broadcast orderbook snapshot for {}: {}",
-                                    symbol, e
-                                );
-                            } else {
-                                self.metrics
-                                    .client_broadcasts
-                                    .fetch_add(1, Ordering::Relaxed);
+                            match self.broadcast_orderbook_snapshot(&snapshot).await {
+                                Ok(_) => {
+                                    self.metrics
+                                        .client_broadcasts
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    info!(
+                                        "Successfully broadcast orderbook for {} seq:{}",
+                                        symbol, snapshot.sequence
+                                    );
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to broadcast orderbook snapshot for {}: {}",
+                                        symbol, e
+                                    );
+                                }
                             }
                         }
 
@@ -256,7 +277,7 @@ impl SnapshotService {
                             .fetch_add(1, Ordering::Relaxed);
                     }
                     None => {
-                        debug!("📸 No orderbook data available for symbol: {}", symbol);
+                        debug!("No orderbook data available for symbol: {}", symbol);
                     }
                 }
             }
@@ -274,15 +295,22 @@ impl SnapshotService {
 
                         // Broadcast to subscribed clients
                         if self.config.broadcast_enabled {
-                            if let Err(e) = self.broadcast_trade_snapshot(&snapshot).await {
-                                warn!(
-                                    "⚠️ Failed to broadcast trade snapshot for {}: {}",
-                                    symbol, e
-                                );
-                            } else {
-                                self.metrics
-                                    .client_broadcasts
-                                    .fetch_add(1, Ordering::Relaxed);
+                            match self.broadcast_trade_snapshot(&snapshot).await {
+                                Ok(_) => {
+                                    self.metrics
+                                        .client_broadcasts
+                                        .fetch_add(1, Ordering::Relaxed);
+                                    info!(
+                                        "Successfully broadcast trade for {} price:{}",
+                                        symbol, snapshot.price
+                                    );
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to broadcast trade snapshot for {}: {}",
+                                        symbol, e
+                                    );
+                                }
                             }
                         }
 
@@ -290,7 +318,7 @@ impl SnapshotService {
                         self.metrics.trade_snapshots.fetch_add(1, Ordering::Relaxed);
                     }
                     None => {
-                        debug!("📸 No trade data available for symbol: {}", symbol);
+                        debug!("No trade data available for symbol: {}", symbol);
                     }
                 }
             }
@@ -300,7 +328,7 @@ impl SnapshotService {
         if batch.len() >= self.config.max_batch_size {
             drop(batch); // Release the write lock
             if let Err(e) = self.flush_current_batch().await {
-                error!("❌ Failed to flush batch: {}", e);
+                error!("✗ Failed to flush batch: {}", e);
                 self.metrics
                     .failed_operations
                     .fetch_add(1, Ordering::Relaxed);
@@ -321,8 +349,8 @@ impl SnapshotService {
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Orderbook, message)
             .context("Failed to distribute orderbook snapshot")?;
 
-        debug!(
-            "📡 Broadcast orderbook snapshot for {} to {} clients",
+        info!(
+            "⟐ Broadcast orderbook snapshot for {} to {} clients",
             snapshot.symbol, sent_count
         );
 
@@ -340,8 +368,8 @@ impl SnapshotService {
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Trades, message)
             .context("Failed to distribute trade snapshot")?;
 
-        debug!(
-            "📡 Broadcast trade snapshot for {} to {} clients",
+        info!(
+            "⟐ Broadcast trade snapshot for {} to {} clients",
             snapshot.symbol, sent_count
         );
 
@@ -352,7 +380,7 @@ impl SnapshotService {
     async fn batch_writer_loop(&self) {
         let mut interval = interval(self.config.write_timeout);
         info!(
-            "📝 Batch writer started with {:?} timeout",
+            "⚬ Batch writer started with {:?} timeout",
             self.config.write_timeout
         );
 
@@ -360,14 +388,14 @@ impl SnapshotService {
             interval.tick().await;
 
             if let Err(e) = self.flush_current_batch().await {
-                error!("❌ Batch write failed: {}", e);
+                error!("✗ Batch write failed: {}", e);
                 self.metrics
                     .failed_operations
                     .fetch_add(1, Ordering::Relaxed);
             }
         }
 
-        info!("📝 Batch writer stopped");
+        info!("⚬ Batch writer stopped");
     }
 
     /// Flush current batch to database
@@ -408,7 +436,7 @@ impl SnapshotService {
             .fetch_add(batch_size as u64, Ordering::Relaxed);
 
         debug!(
-            "📝 Flushed batch of {} snapshots to database in {:?}",
+            "⚬ Flushed batch of {} snapshots to database in {:?}",
             batch_size, write_duration
         );
 
@@ -485,7 +513,7 @@ impl SnapshotService {
     /// Update configuration (requires restart to take effect)
     pub fn update_config(&mut self, config: SnapshotConfig) {
         self.config = config;
-        info!("📸 Snapshot service configuration updated");
+        info!("◉ Snapshot service configuration updated");
     }
 
     /// Force flush current batch (for testing or manual operations)

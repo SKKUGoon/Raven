@@ -126,7 +126,7 @@ impl HighFrequencyHandler {
 
         let duration = start.elapsed();
         debug!(
-            "💱 Trade atomic update for {} completed in {:?} (price: {}, qty: {})",
+            "⟷ Trade atomic update for {} completed in {:?} (price: {}, qty: {})",
             symbol, duration, data.price, data.quantity
         );
 
@@ -162,7 +162,7 @@ impl HighFrequencyHandler {
 
         let duration = start.elapsed();
         debug!(
-            "📸 Orderbook snapshot captured for {} in {:?}",
+            "◉ Orderbook snapshot captured for {} in {:?}",
             symbol, duration
         );
 
@@ -184,10 +184,7 @@ impl HighFrequencyHandler {
             .with_context(|| format!("No trade data found for symbol: {symbol}"))?;
 
         let duration = start.elapsed();
-        debug!(
-            "📸 Trade snapshot captured for {} in {:?}",
-            symbol, duration
-        );
+        debug!("◉ Trade snapshot captured for {} in {:?}", symbol, duration);
 
         Ok(snapshot)
     }

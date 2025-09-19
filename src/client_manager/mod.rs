@@ -287,7 +287,7 @@ impl ClientManager {
     /// Create a new client manager
     pub fn new(config: ClientManagerConfig) -> Self {
         info!(
-            "👥 Initializing client manager with max clients: {}",
+            "⚮ Initializing client manager with max clients: {}",
             config.max_clients
         );
 
@@ -318,7 +318,7 @@ impl ClientManager {
         // Check if client already exists
         if clients.contains_key(&client_id) {
             warn!(
-                "👥 Client {} already registered, updating connection",
+                "⚮ Client {} already registered, updating connection",
                 client_id
             );
         }
@@ -327,7 +327,7 @@ impl ClientManager {
         clients.insert(client_id.clone(), connection);
 
         info!(
-            "👥 Registered client: {} (total: {})",
+            "⚮ Registered client: {} (total: {})",
             client_id,
             clients.len()
         );
@@ -340,7 +340,7 @@ impl ClientManager {
 
         if let Some(client) = clients.get_mut(client_id) {
             client.update_heartbeat();
-            debug!("💓 Updated heartbeat for client: {}", client_id);
+            debug!("♡ Updated heartbeat for client: {}", client_id);
             Ok(())
         } else {
             Err(RavenError::client_not_found(client_id))
@@ -429,7 +429,7 @@ impl ClientManager {
                 client.state = ClientState::Disconnecting;
 
                 info!(
-                    "👋 Initiating graceful disconnection for client: {} (reason: {})",
+                    "⚬ Initiating graceful disconnection for client: {} (reason: {})",
                     client_id, reason
                 );
 
@@ -479,7 +479,7 @@ impl ClientManager {
         if let Some(mut client) = clients.remove(client_id) {
             client.state = ClientState::Disconnected;
             info!(
-                "👋 Finalized disconnection for client: {} (total: {})",
+                "⚬ Finalized disconnection for client: {} (total: {})",
                 client_id,
                 clients.len()
             );
@@ -532,7 +532,7 @@ impl ClientManager {
                 client_manager.health_monitoring_loop().await;
             });
 
-            info!("🏥 Started client health monitoring");
+            info!("⚕ Started client health monitoring");
         }
 
         Ok(())
@@ -542,7 +542,7 @@ impl ClientManager {
     pub fn stop_health_monitoring(&self) {
         self.health_check_running
             .store(false, std::sync::atomic::Ordering::Relaxed);
-        info!("🏥 Stopped client health monitoring");
+        info!("⚕ Stopped client health monitoring");
     }
 
     /// Health monitoring loop
@@ -590,7 +590,7 @@ impl ClientManager {
 
         // Disconnect unhealthy clients
         for client_id in unhealthy_clients {
-            warn!("🏥 Disconnecting unhealthy client: {}", client_id);
+            warn!("⚕ Disconnecting unhealthy client: {}", client_id);
             if let Err(e) = self
                 .disconnect_client(&client_id, DisconnectionReason::Timeout)
                 .await
@@ -601,7 +601,7 @@ impl ClientManager {
 
         // Disconnect idle clients
         for client_id in idle_clients {
-            info!("😴 Disconnecting idle client: {}", client_id);
+            info!("⚬ Disconnecting idle client: {}", client_id);
             if let Err(e) = self
                 .disconnect_client(&client_id, DisconnectionReason::Timeout)
                 .await
@@ -620,7 +620,7 @@ impl ClientManager {
             client_manager.disconnection_processing_loop().await;
         });
 
-        info!("📤 Started disconnection event processing");
+        info!("⚬ Started disconnection event processing");
         Ok(())
     }
 
@@ -698,7 +698,7 @@ impl ClientManager {
 
     /// Shutdown all clients gracefully
     pub async fn shutdown_all_clients(&self) -> RavenResult<()> {
-        info!("🛑 Initiating graceful shutdown of all clients");
+        info!("■ Initiating graceful shutdown of all clients");
 
         let client_ids: Vec<String> = {
             let clients = self.clients.read().await;
@@ -729,15 +729,12 @@ impl ClientManager {
         };
 
         if remaining_count > 0 {
-            warn!(
-                "🛑 Force disconnected {} remaining clients",
-                remaining_count
-            );
+            warn!("■ Force disconnected {} remaining clients", remaining_count);
         }
 
         self.stop_health_monitoring();
 
-        info!("🛑 All clients disconnected");
+        info!("■ All clients disconnected");
         Ok(())
     }
 }

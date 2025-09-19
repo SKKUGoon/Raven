@@ -194,3 +194,4 @@ config/secret.toml
 logs/
 data/
 *.log
+*.json

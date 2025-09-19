@@ -27,7 +27,7 @@ impl PrivateDataHandler {
     }
 
     pub fn with_config(config: PrivateDataConfig) -> Self {
-        info!("🔐 Private data ravens are preparing for secure flight...");
+        info!("⚿ Private data ravens are preparing for secure flight...");
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let storage = Arc::new(PrivateDataStorage::new(config.max_items_per_user));
@@ -62,14 +62,14 @@ impl PrivateDataHandler {
             handler.processing_loop(receiver).await;
         });
 
-        info!("✅ Private data handler started");
+        info!("✓ Private data handler started");
         Ok(())
     }
 
     pub async fn stop(&self) -> Result<()> {
         let mut processing_active = self.processing_active.write().await;
         *processing_active = false;
-        info!("🛑 Private data handler stopped");
+        info!("■ Private data handler stopped");
         Ok(())
     }
 
@@ -86,7 +86,7 @@ impl PrivateDataHandler {
         };
 
         self.sender.send(message)?;
-        debug!("🔐 Wallet update queued for user {}", data.user_id);
+        debug!("⚿ Wallet update queued for user {}", data.user_id);
         Ok(())
     }
 
@@ -104,7 +104,7 @@ impl PrivateDataHandler {
 
         self.sender.send(message)?;
         debug!(
-            "🔐 Position update queued for user {} symbol {}",
+            "⚿ Position update queued for user {} symbol {}",
             data.user_id, data.symbol
         );
         Ok(())
@@ -116,7 +116,7 @@ impl PrivateDataHandler {
         permissions: ClientPermissions,
     ) -> Result<()> {
         self.storage.register_client(client_id, permissions);
-        info!("🔐 Client {} registered", client_id);
+        info!("⚿ Client {} registered", client_id);
         Ok(())
     }
 
@@ -178,7 +178,7 @@ impl PrivateDataHandler {
     }
 
     async fn processing_loop(&self, mut receiver: mpsc::UnboundedReceiver<SecureChannelMessage>) {
-        info!("🔐 Private data processing loop started");
+        info!("⚿ Private data processing loop started");
 
         while *self.processing_active.read().await {
             if let Ok(message) = receiver.try_recv() {
@@ -189,7 +189,7 @@ impl PrivateDataHandler {
             tokio::time::sleep(self.config.processing_interval).await;
         }
 
-        info!("🔐 Private data processing loop stopped");
+        info!("⚿ Private data processing loop stopped");
     }
 
     async fn process_message(&self, message: &SecureChannelMessage) -> Result<()> {
@@ -199,7 +199,7 @@ impl PrivateDataHandler {
                 self.metrics
                     .wallet_updates_processed
                     .fetch_add(1, Ordering::Relaxed);
-                debug!("🔐 Processed wallet update for user {}", wallet.user_id);
+                debug!("⚿ Processed wallet update for user {}", wallet.user_id);
             }
             PrivateData::PositionUpdate(position) => {
                 self.storage.add_position_update(position);
@@ -207,7 +207,7 @@ impl PrivateDataHandler {
                     .position_updates_processed
                     .fetch_add(1, Ordering::Relaxed);
                 debug!(
-                    "🔐 Processed position update for user {} symbol {}",
+                    "⚿ Processed position update for user {} symbol {}",
                     position.user_id, position.symbol
                 );
             }

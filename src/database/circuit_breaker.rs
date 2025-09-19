@@ -103,7 +103,7 @@ impl CircuitBreaker {
     pub fn new<S: Into<String>>(name: S, config: CircuitBreakerConfig) -> Self {
         let name = name.into();
         info!(
-            "🔌 Creating circuit breaker: {} with config: {:?}",
+            "⚬ Creating circuit breaker: {} with config: {:?}",
             name, config
         );
 
@@ -203,13 +203,13 @@ impl CircuitBreaker {
             CircuitBreakerState::Open => {
                 // This shouldn't happen, but handle it gracefully
                 warn!(
-                    "🔌 Recorded success while circuit breaker {} is open",
+                    "⚬ Recorded success while circuit breaker {} is open",
                     self.name
                 );
             }
         }
 
-        debug!("✅ Circuit breaker {} recorded success", self.name);
+        debug!("✓ Circuit breaker {} recorded success", self.name);
     }
 
     /// Record a failed request
@@ -252,7 +252,7 @@ impl CircuitBreaker {
             }
         }
 
-        debug!("❌ Circuit breaker {} recorded failure", self.name);
+        debug!("✗ Circuit breaker {} recorded failure", self.name);
     }
 
     /// Get current circuit breaker state
@@ -305,13 +305,13 @@ impl CircuitBreaker {
 
         self.failure_window.lock().await.clear();
 
-        info!("🔄 Circuit breaker {} reset to closed state", self.name);
+        info!("⟲ Circuit breaker {} reset to closed state", self.name);
     }
 
     /// Force circuit breaker to open state (for testing/emergency)
     pub async fn force_open(&self) {
         self.transition_to_open().await;
-        warn!("🚨 Circuit breaker {} forced to open state", self.name);
+        warn!("⚠ Circuit breaker {} forced to open state", self.name);
     }
 
     /// Force circuit breaker to closed state (for testing/recovery)
@@ -333,7 +333,7 @@ impl CircuitBreaker {
         *self.state_change_time.lock().await = Instant::now();
 
         info!(
-            "✅ Circuit breaker {} transitioned from {} to closed",
+            "✓ Circuit breaker {} transitioned from {} to closed",
             self.name, old_state
         );
     }
@@ -350,7 +350,7 @@ impl CircuitBreaker {
         *self.state_change_time.lock().await = Instant::now();
 
         error!(
-            "🚨 Circuit breaker {} transitioned from {} to open",
+            "⚠ Circuit breaker {} transitioned from {} to open",
             self.name, old_state
         );
     }
@@ -367,7 +367,7 @@ impl CircuitBreaker {
         *self.state_change_time.lock().await = Instant::now();
 
         info!(
-            "🔄 Circuit breaker {} transitioned from {} to half-open",
+            "⟲ Circuit breaker {} transitioned from {} to half-open",
             self.name, old_state
         );
     }
@@ -430,7 +430,7 @@ impl CircuitBreakerRegistry {
         let mut breakers = self.breakers.write().await;
         let name = breaker.name().to_string();
         breakers.insert(name.clone(), breaker);
-        info!("📋 Registered circuit breaker: {}", name);
+        info!("⚬ Registered circuit breaker: {}", name);
     }
 
     /// Get a circuit breaker by name
@@ -488,7 +488,7 @@ impl CircuitBreakerRegistry {
         let mut breakers = self.breakers.write().await;
         let removed = breakers.remove(name).is_some();
         if removed {
-            info!("🗑️ Removed circuit breaker: {}", name);
+            info!("⚬ Removed circuit breaker: {}", name);
         }
         removed
     }
@@ -499,7 +499,7 @@ impl CircuitBreakerRegistry {
         for breaker in breakers.values() {
             breaker.reset().await;
         }
-        info!("🔄 Reset all circuit breakers");
+        info!("⟲ Reset all circuit breakers");
     }
 }
 

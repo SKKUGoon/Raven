@@ -15,29 +15,29 @@ pub struct ConfigUtils;
 impl ConfigUtils {
     /// Print current configuration in a readable format
     pub fn print_config(config: &Config) {
-        info!("🏰 Current Configuration for Project Raven:");
-        info!("  📡 Server: {}:{}", config.server.host, config.server.port);
-        info!("  🔗 Max Connections: {}", config.server.max_connections);
-        info!("  🗄️  Database: {}", config.database.influx_url);
-        info!("  🪣 Bucket: {}", config.database.bucket);
+        info!("Current Configuration for Project Raven:");
+        info!("  Server: {}:{}", config.server.host, config.server.port);
+        info!("  Max Connections: {}", config.server.max_connections);
+        info!("  Database: {}", config.database.influx_url);
+        info!("  Bucket: {}", config.database.bucket);
         info!("  Organization: {}", config.database.org);
         info!(
             "  Snapshot Interval: {}ms",
             config.data_processing.snapshot_interval_ms
         );
         info!(
-            "  📈 High Freq Buffer: {}",
+            "  ↗ High Freq Buffer: {}",
             config.data_processing.high_frequency_buffer_size
         );
         info!(
-            "  📉 Low Freq Buffer: {}",
+            "  ↘ Low Freq Buffer: {}",
             config.data_processing.low_frequency_buffer_size
         );
         info!(
-            "  🔒 Private Buffer: {}",
+            "  Private Buffer: {}",
             config.data_processing.private_data_buffer_size
         );
-        info!("  📝 Log Level: {}", config.monitoring.log_level);
+        info!("  Log Level: {}", config.monitoring.log_level);
     }
 
     /// Get configuration summary for health checks
@@ -204,7 +204,7 @@ impl ConfigUtils {
         if let Ok(port) = env::var("RAVEN_SERVER__PORT") {
             if let Ok(port_num) = port.parse::<u16>() {
                 if port_num < 1024 && env::var("USER").unwrap_or_default() != "root" {
-                    warn!("⚠️  Port {} requires root privileges", port_num);
+                    warn!("⚠ Port {} requires root privileges", port_num);
                 }
             }
         }
@@ -252,7 +252,7 @@ impl ConfigValidator {
             return Err(anyhow::anyhow!("{} port cannot be 0", name));
         }
         if port < 1024 {
-            warn!("⚠️  {} port {} requires elevated privileges", name, port);
+            warn!("!!! {} port {} requires elevated privileges", name, port);
         }
         Ok(())
     }
@@ -286,7 +286,7 @@ impl ConfigValidator {
 
         if size > 1_000_000 {
             warn!(
-                "⚠️  {} buffer size {} is very large and may consume significant memory",
+                "!!! {} buffer size {} is very large and may consume significant memory",
                 name, size
             );
         }
@@ -302,7 +302,7 @@ impl ConfigValidator {
 
         if timeout_ms > 300_000 {
             // 5 minutes
-            warn!("⚠️  {} timeout {}ms is very high", name, timeout_ms);
+            warn!("!!! {} timeout {}ms is very high", name, timeout_ms);
         }
 
         Ok(())

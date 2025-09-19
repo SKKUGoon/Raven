@@ -44,8 +44,8 @@ impl MarketDataServer {
         hf_storage: Arc<HighFrequencyStorage>,
         max_connections: usize,
     ) -> Self {
-        info!("🏰 The Night's Watch is assembling...");
-        info!("⚔️ Maximum concurrent connections: {}", max_connections);
+        info!("▲ The Night's Watch is assembling...");
+        info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
             subscription_manager,
@@ -64,8 +64,8 @@ impl MarketDataServer {
         metrics: Arc<MetricsCollector>,
         max_connections: usize,
     ) -> Self {
-        info!("🏰 The Night's Watch is assembling with monitoring...");
-        info!("⚔️ Maximum concurrent connections: {}", max_connections);
+        info!("▲ The Night's Watch is assembling with monitoring...");
+        info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
             subscription_manager,
@@ -80,8 +80,8 @@ impl MarketDataServer {
     pub async fn start(self, host: &str, port: u16) -> Result<()> {
         let addr = format!("{host}:{port}").parse()?;
 
-        info!("🏰 The Night's Watch is taking position at {}", addr);
-        info!("🐦‍⬛ Ravens are ready to carry messages across the realm");
+        info!("▲ The Night's Watch is taking position at {}", addr);
+        info!("◦ Ravens are ready to carry messages across the realm");
 
         let service_impl = MarketDataServiceImpl::new(
             self.subscription_manager,
@@ -95,12 +95,15 @@ impl MarketDataServer {
             .max_decoding_message_size(4 * 1024 * 1024) // 4MB max message size
             .max_encoding_message_size(4 * 1024 * 1024);
 
+        info!("▶ Starting gRPC server...");
+
         Server::builder()
             .add_service(service)
             .serve(addr)
             .await
             .map_err(|e| anyhow!("Server failed: {}", e))?;
 
+        info!("■ gRPC server stopped");
         Ok(())
     }
 }

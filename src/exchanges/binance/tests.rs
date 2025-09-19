@@ -9,7 +9,7 @@ async fn test_binance_websocket_60_second_integration() {
     // Simple 60-second WebSocket integration test
     let symbol = "btcusdt".to_string();
 
-    println!("🚀 Starting 60-second Binance Futures WebSocket test...");
+    println!("▶ Starting 60-second Binance Futures WebSocket test...");
 
     let mut client = BinanceFuturesTrade::new(symbol.clone()).expect("Failed to create client");
     let mut rx = client
@@ -26,7 +26,7 @@ async fn test_binance_websocket_60_second_integration() {
         match timeout(Duration::from_secs(1), rx.recv()).await {
             Ok(Some(msg)) => {
                 if !connection_confirmed {
-                    println!("✅ Connection confirmed!");
+                    println!("✓ Connection confirmed!");
                     connection_confirmed = true;
                 }
 
@@ -42,14 +42,14 @@ async fn test_binance_websocket_60_second_integration() {
                     assert!(*price > 0.0);
 
                     if message_count % 10 == 0 {
-                        println!("📊 Message #{message_count}: ${price:.2}");
+                        println!("◉ Message #{message_count}: ${price:.2}");
                     }
                 }
 
                 // Early exit if we get enough data
                 if message_count >= 20 {
                     println!(
-                        "🎉 Success! Received {} messages in {:.1}s",
+                        "✓ Success! Received {} messages in {:.1}s",
                         message_count,
                         start_time.elapsed().as_secs_f64()
                     );
@@ -73,15 +73,15 @@ async fn test_binance_websocket_60_second_integration() {
     // Results
     let elapsed = start_time.elapsed();
     println!(
-        "\n📈 Results: {:.1}s, {} messages",
+        "\n↗ Results: {:.1}s, {} messages",
         elapsed.as_secs_f64(),
         message_count
     );
 
     if connection_confirmed && message_count > 0 {
-        println!("✅ TEST PASSED!");
+        println!("✓ TEST PASSED!");
     } else {
-        panic!("❌ TEST FAILED - No connection or data");
+        panic!("✗ TEST FAILED - No connection or data");
     }
 }
 
@@ -333,7 +333,7 @@ async fn test_binance_futures_orderbook_live() {
     use crate::exchanges::binance::app::futures::orderbook::BinanceFuturesOrderbook;
     use tokio::time::{timeout, Duration};
 
-    println!("🚀 Testing Binance Futures Orderbook WebSocket...");
+    println!("▶ Testing Binance Futures Orderbook WebSocket...");
 
     let symbol = "btcusdt".to_string();
     let mut client = BinanceFuturesOrderbook::new(symbol.clone()).expect("Failed to create client");
@@ -351,22 +351,22 @@ async fn test_binance_futures_orderbook_live() {
             Ok(Some(msg)) => {
                 message_count += 1;
                 println!(
-                    "📥 Message {}: Exchange={:?}, Symbol={}",
+                    "⟐ Message {}: Exchange={:?}, Symbol={}",
                     message_count, msg.exchange, msg.symbol
                 );
 
                 match &msg.data {
                     crate::exchanges::types::MarketData::OrderBook { bids, asks } => {
                         println!(
-                            "   📊 Orderbook - Bids: {}, Asks: {}",
+                            "   ◉ Orderbook - Bids: {}, Asks: {}",
                             bids.len(),
                             asks.len()
                         );
                         if !bids.is_empty() {
-                            println!("   💰 Best bid: {:?}", bids[0]);
+                            println!("   $ Best bid: {:?}", bids[0]);
                         }
                         if !asks.is_empty() {
-                            println!("   💸 Best ask: {:?}", asks[0]);
+                            println!("   $ Best ask: {:?}", asks[0]);
                         }
                     }
                     _ => {
@@ -375,7 +375,7 @@ async fn test_binance_futures_orderbook_live() {
                 }
             }
             Ok(None) => {
-                println!("❌ Channel closed");
+                println!("✗ Channel closed");
                 break;
             }
             Err(_) => {
@@ -385,9 +385,9 @@ async fn test_binance_futures_orderbook_live() {
     }
 
     if message_count == 0 {
-        println!("❌ No orderbook messages received in 10 seconds");
+        println!("✗ No orderbook messages received in 10 seconds");
         // Don't panic, just warn - this might be expected if orderbook stream is different
     } else {
-        println!("✅ Received {message_count} orderbook messages");
+        println!("✓ Received {message_count} orderbook messages");
     }
 }

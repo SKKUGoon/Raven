@@ -104,7 +104,7 @@ impl HealthService {
     /// Start the health check HTTP server
     pub async fn start(&self) -> Result<Option<JoinHandle<()>>> {
         // Health checks should always be enabled for container health monitoring
-        info!("🏥 Starting health check service...");
+        info!("⚕ Starting health check service...");
 
         let app = Router::new()
             .route("/health", get(health_handler))
@@ -117,7 +117,7 @@ impl HealthService {
             .await
             .with_context(|| format!("Failed to bind health check server to {addr}"))?;
 
-        info!("🏥 Health check server starting on {}", addr);
+        info!("⚕ Health check server starting on {}", addr);
 
         let handle = tokio::spawn(async move {
             if let Err(e) = axum::serve(listener, app).await {

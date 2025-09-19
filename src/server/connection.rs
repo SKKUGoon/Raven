@@ -44,7 +44,7 @@ impl ConnectionManager {
             return Err(anyhow!("Maximum connections reached"));
         }
         *connections += 1;
-        debug!("🔗 Active connections: {}", *connections);
+        debug!("⟐ Active connections: {}", *connections);
 
         // Update metrics
         if let Some(metrics) = metrics {
@@ -65,7 +65,7 @@ impl ConnectionManager {
         if *connections > 0 {
             *connections -= 1;
         }
-        debug!("🔗 Active connections: {}", *connections);
+        debug!("⟐ Active connections: {}", *connections);
 
         // Update metrics
         if let Some(metrics) = metrics {

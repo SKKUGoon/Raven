@@ -150,9 +150,10 @@ impl MarketDataServiceImpl {
     /// Stream real-time data from atomic storage to client
     async fn stream_realtime_data(
         &self,
-        _client_id: String,
+        client_id: String,
         mut receiver: mpsc::UnboundedReceiver<MarketDataMessage>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>> {
+        info!("⟐ Starting real-time data stream for client: {}", client_id);
         let hf_storage = Arc::clone(&self.hf_storage);
 
         // Create a stream that combines real-time atomic reads with subscription messages
@@ -238,7 +239,7 @@ impl MarketDataServiceImpl {
                     }
                     Err(e) => {
                         warn!(
-                            "⚠️ Failed to query historical data for {}::{:?}: {}",
+                            "⚠ Failed to query historical data for {}::{:?}: {}",
                             symbol, data_type, e
                         );
                     }
@@ -262,19 +263,24 @@ impl MarketDataService for MarketDataServiceImpl {
         &self,
         request: Request<Streaming<SubscriptionRequest>>,
     ) -> Result<Response<Self::StreamMarketDataStream>, Status> {
+        info!("⟐ New gRPC streaming connection attempt");
+
         // Check connection limits
         if !self.connection_manager.can_accept_connection().await {
-            warn!("🚫 Connection rejected - maximum connections reached");
+            error!("⊘ Connection rejected - maximum connections reached");
             return Err(Status::resource_exhausted("Maximum connections reached"));
         }
 
         self.connection_manager
             .increment_connections(self.metrics.as_ref())
             .await
-            .map_err(|e| Status::internal(format!("Failed to accept connection: {e}")))?;
+            .map_err(|e| {
+                error!("✗ Failed to accept connection: {}", e);
+                Status::internal(format!("Failed to accept connection: {e}"))
+            })?;
 
         let connection_start = std::time::Instant::now();
-        info!("🔗 New streaming connection established");
+        info!("✓ gRPC streaming connection established successfully");
 
         let mut stream = request.into_inner();
         let subscription_manager = Arc::clone(&self.subscription_manager);
@@ -293,100 +299,111 @@ impl MarketDataService for MarketDataServiceImpl {
             async move {
                 while let Some(request_result) = stream.next().await {
                     match request_result {
-                        Ok(subscription_request) => match subscription_request.request {
-                            Some(crate::proto::subscription_request::Request::Subscribe(
-                                sub_req,
-                            )) => {
-                                *client_id_clone.write().await = sub_req.client_id.clone();
-
-                                let symbols = sub_req.symbols;
-                                let data_types: Vec<SubscriptionDataType> = sub_req
-                                    .data_types
-                                    .into_iter()
-                                    .map(|dt| {
-                                        Self::convert_data_type(
-                                            DataType::try_from(dt).unwrap_or(DataType::Orderbook),
-                                        )
-                                    })
-                                    .collect();
-
-                                let filters: HashMap<String, String> = sub_req.filters;
-
-                                match subscription_manager.subscribe(
-                                    sub_req.client_id.clone(),
-                                    symbols.clone(),
-                                    data_types.clone(),
-                                    filters,
-                                    sender.clone(),
-                                ) {
-                                    Ok(topics) => {
-                                        info!(
-                                            "✅ Client {} subscribed to {} topics: {:?}",
-                                            sub_req.client_id,
-                                            topics.len(),
-                                            symbols
-                                        );
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "❌ Subscription failed for client {}: {}",
-                                            sub_req.client_id, e
-                                        );
-                                    }
-                                }
-                            }
-                            Some(crate::proto::subscription_request::Request::Unsubscribe(
-                                unsub_req,
-                            )) => {
-                                let symbols = unsub_req.symbols;
-                                let data_types: Vec<SubscriptionDataType> = unsub_req
-                                    .data_types
-                                    .into_iter()
-                                    .map(|dt| {
-                                        Self::convert_data_type(
-                                            DataType::try_from(dt).unwrap_or(DataType::Orderbook),
-                                        )
-                                    })
-                                    .collect();
-
-                                match subscription_manager.unsubscribe(
-                                    &unsub_req.client_id,
-                                    symbols,
-                                    data_types,
-                                ) {
-                                    Ok(unsubscribed_topics) => {
-                                        info!(
-                                            "✅ Client {} unsubscribed from {} topics",
-                                            unsub_req.client_id,
-                                            unsubscribed_topics.len()
-                                        );
-                                    }
-                                    Err(e) => {
-                                        error!(
-                                            "❌ Unsubscription failed for client {}: {}",
-                                            unsub_req.client_id, e
-                                        );
-                                    }
-                                }
-                            }
-                            Some(crate::proto::subscription_request::Request::Heartbeat(
-                                heartbeat_req,
-                            )) => {
-                                if let Err(e) =
-                                    subscription_manager.update_heartbeat(&heartbeat_req.client_id)
-                                {
-                                    debug!(
-                                        "⚠️ Heartbeat update failed for client {}: {}",
-                                        heartbeat_req.client_id, e
+                        Ok(subscription_request) => {
+                            info!("⟐ Received gRPC subscription request");
+                            match subscription_request.request {
+                                Some(crate::proto::subscription_request::Request::Subscribe(
+                                    sub_req,
+                                )) => {
+                                    info!(
+                                        "⚬ Processing Subscribe request for client: {}",
+                                        sub_req.client_id
                                     );
+                                    *client_id_clone.write().await = sub_req.client_id.clone();
+
+                                    let symbols = sub_req.symbols;
+                                    let data_types: Vec<SubscriptionDataType> = sub_req
+                                        .data_types
+                                        .into_iter()
+                                        .map(|dt| {
+                                            let data_type = DataType::try_from(dt)
+                                                .unwrap_or(DataType::Orderbook);
+                                            Self::convert_data_type(data_type)
+                                        })
+                                        .collect();
+
+                                    let filters: HashMap<String, String> = sub_req.filters;
+
+                                    match subscription_manager.subscribe(
+                                        sub_req.client_id.clone(),
+                                        symbols.clone(),
+                                        data_types.clone(),
+                                        filters,
+                                        sender.clone(),
+                                    ) {
+                                        Ok(topics) => {
+                                            info!(
+                                                "✓ Client {} subscribed to {} topics: {:?}",
+                                                sub_req.client_id,
+                                                topics.len(),
+                                                symbols
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                "✗ Subscription failed for client {}: {}",
+                                                sub_req.client_id, e
+                                            );
+                                        }
+                                    }
+                                }
+                                Some(crate::proto::subscription_request::Request::Unsubscribe(
+                                    unsub_req,
+                                )) => {
+                                    let symbols = unsub_req.symbols;
+                                    let data_types: Vec<SubscriptionDataType> = unsub_req
+                                        .data_types
+                                        .into_iter()
+                                        .map(|dt| {
+                                            let data_type = DataType::try_from(dt)
+                                                .unwrap_or(DataType::Orderbook);
+                                            Self::convert_data_type(data_type)
+                                        })
+                                        .collect();
+
+                                    match subscription_manager.unsubscribe(
+                                        &unsub_req.client_id,
+                                        symbols,
+                                        data_types,
+                                    ) {
+                                        Ok(unsubscribed_topics) => {
+                                            info!(
+                                                "✓ Client {} unsubscribed from {} topics",
+                                                unsub_req.client_id,
+                                                unsubscribed_topics.len()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                "✗ Unsubscription failed for client {}: {}",
+                                                unsub_req.client_id, e
+                                            );
+                                        }
+                                    }
+                                }
+                                Some(crate::proto::subscription_request::Request::Heartbeat(
+                                    heartbeat_req,
+                                )) => {
+                                    info!(
+                                        "♡ Received heartbeat from client: {}",
+                                        heartbeat_req.client_id
+                                    );
+                                    if let Err(e) = subscription_manager
+                                        .update_heartbeat(&heartbeat_req.client_id)
+                                    {
+                                        error!(
+                                            "✗ Heartbeat update failed for client {}: {}",
+                                            heartbeat_req.client_id, e
+                                        );
+                                    }
+                                }
+                                None => {
+                                    error!("✗ Received empty subscription request");
                                 }
                             }
-                            None => {
-                                warn!("⚠️ Received empty subscription request");
-                            }
-                        },
+                        }
                         Err(e) => {
-                            error!("❌ Error receiving subscription request: {}", e);
+                            error!("✗ Error receiving subscription request: {}", e);
                             break;
                         }
                     }
@@ -396,9 +413,9 @@ impl MarketDataService for MarketDataServiceImpl {
                 let final_client_id = client_id_clone.read().await.clone();
                 if !final_client_id.is_empty() {
                     if let Err(e) = subscription_manager.unsubscribe_all(&final_client_id) {
-                        error!("❌ Failed to clean up client {}: {}", final_client_id, e);
+                        error!("✗ Failed to clean up client {}: {}", final_client_id, e);
                     }
-                    info!("🧹 Cleaned up client {} subscription", final_client_id);
+                    info!("⚬ Cleaned up client {} subscription", final_client_id);
                 }
             }
         };
@@ -406,12 +423,16 @@ impl MarketDataService for MarketDataServiceImpl {
         // Spawn the subscription handler
         tokio::spawn(subscription_handler);
 
-        // Create the response stream
-        let current_client_id = client_id.read().await.clone();
+        // Create the response stream with a placeholder client ID
+        // The actual client ID will be set when the first subscription request arrives
+        info!("▶ Creating response stream for new client");
         let response_stream = server
-            .stream_realtime_data(current_client_id, receiver)
+            .stream_realtime_data("pending".to_string(), receiver)
             .await
-            .map_err(|e| Status::internal(format!("Failed to create stream: {e}")))?;
+            .map_err(|e| {
+                error!("✗ Failed to create response stream: {}", e);
+                Status::internal(format!("Failed to create stream: {e}"))
+            })?;
 
         // Decrement connection count when stream ends
         let server_clone = server.clone();
@@ -425,7 +446,7 @@ impl MarketDataService for MarketDataServiceImpl {
             // Cleanup when stream ends
             let connection_duration = connection_start.elapsed();
             server_clone.connection_manager.decrement_connections(connection_duration, server_clone.metrics.as_ref()).await;
-            info!("🔌 Streaming connection closed (duration: {:?})", connection_duration);
+            info!("⟐ gRPC streaming connection closed (duration: {:?})", connection_duration);
         };
 
         Ok(Response::new(Box::pin(cleanup_stream)))
@@ -439,14 +460,18 @@ impl MarketDataService for MarketDataServiceImpl {
         let req = request.into_inner();
         let client_id = req.client_id.clone();
 
-        info!("📝 Subscribe request from client: {}", client_id);
+        info!(
+            "⚬ gRPC Subscribe request from client: {} for symbols: {:?}",
+            client_id, req.symbols
+        );
 
         let symbols = req.symbols;
         let data_types: Vec<SubscriptionDataType> = req
             .data_types
             .into_iter()
             .map(|dt| {
-                Self::convert_data_type(DataType::try_from(dt).unwrap_or(DataType::Orderbook))
+                let data_type = DataType::try_from(dt).unwrap_or(DataType::Orderbook);
+                Self::convert_data_type(data_type)
             })
             .collect();
         let filters: HashMap<String, String> = req.filters;
@@ -463,7 +488,7 @@ impl MarketDataService for MarketDataServiceImpl {
         ) {
             Ok(topics) => {
                 info!(
-                    "✅ Client {} subscribed to {} topics: {:?}",
+                    "✓ Client {} subscribed to {} topics: {:?}",
                     client_id,
                     topics.len(),
                     symbols
@@ -478,7 +503,7 @@ impl MarketDataService for MarketDataServiceImpl {
                 Ok(Response::new(response))
             }
             Err(e) => {
-                error!("❌ Subscription failed for client {}: {}", client_id, e);
+                error!("✗ Subscription failed for client {}: {}", client_id, e);
 
                 let response = SubscribeResponse {
                     success: false,
@@ -499,14 +524,15 @@ impl MarketDataService for MarketDataServiceImpl {
         let req = request.into_inner();
         let client_id = req.client_id.clone();
 
-        info!("📝 Unsubscribe request from client: {}", client_id);
+        info!("⚬ Unsubscribe request from client: {}", client_id);
 
         let symbols = req.symbols;
         let data_types: Vec<SubscriptionDataType> = req
             .data_types
             .into_iter()
             .map(|dt| {
-                Self::convert_data_type(DataType::try_from(dt).unwrap_or(DataType::Orderbook))
+                let data_type = DataType::try_from(dt).unwrap_or(DataType::Orderbook);
+                Self::convert_data_type(data_type)
             })
             .collect();
 
@@ -516,7 +542,7 @@ impl MarketDataService for MarketDataServiceImpl {
         {
             Ok(unsubscribed_topics) => {
                 info!(
-                    "✅ Client {} unsubscribed from {} topics",
+                    "✓ Client {} unsubscribed from {} topics",
                     client_id,
                     unsubscribed_topics.len()
                 );
@@ -533,7 +559,7 @@ impl MarketDataService for MarketDataServiceImpl {
                 Ok(Response::new(response))
             }
             Err(e) => {
-                error!("❌ Unsubscription failed for client {}: {}", client_id, e);
+                error!("✗ Unsubscription failed for client {}: {}", client_id, e);
 
                 let response = UnsubscribeResponse {
                     success: false,
@@ -597,7 +623,7 @@ impl MarketDataService for MarketDataServiceImpl {
                     }
                 }
                 Err(e) => {
-                    error!("❌ Historical data query failed: {}", e);
+                    error!("✗ Historical data query failed: {}", e);
                     yield Err(Status::internal(format!("Query failed: {e}")));
                 }
             }

@@ -8,7 +8,7 @@ name = "raven"
 path = "src/lib.rs"
 
 [[bin]]
-name = "market-data-server"
+name = "raven"
 path = "src/main.rs"
 
 [dependencies]

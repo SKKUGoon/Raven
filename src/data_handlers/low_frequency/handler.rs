@@ -31,7 +31,7 @@ impl LowFrequencyHandler {
 
     /// Create a new LowFrequencyHandler with custom configuration
     pub fn with_config(config: LowFrequencyConfig) -> Self {
-        info!("🕯️ Low frequency ravens are preparing for flight...");
+        info!("◦ Low frequency ravens are preparing for flight...");
 
         let (sender, receiver) = mpsc::unbounded_channel();
         let storage = Arc::new(LowFrequencyStorage::new(config.max_items_per_symbol));
@@ -68,7 +68,7 @@ impl LowFrequencyHandler {
             handler.processing_loop(receiver).await;
         });
 
-        info!("✅ Low frequency handler processing started");
+        info!("✓ Low frequency handler processing started");
         Ok(())
     }
 
@@ -76,7 +76,7 @@ impl LowFrequencyHandler {
     pub async fn stop(&self) -> Result<()> {
         let mut processing_active = self.processing_active.write().await;
         *processing_active = false;
-        info!("🛑 Low frequency handler processing stopped");
+        info!("■ Low frequency handler processing stopped");
         Ok(())
     }
 
@@ -107,7 +107,7 @@ impl LowFrequencyHandler {
             .fetch_add(1, Ordering::Relaxed);
 
         debug!(
-            "🕯️ Candle data queued for {} {} in {:?}",
+            "◦ Candle data queued for {} {} in {:?}",
             data.symbol,
             data.interval,
             start.elapsed()
@@ -143,7 +143,7 @@ impl LowFrequencyHandler {
             .fetch_add(1, Ordering::Relaxed);
 
         debug!(
-            "💰 Funding rate data queued for {} in {:?}",
+            "$ Funding rate data queued for {} in {:?}",
             data.symbol,
             start.elapsed()
         );
@@ -225,7 +225,7 @@ impl LowFrequencyHandler {
         let mut interval = interval(self.config.processing_interval);
         let mut batch = Vec::with_capacity(self.config.processing_batch_size);
 
-        info!("🕯️ Low frequency processing loop started");
+        info!("◦ Low frequency processing loop started");
 
         while *self.processing_active.read().await {
             interval.tick().await;
@@ -241,7 +241,7 @@ impl LowFrequencyHandler {
                     }
                     Err(mpsc::error::TryRecvError::Empty) => break,
                     Err(mpsc::error::TryRecvError::Disconnected) => {
-                        warn!("🕯️ Low frequency processing channel disconnected");
+                        warn!("◦ Low frequency processing channel disconnected");
                         return;
                     }
                 }
@@ -262,7 +262,7 @@ impl LowFrequencyHandler {
             self.process_batch(&mut batch).await;
         }
 
-        info!("🕯️ Low frequency processing loop stopped");
+        info!("◦ Low frequency processing loop stopped");
     }
 
     /// Process a batch of channel messages
@@ -291,14 +291,14 @@ impl LowFrequencyHandler {
                 Err(e) => {
                     failed_count += 1;
                     self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-                    error!("❌ Failed to process low frequency message: {}", e);
+                    error!("✗ Failed to process low frequency message: {}", e);
                 }
             }
         }
 
         if processed_count > 0 || failed_count > 0 {
             debug!(
-                "🕯️ Processed batch: {} successful, {} failed in {:?}",
+                "◦ Processed batch: {} successful, {} failed in {:?}",
                 processed_count,
                 failed_count,
                 start.elapsed()
@@ -321,13 +321,13 @@ impl LowFrequencyHandler {
             LowFrequencyData::Candle(candle) => {
                 self.storage.add_candle(candle);
                 debug!(
-                    "🕯️ Processed candle for {} {}",
+                    "◦ Processed candle for {} {}",
                     candle.symbol, candle.interval
                 );
             }
             LowFrequencyData::FundingRate(funding) => {
                 self.storage.add_funding_rate(funding);
-                debug!("💰 Processed funding rate for {}", funding.symbol);
+                debug!("$ Processed funding rate for {}", funding.symbol);
             }
         }
         Ok(())

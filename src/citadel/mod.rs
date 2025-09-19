@@ -149,7 +149,7 @@ impl Citadel {
         influx_client: Arc<InfluxClient>,
         subscription_manager: Arc<SubscriptionManager>,
     ) -> Self {
-        info!("🏰 Initializing Citadel with config: {:?}", config);
+        info!("▲ Initializing Citadel with config: {:?}", config);
 
         let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
@@ -171,7 +171,7 @@ impl Citadel {
     ) -> RavenResult<()> {
         self.metrics.total_ingested.fetch_add(1, Ordering::Relaxed);
 
-        debug!("🏰 Processing orderbook data for symbol: {}", symbol);
+        debug!("▲ Processing orderbook data for symbol: {}", symbol);
 
         // Validate the data
         let validated_data = match self.validate_orderbook_data(symbol, &data).await {
@@ -208,7 +208,7 @@ impl Citadel {
                     data
                 }
                 Err(e) => {
-                    warn!("🏰 Sanitization failed for {}: {}", symbol, e);
+                    warn!("▲ Sanitization failed for {}: {}", symbol, e);
                     validated_data
                 }
             }
@@ -220,11 +220,11 @@ impl Citadel {
         match self.write_orderbook_data(&final_data).await {
             Ok(_) => {
                 self.metrics.total_written.fetch_add(1, Ordering::Relaxed);
-                debug!("✅ Successfully processed orderbook data for {}", symbol);
+                debug!("✓ Successfully processed orderbook data for {}", symbol);
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-                error!("❌ Failed to write orderbook data for {}: {}", symbol, e);
+                error!("✗ Failed to write orderbook data for {}: {}", symbol, e);
                 return Err(e);
             }
         }
@@ -236,7 +236,7 @@ impl Citadel {
     pub async fn process_trade_data(&self, symbol: &str, data: TradeData) -> RavenResult<()> {
         self.metrics.total_ingested.fetch_add(1, Ordering::Relaxed);
 
-        debug!("🏰 Processing trade data for symbol: {}", symbol);
+        debug!("▲ Processing trade data for symbol: {}", symbol);
 
         // Validate the data
         let validated_data = match self.validate_trade_data(symbol, &data).await {
@@ -267,11 +267,11 @@ impl Citadel {
         match self.write_trade_data(&validated_data).await {
             Ok(_) => {
                 self.metrics.total_written.fetch_add(1, Ordering::Relaxed);
-                debug!("✅ Successfully processed trade data for {}", symbol);
+                debug!("✓ Successfully processed trade data for {}", symbol);
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-                error!("❌ Failed to write trade data for {}: {}", symbol, e);
+                error!("✗ Failed to write trade data for {}: {}", symbol, e);
                 return Err(e);
             }
         }
@@ -354,7 +354,7 @@ impl Citadel {
             }
         }
 
-        debug!("✅ Orderbook data validation passed for {}", symbol);
+        debug!("✓ Orderbook data validation passed for {}", symbol);
         Ok(data.clone())
     }
 
@@ -411,7 +411,7 @@ impl Citadel {
 
         // TradeSide enum already validates the side, no need for additional validation
 
-        debug!("✅ Trade data validation passed for {}", symbol);
+        debug!("✓ Trade data validation passed for {}", symbol);
         Ok(data.clone())
     }
 
@@ -438,7 +438,7 @@ impl Citadel {
             .map(|(p, q)| (self.round_price(p), self.round_quantity(q)))
             .collect();
 
-        debug!("🧹 Sanitized orderbook data for {}", sanitized.symbol);
+        debug!("⚬ Sanitized orderbook data for {}", sanitized.symbol);
         Ok(sanitized)
     }
 

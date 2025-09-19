@@ -21,24 +21,24 @@ impl TracingService {
     /// Initialize distributed tracing
     pub async fn initialize(&self) -> Result<()> {
         if !self.config.tracing_enabled {
-            info!("🔍 Distributed tracing disabled in configuration");
+            info!("⚬ Distributed tracing disabled in configuration");
             self.initialize_basic_logging()?;
             return Ok(());
         }
 
-        info!("🔍 Initializing structured logging with tracing...");
+        info!("⚬ Initializing structured logging with tracing...");
 
         // For now, use structured logging without OpenTelemetry
         // In production, you would integrate with your OpenTelemetry collector
         self.initialize_structured_logging()?;
 
-        info!("✅ Structured logging initialized successfully");
+        info!("✓ Structured logging initialized successfully");
         Ok(())
     }
 
     /// Initialize basic logging without tracing
     fn initialize_basic_logging(&self) -> Result<()> {
-        info!("📝 Initializing basic logging...");
+        info!("⚬ Initializing basic logging...");
 
         let fmt_layer = fmt::layer()
             .with_target(true)
@@ -55,13 +55,13 @@ impl TracingService {
             .with(fmt_layer)
             .try_init();
 
-        info!("✅ Basic logging initialized successfully");
+        info!("✓ Basic logging initialized successfully");
         Ok(())
     }
 
     /// Initialize structured logging with tracing
     fn initialize_structured_logging(&self) -> Result<()> {
-        info!("📝 Initializing structured logging...");
+        info!("⚬ Initializing structured logging...");
 
         let fmt_layer = fmt::layer()
             .with_target(true)
@@ -78,16 +78,16 @@ impl TracingService {
             .with(fmt_layer)
             .try_init();
 
-        info!("✅ Structured logging initialized successfully");
+        info!("✓ Structured logging initialized successfully");
         Ok(())
     }
 
     /// Shutdown tracing and flush any pending spans
     pub async fn shutdown(&self) -> Result<()> {
         if self.config.tracing_enabled {
-            info!("🔍 Shutting down tracing...");
+            info!("⚬ Shutting down tracing...");
             // In a full OpenTelemetry implementation, you would flush spans here
-            info!("✅ Tracing shutdown complete");
+            info!("✓ Tracing shutdown complete");
         }
         Ok(())
     }
