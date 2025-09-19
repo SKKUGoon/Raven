@@ -349,6 +349,7 @@ dev-up:
 	@echo "   - InfluxDB at localhost:8086"
 	@echo "   - Redis at localhost:6379"
 	@echo ""
+	ENVIRONMENT=development \
 	RUST_LOG=$(DEV_LOG_LEVEL) \
 	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
 	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \
@@ -361,6 +362,7 @@ dev-up:
 dev-server:
 	@echo "$(BLUE)🚀 Starting Raven server in development mode...$(NC)"
 	@echo "🔌 Server will be available at localhost:50051"
+	ENVIRONMENT=development \
 	RUST_LOG=$(DEV_LOG_LEVEL) \
 	RAVEN_LOGGING__LEVEL=$(DEV_LOG_LEVEL) \
 	RAVEN_MONITORING__LOG_LEVEL=$(DEV_LOG_LEVEL) \

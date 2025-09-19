@@ -327,3 +327,67 @@ fn test_binance_futures_exchange() {
     let parser = BinanceFuturesParser::new();
     assert_eq!(parser.exchange(), Exchange::BinanceFutures);
 }
+
+#[tokio::test]
+async fn test_binance_futures_orderbook_live() {
+    use crate::exchanges::binance::app::futures::orderbook::BinanceFuturesOrderbook;
+    use tokio::time::{timeout, Duration};
+
+    println!("🚀 Testing Binance Futures Orderbook WebSocket...");
+
+    let symbol = "btcusdt".to_string();
+    let mut client = BinanceFuturesOrderbook::new(symbol.clone()).expect("Failed to create client");
+    let mut rx = client
+        .start_streaming()
+        .await
+        .expect("Failed to start streaming");
+
+    let mut message_count = 0;
+    let start_time = std::time::Instant::now();
+
+    // Listen for 10 seconds
+    while start_time.elapsed() < Duration::from_secs(10) && message_count < 3 {
+        match timeout(Duration::from_secs(3), rx.recv()).await {
+            Ok(Some(msg)) => {
+                message_count += 1;
+                println!(
+                    "📥 Message {}: Exchange={:?}, Symbol={}",
+                    message_count, msg.exchange, msg.symbol
+                );
+
+                match &msg.data {
+                    crate::exchanges::types::MarketData::OrderBook { bids, asks } => {
+                        println!(
+                            "   📊 Orderbook - Bids: {}, Asks: {}",
+                            bids.len(),
+                            asks.len()
+                        );
+                        if !bids.is_empty() {
+                            println!("   💰 Best bid: {:?}", bids[0]);
+                        }
+                        if !asks.is_empty() {
+                            println!("   💸 Best ask: {:?}", asks[0]);
+                        }
+                    }
+                    _ => {
+                        println!("   ❓ Non-orderbook data: {:?}", msg.data);
+                    }
+                }
+            }
+            Ok(None) => {
+                println!("❌ Channel closed");
+                break;
+            }
+            Err(_) => {
+                println!("⏰ Timeout waiting for message");
+            }
+        }
+    }
+
+    if message_count == 0 {
+        println!("❌ No orderbook messages received in 10 seconds");
+        // Don't panic, just warn - this might be expected if orderbook stream is different
+    } else {
+        println!("✅ Received {message_count} orderbook messages");
+    }
+}

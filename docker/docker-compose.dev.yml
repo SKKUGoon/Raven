@@ -17,7 +17,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./config:/app/config:ro
+      - ../config:/app/config:ro
       - raven_logs_dev:/app/logs
       - raven_data_dev:/app/data
     healthcheck:

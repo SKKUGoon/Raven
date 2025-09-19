@@ -34,7 +34,7 @@ pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPo
         .field("best_ask_quantity", snapshot.best_ask_quantity)
         .field("sequence", snapshot.sequence as i64)
         .field("spread", snapshot.best_ask_price - snapshot.best_bid_price)
-        .timestamp(snapshot.timestamp)
+        .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
         .build()
         .map_err(|e| anyhow!("Failed to create orderbook DataPoint: {}", e))
 }
@@ -50,7 +50,7 @@ pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
         .field("quantity", snapshot.quantity)
         .field("trade_id", snapshot.trade_id as i64)
         .field("trade_value", snapshot.price * snapshot.quantity)
-        .timestamp(snapshot.timestamp)
+        .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
         .build()
         .map_err(|e| anyhow!("Failed to create trade DataPoint: {}", e))
 }

@@ -74,10 +74,15 @@ impl HighFrequencyHandler {
             symbol, duration, data.sequence
         );
 
-        // Log warning if update took longer than expected (should be sub-microsecond)
-        if duration.as_nanos() > 1000 {
+        // Log warning if update took longer than expected (development: 10μs, production: 1μs)
+        let threshold_ns = if cfg!(debug_assertions) {
+            10_000
+        } else {
+            1_000
+        };
+        if duration.as_nanos() > threshold_ns {
             warn!(
-                "Orderbook update for {} took {:?} - exceeds sub-microsecond target",
+                "Orderbook update for {} took {:?} - exceeds performance target",
                 symbol, duration
             );
         }
@@ -125,10 +130,15 @@ impl HighFrequencyHandler {
             symbol, duration, data.price, data.quantity
         );
 
-        // Log warning if update took longer than expected (should be sub-microsecond)
-        if duration.as_nanos() > 1000 {
+        // Log warning if update took longer than expected (development: 10μs, production: 1μs)
+        let threshold_ns = if cfg!(debug_assertions) {
+            10_000
+        } else {
+            1_000
+        };
+        if duration.as_nanos() > threshold_ns {
             warn!(
-                "Trade update for {} took {:?} - exceeds sub-microsecond target",
+                "Trade update for {} took {:?} - exceeds performance target",
                 symbol, duration
             );
         }

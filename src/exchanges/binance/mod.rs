@@ -442,6 +442,7 @@ impl WebSocketParser for BinanceFuturesParser {
 
     fn parse_orderbook(&self, message: &str) -> RavenResult<Option<MarketDataMessage>> {
         // Same implementation as spot for orderbook
+        // Futures-specific orderbook parsing
         let value: Value = serde_json::from_str(message)
             .map_err(|e| RavenError::parse_error(format!("Failed to parse JSON: {e}")))?;
 
@@ -457,7 +458,7 @@ impl WebSocketParser for BinanceFuturesParser {
                     .ok_or_else(|| RavenError::parse_error("Missing symbol".to_string()))?;
 
                 let bids: Vec<(f64, f64)> = data
-                    .get("bids")
+                    .get("b") // Futures uses "b" for bids
                     .and_then(|b| b.as_array())
                     .map(|arr| {
                         arr.iter()
@@ -479,7 +480,7 @@ impl WebSocketParser for BinanceFuturesParser {
                     .unwrap_or_default();
 
                 let asks: Vec<(f64, f64)> = data
-                    .get("asks")
+                    .get("a") // Futures uses "a" for asks)
                     .and_then(|a| a.as_array())
                     .map(|arr| {
                         arr.iter()

@@ -7,14 +7,14 @@ port = 50051
 max_connections = 100
 heartbeat_interval_seconds = 60
 client_timeout_seconds = 120
-enable_compression = false  # Easier debugging
-max_message_size = 2097152  # 2MB
+enable_compression = false      # Easier debugging
+max_message_size = 2097152      # 2MB
 
 [database]
-influx_url = "http://localhost:8086"
+influx_url = "http://host.docker.internal:8086"
 bucket = "crypto_dev"
 org = "influx"
-token = "admin-token-banana"  # Your current dev token
+token = "admin-token-banana"                    # Your current dev token
 connection_pool_size = 5
 connection_timeout_seconds = 30
 write_timeout_seconds = 10
@@ -25,7 +25,7 @@ circuit_breaker_threshold = 10
 circuit_breaker_timeout_seconds = 120
 
 [data_processing]
-snapshot_interval_ms = 100  # Slower for development
+snapshot_interval_ms = 100        # Slower for development
 high_frequency_buffer_size = 1000
 low_frequency_buffer_size = 100
 private_data_buffer_size = 50
@@ -52,7 +52,7 @@ compression_enabled = false
 full_resolution_days = 3
 downsampled_days = 7
 archive_days = 14
-auto_cleanup = true  # Auto cleanup in dev
+auto_cleanup = true         # Auto cleanup in dev
 compression_enabled = false
 
 [retention_policies.system_logs]
@@ -92,5 +92,5 @@ metrics_enabled = true
 metrics_port = 9090
 health_check_port = 9091
 tracing_enabled = true
-log_level = "debug"  # Verbose logging for development
-performance_monitoring = false  # Less overhead in dev
+log_level = "debug"            # Verbose logging for development
+performance_monitoring = false # Less overhead in dev
