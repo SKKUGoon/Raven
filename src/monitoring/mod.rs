@@ -12,9 +12,10 @@ pub use health::*;
 pub use metrics::*;
 pub use tracing::*;
 
-use anyhow::Result;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
+
+use crate::error::RavenResult;
 
 /// Crow service that coordinates all observability components
 pub struct CrowService {
@@ -38,7 +39,7 @@ impl CrowService {
     }
 
     /// Start all crow services
-    pub async fn start(&self) -> Result<Vec<JoinHandle<()>>> {
+    pub async fn start(&self) -> RavenResult<Vec<JoinHandle<()>>> {
         let mut handles = Vec::new();
 
         // Start health check service

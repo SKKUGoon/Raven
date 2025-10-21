@@ -1,5 +1,5 @@
+use crate::error::{RavenError, RavenResult};
 use crate::types::{CandleData, FundingRateData};
-use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -47,16 +47,16 @@ impl LowFrequencyHandler {
     }
 
     /// Start the async processing loop
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> RavenResult<()> {
         let mut processing_active = self.processing_active.write().await;
         if *processing_active {
             return Ok(()); // Already started
         }
 
         let mut receiver_guard = self.receiver.write().await;
-        let receiver = receiver_guard
-            .take()
-            .context("Low frequency handler already started or receiver consumed")?;
+        let receiver = receiver_guard.take().ok_or_else(|| {
+            RavenError::internal("Low frequency handler already started or receiver consumed")
+        })?;
         drop(receiver_guard);
 
         *processing_active = true;
@@ -73,7 +73,7 @@ impl LowFrequencyHandler {
     }
 
     /// Stop the async processing loop
-    pub async fn stop(&self) -> Result<()> {
+    pub async fn stop(&self) -> RavenResult<()> {
         let mut processing_active = self.processing_active.write().await;
         *processing_active = false;
         info!("■ Low frequency handler processing stopped");
@@ -81,7 +81,7 @@ impl LowFrequencyHandler {
     }
 
     /// Ingest candle data via async channel
-    pub async fn ingest_candle(&self, data: &CandleData) -> Result<()> {
+    pub async fn ingest_candle(&self, data: &CandleData) -> RavenResult<()> {
         let start = Instant::now();
 
         // Validate candle data
@@ -98,9 +98,11 @@ impl LowFrequencyHandler {
         };
 
         // Send to async processing channel
-        self.sender
-            .send(message)
-            .context("Failed to send candle data to processing channel")?;
+        self.sender.send(message).map_err(|e| {
+            RavenError::internal(format!(
+                "Failed to send candle data to processing channel: {e}"
+            ))
+        })?;
 
         self.metrics
             .channel_queue_size
@@ -117,7 +119,7 @@ impl LowFrequencyHandler {
     }
 
     /// Ingest funding rate data via async channel
-    pub async fn ingest_funding_rate(&self, data: &FundingRateData) -> Result<()> {
+    pub async fn ingest_funding_rate(&self, data: &FundingRateData) -> RavenResult<()> {
         let start = Instant::now();
 
         // Validate funding rate data
@@ -134,9 +136,11 @@ impl LowFrequencyHandler {
         };
 
         // Send to async processing channel
-        self.sender
-            .send(message)
-            .context("Failed to send funding rate data to processing channel")?;
+        self.sender.send(message).map_err(|e| {
+            RavenError::internal(format!(
+                "Failed to send funding rate data to processing channel: {e}"
+            ))
+        })?;
 
         self.metrics
             .channel_queue_size
@@ -316,7 +320,7 @@ impl LowFrequencyHandler {
     }
 
     /// Process a single channel message
-    async fn process_message(&self, message: &ChannelMessage) -> Result<()> {
+    async fn process_message(&self, message: &ChannelMessage) -> RavenResult<()> {
         match &message.data {
             LowFrequencyData::Candle(candle) => {
                 self.storage.add_candle(candle);
@@ -334,42 +338,50 @@ impl LowFrequencyHandler {
     }
 
     /// Validate candle data
-    fn validate_candle_data(&self, data: &CandleData) -> Result<()> {
+    fn validate_candle_data(&self, data: &CandleData) -> RavenResult<()> {
         if data.symbol.is_empty() {
-            return Err(anyhow::anyhow!("Candle symbol cannot be empty"));
+            return Err(RavenError::data_validation("Candle symbol cannot be empty"));
         }
 
         if data.interval.is_empty() {
-            return Err(anyhow::anyhow!("Candle interval cannot be empty"));
+            return Err(RavenError::data_validation(
+                "Candle interval cannot be empty",
+            ));
         }
 
         if data.timestamp <= 0 {
-            return Err(anyhow::anyhow!("Candle timestamp must be positive"));
+            return Err(RavenError::data_validation(
+                "Candle timestamp must be positive",
+            ));
         }
 
         if data.open <= 0.0 || data.high <= 0.0 || data.low <= 0.0 || data.close <= 0.0 {
-            return Err(anyhow::anyhow!("Candle OHLC prices must be positive"));
+            return Err(RavenError::data_validation(
+                "Candle OHLC prices must be positive",
+            ));
         }
 
         if data.volume < 0.0 {
-            return Err(anyhow::anyhow!("Candle volume cannot be negative"));
+            return Err(RavenError::data_validation(
+                "Candle volume cannot be negative",
+            ));
         }
 
         if data.high < data.low {
-            return Err(anyhow::anyhow!(
-                "Candle high price cannot be less than low price"
+            return Err(RavenError::data_validation(
+                "Candle high price cannot be less than low price",
             ));
         }
 
         if data.high < data.open || data.high < data.close {
-            return Err(anyhow::anyhow!(
-                "Candle high price must be >= open and close prices"
+            return Err(RavenError::data_validation(
+                "Candle high price must be >= open and close prices",
             ));
         }
 
         if data.low > data.open || data.low > data.close {
-            return Err(anyhow::anyhow!(
-                "Candle low price must be <= open and close prices"
+            return Err(RavenError::data_validation(
+                "Candle low price must be <= open and close prices",
             ));
         }
 
@@ -377,18 +389,22 @@ impl LowFrequencyHandler {
     }
 
     /// Validate funding rate data
-    fn validate_funding_rate_data(&self, data: &FundingRateData) -> Result<()> {
+    fn validate_funding_rate_data(&self, data: &FundingRateData) -> RavenResult<()> {
         if data.symbol.is_empty() {
-            return Err(anyhow::anyhow!("Funding rate symbol cannot be empty"));
+            return Err(RavenError::data_validation(
+                "Funding rate symbol cannot be empty",
+            ));
         }
 
         if data.timestamp <= 0 {
-            return Err(anyhow::anyhow!("Funding rate timestamp must be positive"));
+            return Err(RavenError::data_validation(
+                "Funding rate timestamp must be positive",
+            ));
         }
 
         if data.next_funding_time <= data.timestamp {
-            return Err(anyhow::anyhow!(
-                "Next funding time must be after current timestamp"
+            return Err(RavenError::data_validation(
+                "Next funding time must be after current timestamp",
             ));
         }
 

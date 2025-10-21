@@ -1,6 +1,5 @@
 // gRPC service implementation for MarketDataService
 
-use anyhow::Result;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -21,6 +20,7 @@ use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::types::HighFrequencyStorage;
 
 use super::connection::ConnectionManager;
+use crate::error::RavenResult;
 
 /// Parse exchange and symbol from storage key (format: "exchange:symbol")
 fn parse_key(key: &str) -> Option<(Exchange, String)> {
@@ -152,7 +152,7 @@ impl MarketDataServiceImpl {
         &self,
         client_id: String,
         mut receiver: mpsc::UnboundedReceiver<MarketDataMessage>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>> {
+    ) -> RavenResult<Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>> {
         info!("⟐ Starting real-time data stream for client: {}", client_id);
         let hf_storage = Arc::clone(&self.hf_storage);
 
@@ -209,7 +209,7 @@ impl MarketDataServiceImpl {
         start_time: i64,
         end_time: i64,
         limit: Option<u32>,
-    ) -> Result<Vec<MarketDataMessage>> {
+    ) -> RavenResult<Vec<MarketDataMessage>> {
         let messages = Vec::new();
 
         for symbol in symbols {

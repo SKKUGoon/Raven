@@ -1,14 +1,14 @@
 // Configuration Management Tool - Project Raven
 // "A tool to shape the realm's destiny"
 
-use anyhow::Result;
 use clap::{Arg, Command};
 use raven::config::{Config, ConfigManager, ConfigUtils};
+use raven::error::RavenResult;
 use std::time::Duration;
 use tracing::{error, info};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> RavenResult<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
@@ -121,7 +121,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn validate_config(_config_path: Option<&String>) -> Result<()> {
+async fn validate_config(_config_path: Option<&String>) -> RavenResult<()> {
     info!("⚬ Validating configuration...");
 
     match Config::load() {
@@ -148,7 +148,7 @@ async fn validate_config(_config_path: Option<&String>) -> Result<()> {
     Ok(())
 }
 
-async fn show_config(format: &str) -> Result<()> {
+async fn show_config(format: &str) -> RavenResult<()> {
     let config = Config::load()?;
 
     match format {
@@ -167,7 +167,7 @@ async fn show_config(format: &str) -> Result<()> {
     Ok(())
 }
 
-async fn check_health() -> Result<()> {
+async fn check_health() -> RavenResult<()> {
     info!("⚕ Checking configuration health...");
 
     let config = Config::load()?;
@@ -191,7 +191,7 @@ async fn check_health() -> Result<()> {
     Ok(())
 }
 
-fn generate_template(output_path: Option<&String>) -> Result<()> {
+fn generate_template(output_path: Option<&String>) -> RavenResult<()> {
     let template = ConfigUtils::generate_config_template();
 
     match output_path {
@@ -207,14 +207,14 @@ fn generate_template(output_path: Option<&String>) -> Result<()> {
     Ok(())
 }
 
-fn check_environment() -> Result<()> {
+fn check_environment() -> RavenResult<()> {
     info!("🌍 Checking environment variables...");
     ConfigUtils::validate_environment()?;
     info!("✓ Environment check completed");
     Ok(())
 }
 
-fn show_recommendations(environment: &str) -> Result<()> {
+fn show_recommendations(environment: &str) -> RavenResult<()> {
     let recommendations = ConfigUtils::get_environment_recommendations();
 
     if let Some(env_recs) = recommendations.get(environment) {
@@ -230,7 +230,7 @@ fn show_recommendations(environment: &str) -> Result<()> {
     Ok(())
 }
 
-async fn watch_config(config_path: &str, interval_seconds: u64) -> Result<()> {
+async fn watch_config(config_path: &str, interval_seconds: u64) -> RavenResult<()> {
     info!("⚬ Watching configuration file: {}", config_path);
     info!("⟲ Check interval: {} seconds", interval_seconds);
     info!("Press Ctrl+C to stop watching");

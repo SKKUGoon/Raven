@@ -1,7 +1,6 @@
 // Metrics Service - Project Raven
 // "Counting every raven that flies, every message that's carried"
 
-use anyhow::{Context, Result};
 use axum::{extract::State, http::StatusCode, response::Response, routing::get, Router};
 use prometheus::{
     Counter, CounterVec, Encoder, Gauge, GaugeVec, HistogramOpts, HistogramVec, Opts, Registry,
@@ -14,6 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::config::MonitoringConfig;
+use crate::error::{RavenError, RavenResult};
 
 /// Prometheus metrics collector for the market data server
 pub struct MetricsCollector {
@@ -67,7 +67,7 @@ pub struct MetricsService {
 
 impl MetricsService {
     /// Create a new metrics service
-    pub fn new(config: MonitoringConfig) -> Result<Self> {
+    pub fn new(config: MonitoringConfig) -> RavenResult<Self> {
         let registry = Arc::new(Registry::new());
         let collector = Arc::new(MetricsCollector::new()?);
 
@@ -83,7 +83,7 @@ impl MetricsService {
     }
 
     /// Start the metrics HTTP server
-    pub async fn start(&self) -> Result<Option<JoinHandle<()>>> {
+    pub async fn start(&self) -> RavenResult<Option<JoinHandle<()>>> {
         if !self.config.metrics_enabled {
             info!("Metrics collection disabled in configuration");
             return Ok(None);
@@ -94,9 +94,9 @@ impl MetricsService {
             .with_state(Arc::clone(&self.registry));
 
         let addr = format!("0.0.0.0:{}", self.config.metrics_port);
-        let listener = TcpListener::bind(&addr)
-            .await
-            .with_context(|| format!("Failed to bind metrics server to {addr}"))?;
+        let listener = TcpListener::bind(&addr).await.map_err(|e| {
+            RavenError::connection_error(format!("Failed to bind metrics server to {addr}: {e}"))
+        })?;
 
         info!("Metrics server starting on {}", addr);
 
@@ -144,14 +144,14 @@ impl MetricsService {
     }
 
     /// Get current memory usage (simplified implementation)
-    fn get_memory_usage() -> Result<f64> {
+    fn get_memory_usage() -> RavenResult<f64> {
         // In a real implementation, you'd use a proper system monitoring library
         // For now, return a placeholder value
         Ok(0.0)
     }
 
     /// Get current CPU usage (simplified implementation)
-    fn get_cpu_usage() -> Result<f64> {
+    fn get_cpu_usage() -> RavenResult<f64> {
         // In a real implementation, you'd use a proper system monitoring library
         // For now, return a placeholder value
         Ok(0.0)
@@ -160,7 +160,7 @@ impl MetricsService {
 
 impl MetricsCollector {
     /// Create a new metrics collector with all metrics initialized
-    pub fn new() -> Result<Self> {
+    pub fn new() -> RavenResult<Self> {
         Ok(Self {
             // Connection metrics
             active_connections: Gauge::new(
@@ -300,7 +300,7 @@ impl MetricsCollector {
     }
 
     /// Register all metrics with the Prometheus registry
-    pub fn register(&self, registry: &Registry) -> Result<()> {
+    pub fn register(&self, registry: &Registry) -> RavenResult<()> {
         // Connection metrics
         registry.register(Box::new(self.active_connections.clone()))?;
         registry.register(Box::new(self.total_connections.clone()))?;

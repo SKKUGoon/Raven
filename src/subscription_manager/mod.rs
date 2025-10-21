@@ -2,7 +2,6 @@
 // "The great ledger of all client subscriptions across the Seven Kingdoms"
 
 // Note: types module not needed for this implementation
-use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -15,6 +14,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 // Re-export protobuf types for convenience
+use crate::error::{RavenError, RavenResult};
 pub use crate::proto::{DataType, MarketDataMessage};
 
 /// Data types that clients can subscribe to
@@ -124,10 +124,13 @@ impl ClientSubscription {
     }
 
     /// Send a message to the client
-    pub fn send_message(&self, message: MarketDataMessage) -> Result<()> {
-        self.sender
-            .send(message)
-            .map_err(|_| anyhow!("Failed to send message to client {}", self.client_id))
+    pub fn send_message(&self, message: MarketDataMessage) -> RavenResult<()> {
+        self.sender.send(message).map_err(|_| {
+            RavenError::stream_error(format!(
+                "Failed to send message to client {}",
+                self.client_id
+            ))
+        })
     }
 
     /// Check if the sender channel is closed
@@ -344,7 +347,7 @@ impl SubscriptionManager {
         data_types: Vec<SubscriptionDataType>,
         filters: HashMap<String, String>,
         sender: mpsc::UnboundedSender<MarketDataMessage>,
-    ) -> Result<Vec<String>> {
+    ) -> RavenResult<Vec<String>> {
         let symbols_set: HashSet<String> = symbols.into_iter().collect();
         let data_types_set: HashSet<SubscriptionDataType> = data_types.into_iter().collect();
 
@@ -399,7 +402,7 @@ impl SubscriptionManager {
         client_id: &str,
         symbols: Vec<String>,
         data_types: Vec<SubscriptionDataType>,
-    ) -> Result<Vec<String>> {
+    ) -> RavenResult<Vec<String>> {
         let mut unsubscribed_topics = Vec::new();
 
         if let Some(mut subscription) = self.subscriptions.get_mut(client_id) {
@@ -452,7 +455,7 @@ impl SubscriptionManager {
     }
 
     /// Unsubscribe a client from all market data streams (keeps persistence for reconnection)
-    pub fn unsubscribe_all(&self, client_id: &str) -> Result<()> {
+    pub fn unsubscribe_all(&self, client_id: &str) -> RavenResult<()> {
         if let Some((_, subscription)) = self.subscriptions.remove(client_id) {
             // Remove from topic router
             self.topic_router.remove_client(client_id);
@@ -473,7 +476,7 @@ impl SubscriptionManager {
     }
 
     /// Completely remove a client including persistence (for permanent cleanup)
-    pub fn remove_client_completely(&self, client_id: &str) -> Result<()> {
+    pub fn remove_client_completely(&self, client_id: &str) -> RavenResult<()> {
         if let Some((_, subscription)) = self.subscriptions.remove(client_id) {
             // Remove from topic router
             self.topic_router.remove_client(client_id);
@@ -494,7 +497,7 @@ impl SubscriptionManager {
     }
 
     /// Update client heartbeat
-    pub fn update_heartbeat(&self, client_id: &str) -> Result<()> {
+    pub fn update_heartbeat(&self, client_id: &str) -> RavenResult<()> {
         if let Some(subscription) = self.subscriptions.get(client_id) {
             subscription.update_heartbeat();
             debug!(client_id = %client_id, "Updated client heartbeat");
@@ -510,7 +513,7 @@ impl SubscriptionManager {
         symbol: &str,
         data_type: SubscriptionDataType,
         message: MarketDataMessage,
-    ) -> Result<usize> {
+    ) -> RavenResult<usize> {
         let topic = format!("{symbol}:{data_type:?}");
         let client_ids = self.topic_router.get_clients_for_topic(&topic);
         let mut sent_count = 0;
@@ -653,7 +656,7 @@ impl SubscriptionManager {
         &self,
         client_id: &str,
         sender: mpsc::UnboundedSender<MarketDataMessage>,
-    ) -> Result<Option<Vec<String>>> {
+    ) -> RavenResult<Option<Vec<String>>> {
         if let Some(persisted) = self.persisted_subscriptions.get(client_id) {
             let symbols: Vec<String> = persisted.symbols.iter().cloned().collect();
             let data_types: Vec<SubscriptionDataType> =

@@ -1,7 +1,6 @@
 // Health Check Service - Project Raven
 // "The watchers report on the health of the realm"
 
-use anyhow::{Context, Result};
 use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,6 +13,7 @@ use tracing::{error, info};
 
 use crate::config::MonitoringConfig;
 use crate::database::influx_client::InfluxClient;
+use crate::error::{RavenError, RavenResult};
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
 
@@ -102,7 +102,7 @@ impl HealthService {
     }
 
     /// Start the health check HTTP server
-    pub async fn start(&self) -> Result<Option<JoinHandle<()>>> {
+    pub async fn start(&self) -> RavenResult<Option<JoinHandle<()>>> {
         // Health checks should always be enabled for container health monitoring
         info!("⚕ Starting health check service...");
 
@@ -113,9 +113,11 @@ impl HealthService {
             .with_state(Arc::clone(&self.state));
 
         let addr = format!("0.0.0.0:{}", self.config.health_check_port);
-        let listener = TcpListener::bind(&addr)
-            .await
-            .with_context(|| format!("Failed to bind health check server to {addr}"))?;
+        let listener = TcpListener::bind(&addr).await.map_err(|e| {
+            RavenError::connection_error(format!(
+                "Failed to bind health check server to {addr}: {e}"
+            ))
+        })?;
 
         info!("⚕ Health check server starting on {}", addr);
 

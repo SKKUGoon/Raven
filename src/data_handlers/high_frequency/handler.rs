@@ -1,11 +1,11 @@
 // High Frequency Handler
 // "The fastest ravens in the realm - delivering messages with sub-microsecond speed"
 
+use crate::error::{RavenError, RavenResult};
 use crate::exchanges::types::Exchange;
 use crate::types::{
     HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSnapshot,
 };
-use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error, info, warn};
@@ -43,12 +43,12 @@ impl HighFrequencyHandler {
     /// This function is designed for maximum throughput with direct memory updates
     /// No async overhead, no channel bottlenecks - pure speed
     /// Supports multiple exchanges by using exchange-qualified symbol keys
-    pub fn ingest_orderbook_atomic(&self, symbol: &str, data: &OrderBookData) -> Result<()> {
+    pub fn ingest_orderbook_atomic(&self, symbol: &str, data: &OrderBookData) -> RavenResult<()> {
         let start = Instant::now();
 
         // Validate input data
         if symbol.is_empty() {
-            return Err(anyhow::anyhow!("Symbol cannot be empty"));
+            return Err(RavenError::data_validation("Symbol cannot be empty"));
         }
 
         if data.symbol != symbol {
@@ -57,12 +57,14 @@ impl HighFrequencyHandler {
 
         // Validate orderbook data integrity
         if data.bids.is_empty() && data.asks.is_empty() {
-            return Err(anyhow::anyhow!("Orderbook data cannot be empty"));
+            return Err(RavenError::data_validation(
+                "Orderbook data cannot be empty",
+            ));
         }
 
         // Validate price levels are sorted correctly
         if !self.validate_price_levels(&data.bids, &data.asks)? {
-            return Err(anyhow::anyhow!("Invalid price level ordering"));
+            return Err(RavenError::data_validation("Invalid price level ordering"));
         }
 
         // Perform lock-free atomic update - storage handles exchange scoping
@@ -94,12 +96,12 @@ impl HighFrequencyHandler {
     /// This function is designed for maximum throughput with direct memory updates
     /// No async overhead, no channel bottlenecks - pure speed
     /// Supports multiple exchanges by using exchange-qualified symbol keys
-    pub fn ingest_trade_atomic(&self, symbol: &str, data: &TradeData) -> Result<()> {
+    pub fn ingest_trade_atomic(&self, symbol: &str, data: &TradeData) -> RavenResult<()> {
         let start = Instant::now();
 
         // Validate input data
         if symbol.is_empty() {
-            return Err(anyhow::anyhow!("Symbol cannot be empty"));
+            return Err(RavenError::data_validation("Symbol cannot be empty"));
         }
 
         if data.symbol != symbol {
@@ -108,17 +110,19 @@ impl HighFrequencyHandler {
 
         // Validate trade data
         if data.price <= 0.0 {
-            return Err(anyhow::anyhow!("Trade price must be positive"));
+            return Err(RavenError::data_validation("Trade price must be positive"));
         }
 
         if data.quantity <= 0.0 {
-            return Err(anyhow::anyhow!("Trade quantity must be positive"));
+            return Err(RavenError::data_validation(
+                "Trade quantity must be positive",
+            ));
         }
 
         // TradeSide enum already validates the side, no need for string matching
 
         if data.trade_id.is_empty() {
-            return Err(anyhow::anyhow!("Trade ID cannot be empty"));
+            return Err(RavenError::data_validation("Trade ID cannot be empty"));
         }
 
         // Perform lock-free atomic update - storage handles exchange scoping
@@ -152,13 +156,17 @@ impl HighFrequencyHandler {
         &self,
         symbol: &str,
         exchange: &Exchange,
-    ) -> Result<OrderBookSnapshot> {
+    ) -> RavenResult<OrderBookSnapshot> {
         let start = Instant::now();
 
         let snapshot = self
             .storage
             .get_orderbook_snapshot(symbol, exchange)
-            .with_context(|| format!("No orderbook data found for symbol: {symbol}"))?;
+            .ok_or_else(|| {
+                RavenError::subscription_failed(format!(
+                    "No orderbook data found for symbol: {symbol}"
+                ))
+            })?;
 
         let duration = start.elapsed();
         debug!(
@@ -175,13 +183,15 @@ impl HighFrequencyHandler {
         &self,
         symbol: &str,
         exchange: &Exchange,
-    ) -> Result<TradeSnapshot> {
+    ) -> RavenResult<TradeSnapshot> {
         let start = Instant::now();
 
         let snapshot = self
             .storage
             .get_trade_snapshot(symbol, exchange)
-            .with_context(|| format!("No trade data found for symbol: {symbol}"))?;
+            .ok_or_else(|| {
+                RavenError::subscription_failed(format!("No trade data found for symbol: {symbol}"))
+            })?;
 
         let duration = start.elapsed();
         debug!("◉ Trade snapshot captured for {} in {:?}", symbol, duration);
@@ -203,7 +213,11 @@ impl HighFrequencyHandler {
     /// Bids should be in descending order (highest first)
     /// Asks should be in ascending order (lowest first)
     #[cfg(test)]
-    pub fn validate_price_levels(&self, bids: &[(f64, f64)], asks: &[(f64, f64)]) -> Result<bool> {
+    pub fn validate_price_levels(
+        &self,
+        bids: &[(f64, f64)],
+        asks: &[(f64, f64)],
+    ) -> RavenResult<bool> {
         // Validate bids are in descending order
         for window in bids.windows(2) {
             if window[0].0 < window[1].0 {
@@ -241,7 +255,7 @@ impl HighFrequencyHandler {
     }
 
     #[cfg(not(test))]
-    fn validate_price_levels(&self, bids: &[(f64, f64)], asks: &[(f64, f64)]) -> Result<bool> {
+    fn validate_price_levels(&self, bids: &[(f64, f64)], asks: &[(f64, f64)]) -> RavenResult<bool> {
         // Validate bids are in descending order
         for window in bids.windows(2) {
             if window[0].0 < window[1].0 {
@@ -343,7 +357,7 @@ impl HighFrequencyHandler {
         &self,
         exchange: &str,
         symbol: &str,
-    ) -> Result<OrderBookSnapshot> {
+    ) -> RavenResult<OrderBookSnapshot> {
         let exchange_enum = self.parse_exchange(exchange)?;
         self.capture_orderbook_snapshot(symbol, &exchange_enum)
     }
@@ -353,13 +367,13 @@ impl HighFrequencyHandler {
         &self,
         exchange: &str,
         symbol: &str,
-    ) -> Result<TradeSnapshot> {
+    ) -> RavenResult<TradeSnapshot> {
         let exchange_enum = self.parse_exchange(exchange)?;
         self.capture_trade_snapshot(symbol, &exchange_enum)
     }
 
     /// Parse exchange string to Exchange enum
-    fn parse_exchange(&self, exchange: &str) -> Result<Exchange> {
+    fn parse_exchange(&self, exchange: &str) -> RavenResult<Exchange> {
         match exchange {
             "binance_spot" => Ok(Exchange::BinanceSpot),
             "binance_futures" => Ok(Exchange::BinanceFutures),
@@ -368,7 +382,9 @@ impl HighFrequencyHandler {
             // "bybit" => Ok(Exchange::Bybit),
             // "okx" => Ok(Exchange::OKX),
             // "deribit" => Ok(Exchange::Deribit),
-            _ => Err(anyhow::anyhow!("Unknown exchange: {}", exchange)),
+            _ => Err(RavenError::invalid_subscription(format!(
+                "Unknown exchange: {exchange}"
+            ))),
         }
     }
 }

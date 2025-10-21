@@ -1,7 +1,6 @@
 // Configuration Management - Project Raven
 // "The rules and settings that govern the realm, as flexible as the wind"
 
-use anyhow::{Context, Result};
 use config::{Config as ConfigBuilder, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,6 +11,8 @@ use tokio::fs;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tracing::{error, info, warn};
+
+use crate::error::{RavenError, RavenResult};
 
 /// Main configuration structure for the market data subscription server
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -252,17 +253,19 @@ impl Default for MonitoringConfig {
 
 impl Config {
     /// Load configuration from environment variables and config files
-    pub fn load() -> Result<Self> {
+    pub fn load() -> RavenResult<Self> {
         Self::load_with_file(None)
     }
 
     /// Load configuration from environment variables and config files with optional custom config file
-    pub fn load_with_file(config_file: Option<&str>) -> Result<Self> {
+    pub fn load_with_file(config_file: Option<&str>) -> RavenResult<Self> {
         info!("⚬ Loading configuration for the realm...");
 
-        let mut builder = ConfigBuilder::builder()
-            // Start with default values
-            .add_source(config::Config::try_from(&Config::default())?);
+        let default_config = config::Config::try_from(&Config::default()).map_err(|e| {
+            RavenError::configuration(format!("Failed to load default configuration: {e}"))
+        })?;
+
+        let mut builder = ConfigBuilder::builder().add_source(default_config);
 
         // Add custom config file if specified, otherwise use default locations
         if let Some(config_path) = config_file {
@@ -291,9 +294,11 @@ impl Config {
 
         let config = builder
             .build()
-            .context("Failed to build configuration")?
+            .map_err(|e| RavenError::configuration(format!("Failed to build configuration: {e}")))?
             .try_deserialize::<Config>()
-            .context("Failed to deserialize configuration")?;
+            .map_err(|e| {
+                RavenError::configuration(format!("Failed to deserialize configuration: {e}"))
+            })?;
 
         // Validate configuration
         config.validate()?;
@@ -303,39 +308,61 @@ impl Config {
     }
 
     /// Validate configuration values
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> RavenResult<()> {
         info!("⚬ Validating configuration...");
 
         // Validate server configuration
         if self.server.port == 0 {
-            return Err(anyhow::anyhow!("Server port cannot be 0"));
+            return Err(RavenError::invalid_config_value(
+                "server.port",
+                self.server.port.to_string(),
+            ));
         }
         if self.server.max_connections == 0 {
-            return Err(anyhow::anyhow!("Max connections must be greater than 0"));
+            return Err(RavenError::invalid_config_value(
+                "server.max_connections",
+                self.server.max_connections.to_string(),
+            ));
         }
         if self.server.max_message_size == 0 {
-            return Err(anyhow::anyhow!("Max message size must be greater than 0"));
+            return Err(RavenError::invalid_config_value(
+                "server.max_message_size",
+                self.server.max_message_size.to_string(),
+            ));
         }
 
         // Validate database configuration
         if self.database.influx_url.is_empty() {
-            return Err(anyhow::anyhow!("InfluxDB URL cannot be empty"));
+            return Err(RavenError::invalid_config_value(
+                "database.influx_url",
+                "<empty>".to_string(),
+            ));
         }
         if self.database.bucket.is_empty() {
-            return Err(anyhow::anyhow!("Bucket name cannot be empty"));
+            return Err(RavenError::invalid_config_value(
+                "database.bucket",
+                "<empty>".to_string(),
+            ));
         }
         if self.database.org.is_empty() {
-            return Err(anyhow::anyhow!("Organization name cannot be empty"));
+            return Err(RavenError::invalid_config_value(
+                "database.org",
+                "<empty>".to_string(),
+            ));
         }
         if self.database.connection_pool_size == 0 {
-            return Err(anyhow::anyhow!(
-                "Connection pool size must be greater than 0"
+            return Err(RavenError::invalid_config_value(
+                "database.connection_pool_size",
+                self.database.connection_pool_size.to_string(),
             ));
         }
 
         // Validate data processing configuration
         if self.data_processing.snapshot_interval_ms == 0 {
-            return Err(anyhow::anyhow!("Snapshot interval must be greater than 0"));
+            return Err(RavenError::invalid_config_value(
+                "data_processing.snapshot_interval_ms",
+                self.data_processing.snapshot_interval_ms.to_string(),
+            ));
         }
 
         // Validate retention policies
@@ -348,9 +375,9 @@ impl Config {
         if !["trace", "debug", "info", "warn", "error"]
             .contains(&self.monitoring.log_level.as_str())
         {
-            return Err(anyhow::anyhow!(
-                "Invalid log level: {}",
-                self.monitoring.log_level
+            return Err(RavenError::invalid_config_value(
+                "monitoring.log_level",
+                self.monitoring.log_level.clone(),
             ));
         }
 
@@ -390,7 +417,7 @@ impl Config {
 }
 
 impl RetentionPolicies {
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> RavenResult<()> {
         self.high_frequency.validate("high_frequency")?;
         self.low_frequency.validate("low_frequency")?;
         self.private_data.validate("private_data")?;
@@ -400,31 +427,31 @@ impl RetentionPolicies {
 }
 
 impl RetentionPolicy {
-    pub fn validate(&self, name: &str) -> Result<()> {
+    pub fn validate(&self, name: &str) -> RavenResult<()> {
         if self.full_resolution_days == 0 {
-            return Err(anyhow::anyhow!(
-                "{}: Full resolution days must be greater than 0",
-                name
+            return Err(RavenError::invalid_config_value(
+                format!("{name}.full_resolution_days"),
+                self.full_resolution_days.to_string(),
             ));
         }
         if self.downsampled_days < self.full_resolution_days {
-            return Err(anyhow::anyhow!(
+            return Err(RavenError::configuration(format!(
                 "{}: Downsampled days must be >= full resolution days",
                 name
-            ));
+            )));
         }
         if self.archive_days < self.downsampled_days {
-            return Err(anyhow::anyhow!(
+            return Err(RavenError::configuration(format!(
                 "{}: Archive days must be >= downsampled days",
                 name
-            ));
+            )));
         }
         Ok(())
     }
 }
 
 impl BatchingConfig {
-    pub fn validate(&self) -> Result<()> {
+    pub fn validate(&self) -> RavenResult<()> {
         self.database_writes.validate("database_writes")?;
         self.client_broadcasts.validate("client_broadcasts")?;
         self.snapshot_captures.validate("snapshot_captures")?;
@@ -434,23 +461,23 @@ impl BatchingConfig {
 }
 
 impl BatchConfig {
-    pub fn validate(&self, name: &str) -> Result<()> {
+    pub fn validate(&self, name: &str) -> RavenResult<()> {
         if self.size == 0 {
-            return Err(anyhow::anyhow!(
-                "{}: Batch size must be greater than 0",
-                name
+            return Err(RavenError::invalid_config_value(
+                format!("{name}.size"),
+                self.size.to_string(),
             ));
         }
         if self.timeout_ms == 0 {
-            return Err(anyhow::anyhow!(
-                "{}: Batch timeout must be greater than 0",
-                name
+            return Err(RavenError::invalid_config_value(
+                format!("{name}.timeout_ms"),
+                self.timeout_ms.to_string(),
             ));
         }
         if self.max_memory_mb == 0 {
-            return Err(anyhow::anyhow!(
-                "{}: Max memory must be greater than 0",
-                name
+            return Err(RavenError::invalid_config_value(
+                format!("{name}.max_memory_mb"),
+                self.max_memory_mb.to_string(),
             ));
         }
         Ok(())
@@ -459,7 +486,7 @@ impl BatchConfig {
 
 impl ConfigManager {
     /// Create a new configuration manager with hot-reloading capability
-    pub fn new(config_path: String, reload_interval: Duration) -> Result<Self> {
+    pub fn new(config_path: String, reload_interval: Duration) -> RavenResult<Self> {
         let config = Config::load()?;
         let last_modified = if Path::new(&config_path).exists() {
             std::fs::metadata(&config_path)?.modified()?
@@ -481,7 +508,7 @@ impl ConfigManager {
     }
 
     /// Start hot-reloading background task
-    pub async fn start_hot_reload(&self) -> Result<()> {
+    pub async fn start_hot_reload(&self) -> RavenResult<()> {
         let config = Arc::clone(&self.config);
         let last_modified = Arc::clone(&self.last_modified);
         let config_path = self.config_path.clone();
@@ -510,7 +537,7 @@ impl ConfigManager {
         config: &Arc<RwLock<Config>>,
         last_modified: &Arc<RwLock<SystemTime>>,
         config_path: &str,
-    ) -> Result<()> {
+    ) -> RavenResult<()> {
         if !Path::new(config_path).exists() {
             return Ok(());
         }
@@ -539,7 +566,7 @@ impl ConfigManager {
     }
 
     /// Force reload configuration
-    pub async fn force_reload(&self) -> Result<()> {
+    pub async fn force_reload(&self) -> RavenResult<()> {
         info!("⟲ Force reloading configuration...");
         let new_config = Config::load()?;
         *self.config.write().await = new_config;
