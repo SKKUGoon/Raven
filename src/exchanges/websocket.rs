@@ -17,6 +17,9 @@ pub trait WebSocketParser: Send + Sync {
         subscription: &SubscriptionRequest,
     ) -> RavenResult<String>;
 
+    fn create_unsubscribe_message(&self, subscription: &SubscriptionRequest)
+        -> RavenResult<String>;
+
     fn parse_orderbook(&self, message: &str) -> RavenResult<Option<MarketDataMessage>>;
     fn parse_candle(&self, message: &str) -> RavenResult<Option<MarketDataMessage>>;
     fn parse_spot_trade(&self, message: &str) -> RavenResult<Option<MarketDataMessage>>;
@@ -44,6 +47,11 @@ pub struct ExchangeWebSocketClient {
     subscriptions: Vec<SubscriptionRequest>,
     connection_start: Option<Instant>,
     max_connection_duration: Duration,
+}
+
+enum ConnectionOutcome {
+    Reconnect,
+    Terminate,
 }
 
 impl ExchangeWebSocketClient {
@@ -74,11 +82,18 @@ impl ExchangeWebSocketClient {
             self.connection_start = Some(Instant::now());
 
             match self.connect_with_retry(&message_sender).await {
-                Ok(_) => {
+                Ok(ConnectionOutcome::Reconnect) => {
                     warn!(
                         "WebSocket connection closed for {}, reconnecting...",
                         self.parser.exchange()
                     );
+                }
+                Ok(ConnectionOutcome::Terminate) => {
+                    info!(
+                        "WebSocket connection terminated for {}",
+                        self.parser.exchange()
+                    );
+                    return Ok(());
                 }
                 Err(e) => {
                     error!("WebSocket error for {}: {}", self.parser.exchange(), e);
@@ -92,7 +107,7 @@ impl ExchangeWebSocketClient {
     async fn connect_with_retry(
         &self,
         message_sender: &tokio::sync::mpsc::UnboundedSender<MarketDataMessage>,
-    ) -> RavenResult<()> {
+    ) -> RavenResult<ConnectionOutcome> {
         info!(
             "Connecting to {} WebSocket: {}",
             self.parser.exchange(),
@@ -133,6 +148,10 @@ impl ExchangeWebSocketClient {
 
         let mut ping_interval = interval(Duration::from_secs(30));
         let mut reconnect_check = interval(Duration::from_secs(3600)); // Check every hour
+        let sender_closed = message_sender.closed();
+        tokio::pin!(sender_closed);
+
+        let mut terminate_requested = false;
 
         loop {
             // Check if we need to proactively reconnect (before 24h limit)
@@ -147,16 +166,58 @@ impl ExchangeWebSocketClient {
             }
 
             tokio::select! {
+                _ = &mut sender_closed => {
+                    info!(
+                        "Output channel closed for {}, sending unsubscribe",
+                        self.parser.exchange()
+                    );
+                    for subscription in &self.subscriptions {
+                        if let Ok(unsubscribe_msg) = self.parser.create_unsubscribe_message(subscription) {
+                            if let Err(e) = write.send(Message::Text(unsubscribe_msg.into())).await {
+                                warn!(
+                                    "Failed to send unsubscribe for {} {}: {e}",
+                                    self.parser.exchange(),
+                                    subscription.symbol
+                                );
+                            }
+                        }
+                    }
+                    terminate_requested = true;
+                    break;
+                }
                 msg = read.next() => {
                     match msg {
                         Some(Ok(Message::Text(text))) => {
-                            if let Err(e) = self.handle_message(&text, message_sender).await {
-                                warn!("Failed to handle message: {}", e);
+                            match self.handle_message(&text, message_sender).await {
+                                Ok(channel_closed) => {
+                                    if channel_closed {
+                                        info!(
+                                            "Delivery channel closed for {}, unsubscribing",
+                                            self.parser.exchange()
+                                        );
+                                        for subscription in &self.subscriptions {
+                                            if let Ok(unsubscribe_msg) = self.parser.create_unsubscribe_message(subscription) {
+                                                if let Err(e) = write.send(Message::Text(unsubscribe_msg.into())).await {
+                                                    warn!(
+                                                        "Failed to send unsubscribe for {} {}: {e}",
+                                                        self.parser.exchange(),
+                                                        subscription.symbol
+                                                    );
+                                                }
+                                            }
+                                        }
+                                        terminate_requested = true;
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to handle message: {e}. Message: {text}");
+                                }
                             }
                         }
                         Some(Ok(Message::Ping(payload))) => {
                             if let Err(e) = write.send(Message::Pong(payload)).await {
-                                error!("Failed to send pong: {}", e);
+                                error!("Failed to send pong: {e}");
                                 break;
                             }
                         }
@@ -165,7 +226,7 @@ impl ExchangeWebSocketClient {
                             break;
                         }
                         Some(Err(e)) => {
-                            error!("WebSocket error: {}", e);
+                            error!("WebSocket error: {e}");
                             break;
                         }
                         None => {
@@ -177,7 +238,7 @@ impl ExchangeWebSocketClient {
                 }
                 _ = ping_interval.tick() => {
                     if let Err(e) = write.send(Message::Ping(vec![].into())).await {
-                        error!("Failed to send ping: {}", e);
+                        error!("Failed to send ping: {e}");
                         break;
                     }
                 }
@@ -187,33 +248,41 @@ impl ExchangeWebSocketClient {
             }
         }
 
-        Ok(())
+        if terminate_requested {
+            Ok(ConnectionOutcome::Terminate)
+        } else {
+            Ok(ConnectionOutcome::Reconnect)
+        }
     }
 
     async fn handle_message(
         &self,
         message: &str,
         sender: &tokio::sync::mpsc::UnboundedSender<MarketDataMessage>,
-    ) -> RavenResult<()> {
-        // Try to parse with each subscription type until we find a match
+    ) -> RavenResult<bool> {
+        let mut handled_any = false;
+
         for subscription in &self.subscriptions {
             if let Some(market_data) = self
                 .parser
                 .parse_message(message, &subscription.data_type)?
             {
-                sender.send(market_data).map_err(|_| {
-                    crate::raven_error!(internal_error, "Failed to send message".to_string())
-                })?;
-                return Ok(());
+                handled_any = true;
+                if sender.send(market_data).is_err() {
+                    return Ok(true);
+                }
             }
         }
 
         // If no subscription matched, it might be a control message - just debug log it
-        debug!(
-            "Unhandled message from {}: {}",
-            self.parser.exchange(),
-            message
-        );
-        Ok(())
+        if !handled_any {
+            debug!(
+                "Unhandled message from {}: {}",
+                self.parser.exchange(),
+                message
+            );
+        }
+
+        Ok(false)
     }
 }

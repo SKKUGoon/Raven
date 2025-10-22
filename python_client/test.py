@@ -22,7 +22,7 @@ def full_test():
     
     if client.connect():
         print("Running full test (30 seconds)...")
-        symbols = ["BTCUSDT", "ETHUSDT", "ADAUSDT"]
+        symbols = ["BTCUSDT", "ETHUSDC", "ADAUSDT"]
         client.stream_market_data(symbols, duration_seconds=30)
         client.disconnect()
     else:

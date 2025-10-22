@@ -48,6 +48,36 @@ fn test_binance_subscription_spot_trade() {
 }
 
 #[test]
+fn test_binance_unsubscribe_spot_trade() {
+    let parser = BinanceSpotParser::new();
+    let subscription = SubscriptionRequest {
+        exchange: Exchange::BinanceSpot,
+        symbol: "ADAUSDT".to_string(),
+        data_type: DataType::SpotTrade,
+    };
+
+    let result = parser.create_unsubscribe_message(&subscription).unwrap();
+    let expected = r#"{"id":1,"method":"UNSUBSCRIBE","params":["adausdt@trade"]}"#;
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn test_binance_futures_unsubscribe_orderbook() {
+    let parser = BinanceFuturesParser::new();
+    let subscription = SubscriptionRequest {
+        exchange: Exchange::BinanceFutures,
+        symbol: "ETHUSDC".to_string(),
+        data_type: DataType::OrderBook,
+    };
+
+    let result = parser.create_unsubscribe_message(&subscription).unwrap();
+    let expected = r#"{"id":1,"method":"UNSUBSCRIBE","params":["ethusdc@depth20@100ms"]}"#;
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn test_binance_parse_ticker() {
     let parser = BinanceSpotParser::new();
     let message = r#"{

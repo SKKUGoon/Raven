@@ -217,3 +217,26 @@ fn test_topic_key_generation() {
     let topics = subscription.get_topic_keys();
     assert_eq!(topics, vec!["*"]);
 }
+
+#[tokio::test]
+async fn test_cleanup_dead_clients_removes_closed_channels() {
+    let manager = SubscriptionManager::new();
+    let (sender, receiver) = mpsc::unbounded_channel();
+
+    manager
+        .subscribe(
+            "client_cleanup".to_string(),
+            vec!["BTCUSDT".to_string()],
+            vec![SubscriptionDataType::Orderbook],
+            HashMap::new(),
+            sender,
+        )
+        .unwrap();
+
+    // Drop the receiver to simulate client disconnect
+    drop(receiver);
+
+    manager.cleanup_dead_clients().await;
+
+    assert!(manager.get_subscription("client_cleanup").is_none());
+}

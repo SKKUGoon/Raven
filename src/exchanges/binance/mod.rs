@@ -13,6 +13,17 @@ impl BinanceSpotParser {
     pub fn new() -> Self {
         Self
     }
+
+    fn stream_from_subscription(subscription: &SubscriptionRequest) -> RavenResult<String> {
+        let stream = match subscription.data_type {
+            DataType::Ticker => format!("{}@ticker", subscription.symbol.to_lowercase()),
+            DataType::OrderBook => format!("{}@depth20@100ms", subscription.symbol.to_lowercase()),
+            DataType::SpotTrade => format!("{}@trade", subscription.symbol.to_lowercase()),
+            DataType::FutureTrade => format!("{}@aggTrade", subscription.symbol.to_lowercase()),
+            DataType::Candle => format!("{}@kline_1m", subscription.symbol.to_lowercase()),
+        };
+        Ok(stream)
+    }
 }
 
 impl Default for BinanceSpotParser {
@@ -24,6 +35,17 @@ impl Default for BinanceSpotParser {
 impl BinanceFuturesParser {
     pub fn new() -> Self {
         Self
+    }
+
+    fn stream_from_subscription(subscription: &SubscriptionRequest) -> RavenResult<String> {
+        let stream = match subscription.data_type {
+            DataType::Ticker => format!("{}@ticker", subscription.symbol.to_lowercase()),
+            DataType::OrderBook => format!("{}@depth20@100ms", subscription.symbol.to_lowercase()),
+            DataType::SpotTrade => format!("{}@trade", subscription.symbol.to_lowercase()),
+            DataType::FutureTrade => format!("{}@aggTrade", subscription.symbol.to_lowercase()),
+            DataType::Candle => format!("{}@kline_1m", subscription.symbol.to_lowercase()),
+        };
+        Ok(stream)
     }
 }
 
@@ -43,16 +65,24 @@ impl WebSocketParser for BinanceSpotParser {
         &self,
         subscription: &SubscriptionRequest,
     ) -> RavenResult<String> {
-        let stream = match subscription.data_type {
-            DataType::Ticker => format!("{}@ticker", subscription.symbol.to_lowercase()),
-            DataType::OrderBook => format!("{}@depth20@100ms", subscription.symbol.to_lowercase()),
-            DataType::SpotTrade => format!("{}@trade", subscription.symbol.to_lowercase()),
-            DataType::FutureTrade => format!("{}@aggTrade", subscription.symbol.to_lowercase()),
-            DataType::Candle => format!("{}@kline_1m", subscription.symbol.to_lowercase()),
-        };
+        let stream = Self::stream_from_subscription(subscription)?;
 
         Ok(serde_json::json!({
             "method": "SUBSCRIBE",
+            "params": [stream],
+            "id": 1
+        })
+        .to_string())
+    }
+
+    fn create_unsubscribe_message(
+        &self,
+        subscription: &SubscriptionRequest,
+    ) -> RavenResult<String> {
+        let stream = Self::stream_from_subscription(subscription)?;
+
+        Ok(serde_json::json!({
+            "method": "UNSUBSCRIBE",
             "params": [stream],
             "id": 1
         })
@@ -384,16 +414,24 @@ impl WebSocketParser for BinanceFuturesParser {
         &self,
         subscription: &SubscriptionRequest,
     ) -> RavenResult<String> {
-        let stream = match subscription.data_type {
-            DataType::Ticker => format!("{}@ticker", subscription.symbol.to_lowercase()),
-            DataType::OrderBook => format!("{}@depth20@100ms", subscription.symbol.to_lowercase()),
-            DataType::SpotTrade => format!("{}@trade", subscription.symbol.to_lowercase()), // Not applicable for futures
-            DataType::FutureTrade => format!("{}@aggTrade", subscription.symbol.to_lowercase()),
-            DataType::Candle => format!("{}@kline_1m", subscription.symbol.to_lowercase()),
-        };
+        let stream = Self::stream_from_subscription(subscription)?;
 
         Ok(serde_json::json!({
             "method": "SUBSCRIBE",
+            "params": [stream],
+            "id": 1
+        })
+        .to_string())
+    }
+
+    fn create_unsubscribe_message(
+        &self,
+        subscription: &SubscriptionRequest,
+    ) -> RavenResult<String> {
+        let stream = Self::stream_from_subscription(subscription)?;
+
+        Ok(serde_json::json!({
+            "method": "UNSUBSCRIBE",
             "params": [stream],
             "id": 1
         })

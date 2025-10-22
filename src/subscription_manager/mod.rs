@@ -511,6 +511,15 @@ impl SubscriptionManager {
 
         for client_id in client_ids {
             if let Some(subscription) = self.subscriptions.get(&client_id) {
+                if subscription.is_sender_closed() {
+                    debug!(
+                        client_id = %client_id,
+                        "Skipping broadcast for closed client channel"
+                    );
+                    failed_clients.push(client_id);
+                    continue;
+                }
+
                 if subscription.matches(symbol, &data_type) {
                     match subscription.send_message(message.clone()) {
                         Ok(_) => {
@@ -595,7 +604,7 @@ impl SubscriptionManager {
     }
 
     /// Clean up dead clients based on heartbeat timeout
-    async fn cleanup_dead_clients(&self) {
+    pub async fn cleanup_dead_clients(&self) {
         let mut dead_clients = Vec::new();
 
         // Find dead clients

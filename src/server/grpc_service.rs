@@ -424,6 +424,7 @@ impl MarketDataService for MarketDataServiceImpl {
             }
             // Cleanup when stream ends
             let connection_duration = connection_start.elapsed();
+            server_clone.subscription_manager.cleanup_dead_clients().await;
             server_clone.connection_manager.decrement_connections(connection_duration, server_clone.metrics.as_ref()).await;
             info!("⟐ gRPC streaming connection closed (duration: {:?})", connection_duration);
         };
