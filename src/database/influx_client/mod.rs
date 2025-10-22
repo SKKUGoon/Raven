@@ -1,268 +1,40 @@
 // InfluxDB Client
 // "The Iron Bank - managing the vaults of time-series data"
 
+mod datapoints;
+mod dead_letter;
+mod schemas;
+
+pub use datapoints::{
+    create_candle_datapoint, create_funding_rate_datapoint, create_orderbook_datapoint,
+    create_trade_datapoint, create_wallet_update_datapoint,
+};
+pub use schemas::{
+    create_candles_measurement_schema, create_funding_rates_measurement_schema,
+    create_orderbook_measurement_schema, create_trades_measurement_schema,
+    create_wallet_updates_measurement_schema, get_all_measurement_schemas,
+};
+
 use futures_util::stream;
 use influxdb2::api::buckets::ListBucketsRequest;
 use influxdb2::api::organization::ListOrganizationRequest;
 use influxdb2::models::{DataPoint, PostBucketRequest};
 use influxdb2::{Client, RequestError};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, sleep};
 
 use tracing::{debug, error, info, warn};
 
 use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
+use crate::database::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
 use crate::error::RavenResult;
+use dead_letter::DeadLetterEntry;
 
 type Result<T> = RavenResult<T>;
-
-// For now, let's use a simpler approach and return raw query results
-// We'll implement proper parsing later when we have the correct API understanding
-
-// DataPoint creation helper functions
-/// Create a DataPoint for orderbook snapshot data
-pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPoint> {
-    let mut builder = DataPoint::builder("orderbook")
-        .tag("symbol", &snapshot.symbol)
-        .tag("exchange", snapshot.exchange.to_string())
-        .field("sequence", snapshot.sequence as i64);
-
-    if let (Some(bid), Some(ask)) = (snapshot.bid_levels.first(), snapshot.ask_levels.first()) {
-        builder = builder.field("spread", ask.price - bid.price);
-    }
-
-    for (idx, level) in snapshot.bid_levels.iter().enumerate() {
-        let field_price = format!("bl{:02}_price", idx + 1);
-        let field_qty = format!("bl{:02}_qty", idx + 1);
-        builder = builder.field(field_price, level.price);
-        builder = builder.field(field_qty, level.quantity);
-    }
-
-    for (idx, level) in snapshot.ask_levels.iter().enumerate() {
-        let field_price = format!("al{:02}_price", idx + 1);
-        let field_qty = format!("al{:02}_qty", idx + 1);
-        builder = builder.field(field_price, level.price);
-        builder = builder.field(field_qty, level.quantity);
-    }
-
-    builder
-        .timestamp(snapshot.timestamp * 1_000_000)
-        .build()
-        .map_err(|e| {
-            crate::raven_error!(
-                data_serialization,
-                format!("Failed to create orderbook DataPoint: {e}")
-            )
-        })
-}
-
-/// Create a DataPoint for trade snapshot data
-pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
-    let side_str = snapshot.side.as_str();
-    DataPoint::builder("trades")
-        .tag("symbol", &snapshot.symbol)
-        .tag("side", side_str)
-        .tag("exchange", snapshot.exchange.to_string())
-        .field("price", snapshot.price)
-        .field("quantity", snapshot.quantity)
-        .field("trade_id", snapshot.trade_id as i64)
-        .field("trade_value", snapshot.price * snapshot.quantity)
-        .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
-        .build()
-        .map_err(|e| {
-            crate::raven_error!(
-                data_serialization,
-                format!("Failed to create trade DataPoint: {e}")
-            )
-        })
-}
-
-/// Create a DataPoint for candle data
-pub fn create_candle_datapoint(candle: &CandleData) -> Result<DataPoint> {
-    DataPoint::builder("candles")
-        .tag("symbol", &candle.symbol)
-        .tag("interval", &candle.interval)
-        .tag("exchange", candle.exchange.to_string())
-        .field("open", candle.open)
-        .field("high", candle.high)
-        .field("low", candle.low)
-        .field("close", candle.close)
-        .field("volume", candle.volume)
-        .timestamp(candle.timestamp)
-        .build()
-        .map_err(|e| {
-            crate::raven_error!(
-                data_serialization,
-                format!("Failed to create candle DataPoint: {e}")
-            )
-        })
-}
-
-/// Create a DataPoint for funding rate data
-pub fn create_funding_rate_datapoint(funding: &FundingRateData) -> Result<DataPoint> {
-    DataPoint::builder("funding_rates")
-        .tag("symbol", &funding.symbol)
-        .tag("exchange", funding.exchange.to_string())
-        .field("rate", funding.rate)
-        .field("next_funding_time", funding.next_funding_time)
-        .timestamp(funding.timestamp)
-        .build()
-        .map_err(|e| {
-            crate::raven_error!(
-                data_serialization,
-                format!("Failed to create funding rate DataPoint: {e}")
-            )
-        })
-}
-
-/// Create a DataPoint for wallet update data
-pub fn create_wallet_update_datapoint(
-    user_id: &str,
-    asset: &str,
-    available: f64,
-    locked: f64,
-    timestamp: i64,
-) -> Result<DataPoint> {
-    DataPoint::builder("wallet_updates")
-        .tag("user_id", user_id)
-        .tag("asset", asset)
-        .field("available", available)
-        .field("locked", locked)
-        .field("total", available + locked)
-        .timestamp(timestamp)
-        .build()
-        .map_err(|e| {
-            crate::raven_error!(
-                data_serialization,
-                format!("Failed to create wallet update DataPoint: {e}")
-            )
-        })
-}
-
-// Circuit breaker states
-#[derive(Debug, Clone, PartialEq)]
-pub enum CircuitBreakerState {
-    Closed,   // Normal operation
-    Open,     // Failing, reject requests
-    HalfOpen, // Testing if service recovered
-}
-
-// Circuit breaker configuration
-#[derive(Debug, Clone)]
-pub struct CircuitBreakerConfig {
-    pub failure_threshold: u64,
-    pub recovery_timeout: Duration,
-    pub success_threshold: u64,
-}
-
-impl Default for CircuitBreakerConfig {
-    fn default() -> Self {
-        Self {
-            failure_threshold: 5,
-            recovery_timeout: Duration::from_secs(30),
-            success_threshold: 3,
-        }
-    }
-}
-
-// Circuit breaker implementation
-#[derive(Debug)]
-pub struct CircuitBreaker {
-    state: Arc<RwLock<CircuitBreakerState>>,
-    failure_count: AtomicU64,
-    success_count: AtomicU64,
-    last_failure_time: Arc<Mutex<Option<Instant>>>,
-    config: CircuitBreakerConfig,
-}
-
-impl CircuitBreaker {
-    pub fn new(config: CircuitBreakerConfig) -> Self {
-        Self {
-            state: Arc::new(RwLock::new(CircuitBreakerState::Closed)),
-            failure_count: AtomicU64::new(0),
-            success_count: AtomicU64::new(0),
-            last_failure_time: Arc::new(Mutex::new(None)),
-            config,
-        }
-    }
-
-    pub async fn can_execute(&self) -> bool {
-        let state = self.state.read().await;
-        match *state {
-            CircuitBreakerState::Closed => true,
-            CircuitBreakerState::Open => {
-                if let Some(last_failure) = *self.last_failure_time.lock().await {
-                    if last_failure.elapsed() > self.config.recovery_timeout {
-                        drop(state);
-                        let mut state = self.state.write().await;
-                        *state = CircuitBreakerState::HalfOpen;
-                        self.success_count.store(0, Ordering::Relaxed);
-                        info!("⟲ Circuit breaker transitioning to half-open state");
-                        return true;
-                    }
-                }
-                false
-            }
-            CircuitBreakerState::HalfOpen => true,
-        }
-    }
-
-    pub async fn record_success(&self) {
-        let state = self.state.read().await;
-        match *state {
-            CircuitBreakerState::Closed => {
-                self.failure_count.store(0, Ordering::Relaxed);
-            }
-            CircuitBreakerState::HalfOpen => {
-                let success_count = self.success_count.fetch_add(1, Ordering::Relaxed) + 1;
-                if success_count >= self.config.success_threshold {
-                    drop(state);
-                    let mut state = self.state.write().await;
-                    *state = CircuitBreakerState::Closed;
-                    self.failure_count.store(0, Ordering::Relaxed);
-                    info!("✓ Circuit breaker closed - service recovered");
-                }
-            }
-            CircuitBreakerState::Open => {}
-        }
-    }
-
-    pub async fn record_failure(&self) {
-        let failure_count = self.failure_count.fetch_add(1, Ordering::Relaxed) + 1;
-        *self.last_failure_time.lock().await = Some(Instant::now());
-
-        let state = self.state.read().await;
-        match *state {
-            CircuitBreakerState::Closed => {
-                if failure_count >= self.config.failure_threshold {
-                    drop(state);
-                    let mut state = self.state.write().await;
-                    *state = CircuitBreakerState::Open;
-                    warn!(
-                        "⚠ Circuit breaker opened due to failures: {}",
-                        failure_count
-                    );
-                }
-            }
-            CircuitBreakerState::HalfOpen => {
-                drop(state);
-                let mut state = self.state.write().await;
-                *state = CircuitBreakerState::Open;
-                warn!("⚠ Circuit breaker opened during half-open test");
-            }
-            CircuitBreakerState::Open => {}
-        }
-    }
-
-    pub async fn get_state(&self) -> CircuitBreakerState {
-        self.state.read().await.clone()
-    }
-}
 
 // Connection pool configuration
 #[derive(Debug, Clone)]
@@ -296,15 +68,6 @@ impl Default for InfluxConfig {
     }
 }
 
-// Dead letter queue for failed writes
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeadLetterEntry {
-    pub data: String,
-    pub timestamp: i64,
-    pub retry_count: u32,
-    pub error_message: String,
-}
-
 // Main InfluxDB client with connection pooling
 pub struct InfluxClient {
     pub config: InfluxConfig,
@@ -320,10 +83,15 @@ impl InfluxClient {
         info!("The Iron Bank is opening its vaults...");
         info!("Bucket: {}, Pool size: {}", config.bucket, config.pool_size);
 
+        let circuit_breaker = CircuitBreaker::new(
+            format!("influx::{}", config.bucket.clone()),
+            CircuitBreakerConfig::default(),
+        );
+
         Self {
             config,
             connection_pool: Arc::new(Mutex::new(Vec::new())),
-            circuit_breaker: CircuitBreaker::new(CircuitBreakerConfig::default()),
+            circuit_breaker,
             dead_letter_queue: Arc::new(Mutex::new(Vec::new())),
             health_check_running: AtomicBool::new(false),
             connection_health: Arc::new(RwLock::new(HashMap::new())),
@@ -1056,10 +824,15 @@ impl InfluxClient {
 
 impl Clone for InfluxClient {
     fn clone(&self) -> Self {
+        let circuit_breaker = CircuitBreaker::new(
+            format!("influx::{}", self.config.bucket.clone()),
+            CircuitBreakerConfig::default(),
+        );
+
         Self {
             config: self.config.clone(),
             connection_pool: Arc::clone(&self.connection_pool),
-            circuit_breaker: CircuitBreaker::new(CircuitBreakerConfig::default()),
+            circuit_breaker,
             dead_letter_queue: Arc::clone(&self.dead_letter_queue),
             health_check_running: AtomicBool::new(false),
             connection_health: Arc::clone(&self.connection_health),
@@ -1071,66 +844,4 @@ impl Default for InfluxClient {
     fn default() -> Self {
         Self::new(InfluxConfig::default())
     }
-}
-
-// Utility functions for measurement schemas
-pub fn create_orderbook_measurement_schema() -> HashMap<String, String> {
-    let mut schema = HashMap::new();
-    schema.insert("measurement".to_string(), "orderbook".to_string());
-    schema.insert("tags".to_string(), "symbol,exchange".to_string());
-    schema.insert(
-        "fields".to_string(),
-        "best_bid_price,best_bid_quantity,best_ask_price,best_ask_quantity,sequence,spread"
-            .to_string(),
-    );
-    schema
-}
-
-pub fn create_trades_measurement_schema() -> HashMap<String, String> {
-    let mut schema = HashMap::new();
-    schema.insert("measurement".to_string(), "trades".to_string());
-    schema.insert("tags".to_string(), "symbol,side,exchange".to_string());
-    schema.insert(
-        "fields".to_string(),
-        "price,quantity,trade_id,trade_value".to_string(),
-    );
-    schema
-}
-
-pub fn create_candles_measurement_schema() -> HashMap<String, String> {
-    let mut schema = HashMap::new();
-    schema.insert("measurement".to_string(), "candles".to_string());
-    schema.insert("tags".to_string(), "symbol,interval,exchange".to_string());
-    schema.insert(
-        "fields".to_string(),
-        "open,high,low,close,volume".to_string(),
-    );
-    schema
-}
-
-pub fn create_funding_rates_measurement_schema() -> HashMap<String, String> {
-    let mut schema = HashMap::new();
-    schema.insert("measurement".to_string(), "funding_rates".to_string());
-    schema.insert("tags".to_string(), "symbol,exchange".to_string());
-    schema.insert("fields".to_string(), "rate,next_funding_time".to_string());
-    schema
-}
-
-pub fn create_wallet_updates_measurement_schema() -> HashMap<String, String> {
-    let mut schema = HashMap::new();
-    schema.insert("measurement".to_string(), "wallet_updates".to_string());
-    schema.insert("tags".to_string(), "user_id,asset".to_string());
-    schema.insert("fields".to_string(), "available,locked,total".to_string());
-    schema
-}
-
-// Get all measurement schemas
-pub fn get_all_measurement_schemas() -> Vec<HashMap<String, String>> {
-    vec![
-        create_orderbook_measurement_schema(),
-        create_trades_measurement_schema(),
-        create_candles_measurement_schema(),
-        create_funding_rates_measurement_schema(),
-        create_wallet_updates_measurement_schema(),
-    ]
 }
