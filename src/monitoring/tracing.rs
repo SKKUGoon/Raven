@@ -1,11 +1,11 @@
 // Distributed Tracing Service - Project Raven
 // "Following the path of every raven across the realm"
 
-use anyhow::Result;
 use tracing::{info, warn};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::config::MonitoringConfig;
+use crate::error::RavenResult;
 
 /// Distributed tracing service
 pub struct TracingService {
@@ -19,7 +19,7 @@ impl TracingService {
     }
 
     /// Initialize distributed tracing
-    pub async fn initialize(&self) -> Result<()> {
+    pub async fn initialize(&self) -> RavenResult<()> {
         if !self.config.tracing_enabled {
             info!("⚬ Distributed tracing disabled in configuration");
             self.initialize_basic_logging()?;
@@ -37,7 +37,7 @@ impl TracingService {
     }
 
     /// Initialize basic logging without tracing
-    fn initialize_basic_logging(&self) -> Result<()> {
+    fn initialize_basic_logging(&self) -> RavenResult<()> {
         info!("⚬ Initializing basic logging...");
 
         let fmt_layer = fmt::layer()
@@ -60,7 +60,7 @@ impl TracingService {
     }
 
     /// Initialize structured logging with tracing
-    fn initialize_structured_logging(&self) -> Result<()> {
+    fn initialize_structured_logging(&self) -> RavenResult<()> {
         info!("⚬ Initializing structured logging...");
 
         let fmt_layer = fmt::layer()
@@ -83,7 +83,7 @@ impl TracingService {
     }
 
     /// Shutdown tracing and flush any pending spans
-    pub async fn shutdown(&self) -> Result<()> {
+    pub async fn shutdown(&self) -> RavenResult<()> {
         if self.config.tracing_enabled {
             info!("⚬ Shutting down tracing...");
             // In a full OpenTelemetry implementation, you would flush spans here

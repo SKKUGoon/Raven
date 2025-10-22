@@ -1,14 +1,15 @@
 // Configuration Management Tool - Project Raven
 // "A tool to shape the realm's destiny"
 
-use anyhow::Result;
 use clap::{Arg, Command};
-use raven::config::{Config, ConfigManager, ConfigUtils};
+use raven::config::{ConfigLoader, ConfigManager, ConfigUtils, RuntimeConfig};
+use raven::error::RavenResult;
+use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{error, info};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> RavenResult<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
@@ -72,7 +73,7 @@ async fn main() -> Result<()> {
                         .long("config")
                         .value_name("PATH")
                         .help("Path to configuration file")
-                        .default_value("config/default.toml"),
+                        .default_value("config/development.toml"),
                 )
                 .arg(
                     Arg::new("interval")
@@ -121,35 +122,34 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn validate_config(_config_path: Option<&String>) -> Result<()> {
+fn loader_from_path(path: Option<&String>) -> ConfigLoader {
+    let mut loader = ConfigLoader::new();
+    if let Some(p) = path {
+        loader = loader.with_file(PathBuf::from(p));
+    }
+    loader
+}
+
+async fn validate_config(config_path: Option<&String>) -> RavenResult<()> {
     info!("⚬ Validating configuration...");
 
-    match Config::load() {
-        Ok(config) => {
-            info!("✓ Configuration loaded successfully");
+    let loader = loader_from_path(config_path);
+    let config = RuntimeConfig::load_with_loader(&loader)?;
+    info!("✓ Configuration loaded successfully");
 
-            match config.validate() {
-                Ok(_) => {
-                    info!("✓ Configuration validation passed");
-                    ConfigUtils::print_config(&config);
-                }
-                Err(e) => {
-                    error!("✗ Configuration validation failed: {}", e);
-                    return Err(e);
-                }
-            }
-        }
-        Err(e) => {
-            error!("✗ Failed to load configuration: {}", e);
-            return Err(e);
-        }
+    if let Err(e) = config.validate() {
+        error!("✗ Configuration validation failed: {}", e);
+        return Err(e);
     }
+
+    info!("✓ Configuration validation passed");
+    ConfigUtils::print_config(&config);
 
     Ok(())
 }
 
-async fn show_config(format: &str) -> Result<()> {
-    let config = Config::load()?;
+async fn show_config(format: &str) -> RavenResult<()> {
+    let config = RuntimeConfig::load()?;
 
     match format {
         "json" => {
@@ -167,10 +167,10 @@ async fn show_config(format: &str) -> Result<()> {
     Ok(())
 }
 
-async fn check_health() -> Result<()> {
+async fn check_health() -> RavenResult<()> {
     info!("⚕ Checking configuration health...");
 
-    let config = Config::load()?;
+    let config = RuntimeConfig::load()?;
     let warnings = ConfigUtils::check_configuration_health(&config);
 
     if warnings.is_empty() {
@@ -191,7 +191,7 @@ async fn check_health() -> Result<()> {
     Ok(())
 }
 
-fn generate_template(output_path: Option<&String>) -> Result<()> {
+fn generate_template(output_path: Option<&String>) -> RavenResult<()> {
     let template = ConfigUtils::generate_config_template();
 
     match output_path {
@@ -207,14 +207,14 @@ fn generate_template(output_path: Option<&String>) -> Result<()> {
     Ok(())
 }
 
-fn check_environment() -> Result<()> {
+fn check_environment() -> RavenResult<()> {
     info!("🌍 Checking environment variables...");
     ConfigUtils::validate_environment()?;
     info!("✓ Environment check completed");
     Ok(())
 }
 
-fn show_recommendations(environment: &str) -> Result<()> {
+fn show_recommendations(environment: &str) -> RavenResult<()> {
     let recommendations = ConfigUtils::get_environment_recommendations();
 
     if let Some(env_recs) = recommendations.get(environment) {
@@ -230,15 +230,13 @@ fn show_recommendations(environment: &str) -> Result<()> {
     Ok(())
 }
 
-async fn watch_config(config_path: &str, interval_seconds: u64) -> Result<()> {
+async fn watch_config(config_path: &str, interval_seconds: u64) -> RavenResult<()> {
     info!("⚬ Watching configuration file: {}", config_path);
     info!("⟲ Check interval: {} seconds", interval_seconds);
     info!("Press Ctrl+C to stop watching");
 
-    let manager = ConfigManager::new(
-        config_path.to_string(),
-        Duration::from_secs(interval_seconds),
-    )?;
+    let loader = ConfigLoader::new().with_file(PathBuf::from(config_path));
+    let manager = ConfigManager::new(loader, Duration::from_secs(interval_seconds))?;
 
     // Start hot-reload monitoring
     manager.start_hot_reload().await?;

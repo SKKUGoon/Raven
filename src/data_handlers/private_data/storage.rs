@@ -1,7 +1,7 @@
-use anyhow::Result;
 use dashmap::DashMap;
 
 use super::{AccessLevel, ClientPermissions, PositionUpdateData, WalletUpdateData};
+use crate::error::{RavenError, RavenResult};
 
 /// Private data storage with client isolation
 #[derive(Debug)]
@@ -54,11 +54,11 @@ impl PrivateDataStorage {
         &self,
         user_id: &str,
         client_id: &str,
-    ) -> Result<Option<Vec<WalletUpdateData>>> {
+    ) -> RavenResult<Option<Vec<WalletUpdateData>>> {
         if self.check_access(client_id, user_id, "wallet_updates")? {
             Ok(self.wallet_updates.get(user_id).map(|entry| entry.clone()))
         } else {
-            Err(anyhow::anyhow!("Access denied"))
+            Err(RavenError::authorization("Access denied"))
         }
     }
 
@@ -66,18 +66,18 @@ impl PrivateDataStorage {
         &self,
         user_id: &str,
         client_id: &str,
-    ) -> Result<Option<Vec<PositionUpdateData>>> {
+    ) -> RavenResult<Option<Vec<PositionUpdateData>>> {
         if self.check_access(client_id, user_id, "position_updates")? {
             Ok(self
                 .position_updates
                 .get(user_id)
                 .map(|entry| entry.clone()))
         } else {
-            Err(anyhow::anyhow!("Access denied"))
+            Err(RavenError::authorization("Access denied"))
         }
     }
 
-    fn check_access(&self, client_id: &str, user_id: &str, data_type: &str) -> Result<bool> {
+    fn check_access(&self, client_id: &str, user_id: &str, data_type: &str) -> RavenResult<bool> {
         if let Some(permissions) = self.client_permissions.get(client_id) {
             if (permissions.user_id == user_id || permissions.access_level == AccessLevel::Admin)
                 && (permissions

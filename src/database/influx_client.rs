@@ -1,7 +1,6 @@
 // InfluxDB Client
 // "The Iron Bank - managing the vaults of time-series data"
 
-use anyhow::{anyhow, Result};
 use futures_util::stream;
 use influxdb2::api::buckets::ListBucketsRequest;
 use influxdb2::api::organization::ListOrganizationRequest;
@@ -18,6 +17,9 @@ use tokio::time::{interval, sleep};
 use tracing::{debug, error, info, warn};
 
 use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
+use crate::error::{RavenError, RavenResult};
+
+type Result<T> = RavenResult<T>;
 
 // For now, let's use a simpler approach and return raw query results
 // We'll implement proper parsing later when we have the correct API understanding
@@ -25,18 +27,35 @@ use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, Tr
 // DataPoint creation helper functions
 /// Create a DataPoint for orderbook snapshot data
 pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPoint> {
-    DataPoint::builder("orderbook")
+    let mut builder = DataPoint::builder("orderbook")
         .tag("symbol", &snapshot.symbol)
         .tag("exchange", snapshot.exchange.to_string())
-        .field("best_bid_price", snapshot.best_bid_price)
-        .field("best_bid_quantity", snapshot.best_bid_quantity)
-        .field("best_ask_price", snapshot.best_ask_price)
-        .field("best_ask_quantity", snapshot.best_ask_quantity)
-        .field("sequence", snapshot.sequence as i64)
-        .field("spread", snapshot.best_ask_price - snapshot.best_bid_price)
-        .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
+        .field("sequence", snapshot.sequence as i64);
+
+    if let (Some(bid), Some(ask)) = (snapshot.bid_levels.first(), snapshot.ask_levels.first()) {
+        builder = builder.field("spread", ask.price - bid.price);
+    }
+
+    for (idx, level) in snapshot.bid_levels.iter().enumerate() {
+        let field_price = format!("bl{:02}_price", idx + 1);
+        let field_qty = format!("bl{:02}_qty", idx + 1);
+        builder = builder.field(field_price, level.price);
+        builder = builder.field(field_qty, level.quantity);
+    }
+
+    for (idx, level) in snapshot.ask_levels.iter().enumerate() {
+        let field_price = format!("al{:02}_price", idx + 1);
+        let field_qty = format!("al{:02}_qty", idx + 1);
+        builder = builder.field(field_price, level.price);
+        builder = builder.field(field_qty, level.quantity);
+    }
+
+    builder
+        .timestamp(snapshot.timestamp * 1_000_000)
         .build()
-        .map_err(|e| anyhow!("Failed to create orderbook DataPoint: {}", e))
+        .map_err(|e| {
+            RavenError::data_serialization(format!("Failed to create orderbook DataPoint: {e}"))
+        })
 }
 
 /// Create a DataPoint for trade snapshot data
@@ -52,7 +71,9 @@ pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
         .field("trade_value", snapshot.price * snapshot.quantity)
         .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
         .build()
-        .map_err(|e| anyhow!("Failed to create trade DataPoint: {}", e))
+        .map_err(|e| {
+            RavenError::data_serialization(format!("Failed to create trade DataPoint: {e}"))
+        })
 }
 
 /// Create a DataPoint for candle data
@@ -68,7 +89,9 @@ pub fn create_candle_datapoint(candle: &CandleData) -> Result<DataPoint> {
         .field("volume", candle.volume)
         .timestamp(candle.timestamp)
         .build()
-        .map_err(|e| anyhow!("Failed to create candle DataPoint: {}", e))
+        .map_err(|e| {
+            RavenError::data_serialization(format!("Failed to create candle DataPoint: {e}"))
+        })
 }
 
 /// Create a DataPoint for funding rate data
@@ -80,7 +103,9 @@ pub fn create_funding_rate_datapoint(funding: &FundingRateData) -> Result<DataPo
         .field("next_funding_time", funding.next_funding_time)
         .timestamp(funding.timestamp)
         .build()
-        .map_err(|e| anyhow!("Failed to create funding rate DataPoint: {}", e))
+        .map_err(|e| {
+            RavenError::data_serialization(format!("Failed to create funding rate DataPoint: {e}"))
+        })
 }
 
 /// Create a DataPoint for wallet update data
@@ -99,7 +124,9 @@ pub fn create_wallet_update_datapoint(
         .field("total", available + locked)
         .timestamp(timestamp)
         .build()
-        .map_err(|e| anyhow!("Failed to create wallet update DataPoint: {}", e))
+        .map_err(|e| {
+            RavenError::data_serialization(format!("Failed to create wallet update DataPoint: {e}"))
+        })
 }
 
 // Circuit breaker states
@@ -241,7 +268,7 @@ impl Default for InfluxConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:8086".to_string(),
-            bucket: "market_data".to_string(),
+            bucket: "crypto".to_string(),
             org: "raven".to_string(),
             token: None,
             pool_size: 10,
@@ -366,11 +393,10 @@ impl InfluxClient {
                 );
                 Ok(())
             }
-            Err(e) => Err(anyhow!(
-                "Failed to create bucket '{}': {}",
-                self.config.bucket,
-                e
-            )),
+            Err(e) => Err(RavenError::database_write(format!(
+                "Failed to create bucket '{}': {e}",
+                self.config.bucket
+            ))),
         }
     }
 
@@ -385,7 +411,7 @@ impl InfluxClient {
         let response = client
             .list_buckets(Some(request))
             .await
-            .map_err(|e| anyhow!("Failed to list buckets: {}", e))?;
+            .map_err(|e| RavenError::database_query(format!("Failed to list buckets: {e}")))?;
 
         Ok(response
             .buckets
@@ -400,10 +426,9 @@ impl InfluxClient {
             ..Default::default()
         };
 
-        let organizations = client
-            .list_organizations(request)
-            .await
-            .map_err(|e| anyhow!("Failed to list organizations: {}", e))?;
+        let organizations = client.list_organizations(request).await.map_err(|e| {
+            RavenError::database_query(format!("Failed to list organizations: {e}"))
+        })?;
 
         if let Some(org) = organizations
             .orgs
@@ -425,13 +450,17 @@ impl InfluxClient {
         let organizations = client
             .list_organizations(fallback_request)
             .await
-            .map_err(|e| anyhow!("Failed to look up organization by ID: {}", e))?;
+            .map_err(|e| {
+                RavenError::database_query(format!("Failed to look up organization by ID: {e}"))
+            })?;
 
         organizations
             .orgs
             .into_iter()
             .find_map(|org| org.id)
-            .ok_or_else(|| anyhow!("Organization '{}' not found", self.config.org))
+            .ok_or_else(|| {
+                RavenError::database_query(format!("Organization '{}' not found", self.config.org))
+            })
     }
 
     #[cfg(test)]
@@ -441,8 +470,8 @@ impl InfluxClient {
 
     async fn get_connection(&self) -> Result<(Client, usize)> {
         if !self.circuit_breaker.can_execute().await {
-            return Err(anyhow!(
-                "Circuit breaker is open - Iron Bank temporarily closed"
+            return Err(RavenError::circuit_breaker_open(
+                "Circuit breaker is open - Iron Bank temporarily closed",
             ));
         }
 
@@ -460,7 +489,7 @@ impl InfluxClient {
         if let Some(client) = pool.first() {
             Ok((client.clone(), 0))
         } else {
-            Err(anyhow!("No connections available"))
+            Err(RavenError::resource_exhausted("InfluxDB connection pool"))
         }
     }
 
@@ -487,7 +516,7 @@ impl InfluxClient {
                 self.circuit_breaker.record_failure().await;
                 self.mark_connection_healthy(connection_index, false).await;
                 error!("✗ Iron Bank ping failed: {}", e);
-                Err(anyhow!("Ping failed: {}", e))
+                Err(RavenError::database_connection(format!("Ping failed: {e}")))
             }
         }
     }
@@ -499,7 +528,9 @@ impl InfluxClient {
         // Check circuit breaker state first
         let cb_state = self.circuit_breaker.get_state().await;
         if cb_state == CircuitBreakerState::Open {
-            return Err(anyhow!("Circuit breaker is open - database unavailable"));
+            return Err(RavenError::circuit_breaker_open(
+                "Circuit breaker is open - database unavailable",
+            ));
         }
 
         // Perform ping to verify connectivity
@@ -511,7 +542,9 @@ impl InfluxClient {
         let total_connections = pool_status.get("total_connections").unwrap_or(&0);
 
         if *healthy_connections == 0 {
-            return Err(anyhow!("No healthy database connections available"));
+            return Err(RavenError::database_connection(
+                "No healthy database connections available",
+            ));
         }
 
         if *healthy_connections < (*total_connections / 2) {
@@ -561,7 +594,12 @@ impl InfluxClient {
                 .field("locked", *locked)
                 .field("total", available + locked)
                 .timestamp(timestamp)
-                .build()?;
+                .build()
+                .map_err(|e| {
+                    RavenError::data_serialization(format!(
+                        "Failed to create wallet update DataPoint: {e}"
+                    ))
+                })?;
 
             self.execute_write(data_point).await?;
         }
@@ -607,7 +645,9 @@ impl InfluxClient {
                             .await;
                         }
 
-                        return Err(anyhow!("Batch write failed after {} attempts", attempt));
+                        return Err(RavenError::database_write(format!(
+                            "Batch write failed after {attempt} attempts",
+                        )));
                     }
 
                     sleep(self.config.retry_delay * attempt).await;
@@ -673,7 +713,9 @@ impl InfluxClient {
                         self.circuit_breaker.record_failure().await;
                         self.add_to_dead_letter_queue(format!("{data_point:?}"), e.to_string())
                             .await;
-                        return Err(anyhow!("Write failed after {attempt} attempts: {e}"));
+                        return Err(RavenError::database_write(format!(
+                            "Write failed after {attempt} attempts: {e}"
+                        )));
                     }
 
                     sleep(self.config.retry_delay * attempt).await;
@@ -922,32 +964,30 @@ impl InfluxClient {
         );
 
         // For now, assume bucket exists - proper verification needs correct API understanding
-        match Ok(()) as Result<(), anyhow::Error> {
-            Ok(_) => {
-                info!("✓ Bucket '{}' is accessible", self.config.bucket);
-            }
-            Err(e) => {
-                warn!(
-                    "⚠ Bucket '{}' may not exist or is not accessible: {}",
-                    self.config.bucket, e
-                );
+        let bucket_check: Result<()> = Ok(());
+        if let Err(e) = bucket_check {
+            warn!(
+                "⚠ Bucket '{}' may not exist or is not accessible: {}",
+                self.config.bucket, e
+            );
 
-                // Try to create the bucket using the management API
-                // Note: This requires admin privileges and proper token
-                match self.create_bucket_if_needed().await {
-                    Ok(_) => {
-                        info!("✓ Bucket '{}' created successfully", self.config.bucket);
-                    }
-                    Err(create_err) => {
-                        warn!(
-                            "⚠ Could not create bucket '{}': {}. Please create it manually through the InfluxDB UI or API",
-                            self.config.bucket, create_err
-                        );
-                        // Don't fail setup if bucket creation fails - it might already exist
-                        // or the token might not have admin privileges
-                    }
+            // Try to create the bucket using the management API
+            // Note: This requires admin privileges and proper token
+            match self.create_bucket_if_needed().await {
+                Ok(_) => {
+                    info!("✓ Bucket '{}' created successfully", self.config.bucket);
+                }
+                Err(create_err) => {
+                    warn!(
+                        "⚠ Could not create bucket '{}': {}. Please create it manually through the InfluxDB UI or API",
+                        self.config.bucket, create_err
+                    );
+                    // Don't fail setup if bucket creation fails - it might already exist
+                    // or the token might not have admin privileges
                 }
             }
+        } else {
+            info!("✓ Bucket '{}' is accessible", self.config.bucket);
         }
 
         info!("✓ Iron Bank v2 setup completed");

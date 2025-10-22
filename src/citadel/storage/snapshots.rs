@@ -4,6 +4,13 @@ use super::{OrderBookData, TradeData, TradeSide};
 use crate::exchanges::types::Exchange;
 use serde::{Deserialize, Serialize};
 
+/// Order book level captured for storage/broadcast
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderBookLevel {
+    pub price: f64,
+    pub quantity: f64,
+}
+
 // Snapshot structures for periodic captures
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderBookSnapshot {
@@ -15,6 +22,8 @@ pub struct OrderBookSnapshot {
     pub best_ask_price: f64,
     pub best_ask_quantity: f64,
     pub sequence: u64,
+    pub bid_levels: Vec<OrderBookLevel>,
+    pub ask_levels: Vec<OrderBookLevel>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,16 +40,34 @@ pub struct TradeSnapshot {
 // Conversion functions between atomic storage and snapshot types
 impl From<&OrderBookData> for OrderBookSnapshot {
     fn from(data: &OrderBookData) -> Self {
-        let (best_bid_price, best_bid_quantity) = data
+        let bid_levels: Vec<OrderBookLevel> = data
             .bids
+            .iter()
+            .take(10)
+            .map(|(price, qty)| OrderBookLevel {
+                price: *price,
+                quantity: *qty,
+            })
+            .collect();
+
+        let ask_levels: Vec<OrderBookLevel> = data
+            .asks
+            .iter()
+            .take(10)
+            .map(|(price, qty)| OrderBookLevel {
+                price: *price,
+                quantity: *qty,
+            })
+            .collect();
+
+        let (best_bid_price, best_bid_quantity) = bid_levels
             .first()
-            .map(|(price, qty)| (*price, *qty))
+            .map(|level| (level.price, level.quantity))
             .unwrap_or((0.0, 0.0));
 
-        let (best_ask_price, best_ask_quantity) = data
-            .asks
+        let (best_ask_price, best_ask_quantity) = ask_levels
             .first()
-            .map(|(price, qty)| (*price, *qty))
+            .map(|level| (level.price, level.quantity))
             .unwrap_or((0.0, 0.0));
 
         Self {
@@ -52,6 +79,8 @@ impl From<&OrderBookData> for OrderBookSnapshot {
             best_ask_price,
             best_ask_quantity,
             sequence: data.sequence,
+            bid_levels,
+            ask_levels,
         }
     }
 }

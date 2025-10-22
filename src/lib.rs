@@ -34,7 +34,7 @@ pub mod proto {
 }
 
 // Re-export commonly used types
-pub use config::Config;
+pub use config::{ConfigLoader, ConfigManager, ConfigUtils, RuntimeConfig, RuntimeConfigBuilder};
 pub use error::{RavenError, RavenResult};
 pub use logging::LoggingConfig;
 pub use proto::*;

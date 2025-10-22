@@ -36,7 +36,6 @@ serde_json = "1.0.145"
 dashmap = "6.1"
 
 # Error handling
-anyhow = "1.0"
 thiserror = "2.0.16"
 
 # Logging and tracing
@@ -87,4 +86,3 @@ mockito = "1.4"
 [build-dependencies]
 tonic-prost-build = "0.14.2"
 chrono = { version = "0.4", features = ["serde"] }
-

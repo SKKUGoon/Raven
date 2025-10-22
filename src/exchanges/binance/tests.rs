@@ -204,7 +204,7 @@ fn test_binance_parse_spot_trade() {
     let result = parser.parse_spot_trade(message).unwrap().unwrap();
 
     assert_eq!(result.exchange, Exchange::BinanceSpot);
-    assert_eq!(result.symbol, "BTCUSDT");
+    assert_eq!(result.symbol, "btcusdt");
 
     match result.data {
         MarketData::SpotTrade {

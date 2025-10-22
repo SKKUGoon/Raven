@@ -37,21 +37,15 @@ metrics_enabled = true
     fs::write(&config_path, test_config).await.unwrap();
 
     // Test configuration manager creation
-    let manager = ConfigManager::new(
-        config_path.to_string_lossy().to_string(),
-        Duration::from_millis(100),
-    )
-    .unwrap();
+    let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
+    let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
 
     // Test getting configuration
-    let config = manager.get_config().await;
-    // Note: The config manager loads from the global config system,
-    // not from the specific file path, so it will use defaults
-    // This is expected behavior for the current implementation
-    assert_eq!(config.server.host, "0.0.0.0"); // Default value
-    assert_eq!(config.server.port, 50051); // Default value
-    assert_eq!(config.database.bucket, "crypto"); // Default value
-    assert_eq!(config.database.org, "raven"); // Default value
+    let config = manager.runtime().await;
+    assert_eq!(config.server.host, "127.0.0.1");
+    assert_eq!(config.server.port, 8080);
+    assert_eq!(config.database.bucket, "test_db");
+    assert_eq!(config.database.org, "test_org");
 
     // Test configuration validation
     assert!(config.validate().is_ok());
@@ -59,7 +53,7 @@ metrics_enabled = true
     // Test configuration utilities
     let summary = ConfigUtils::get_config_summary(&config);
     assert!(summary.contains_key("server_host"));
-    assert_eq!(summary.get("server_host").unwrap(), "0.0.0.0"); // Default value
+    assert_eq!(summary.get("server_host").unwrap(), "127.0.0.1");
 
     let json_export = ConfigUtils::export_as_json(&config).unwrap();
     assert!(json_export.contains("server"));
@@ -123,7 +117,7 @@ fn test_environment_variable_precedence() {
 
 #[test]
 fn test_configuration_validation_comprehensive() {
-    let mut config = Config::default();
+    let mut config = RuntimeConfig::default();
 
     // Test all validation scenarios
     assert!(config.validate().is_ok());
@@ -211,7 +205,7 @@ fn test_batching_configuration_comprehensive() {
 
 #[test]
 fn test_config_utils_comprehensive() {
-    let config = Config::default();
+    let config = RuntimeConfig::default();
 
     // Test configuration summary
     let summary = ConfigUtils::get_config_summary(&config);
@@ -224,7 +218,7 @@ fn test_config_utils_comprehensive() {
     let json = ConfigUtils::export_as_json(&config).unwrap();
     assert!(json.contains("server"));
     assert!(json.contains("database"));
-    assert!(json.contains("retention_policies"));
+    assert!(json.contains("retention"));
     assert!(json.contains("batching"));
 
     // Test health check warnings
@@ -290,15 +284,12 @@ log_level = "info"
 "#;
     fs::write(&config_path, initial_config).await.unwrap();
 
-    let manager = ConfigManager::new(
-        config_path.to_string_lossy().to_string(),
-        Duration::from_millis(50),
-    )
-    .unwrap();
+    let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
+    let manager = ConfigManager::new(loader, Duration::from_millis(50)).unwrap();
 
     // Get initial config
-    let config = manager.get_config().await;
-    assert_eq!(config.database.bucket, "crypto"); // Uses default
+    let config = manager.runtime().await;
+    assert_eq!(config.database.bucket, "initial_db");
 
     // Test force reload
     assert!(manager.force_reload().await.is_ok());
@@ -320,4 +311,8 @@ log_level = "debug"
 
     // Force reload to pick up changes
     assert!(manager.force_reload().await.is_ok());
+    let config = manager.runtime().await;
+    assert_eq!(config.server.port, 9090);
+    assert_eq!(config.database.bucket, "updated_db");
+    assert_eq!(config.monitoring.log_level, "debug");
 }

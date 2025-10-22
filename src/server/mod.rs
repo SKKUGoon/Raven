@@ -1,7 +1,6 @@
 // The Night's Watch - gRPC Server Implementation
 // "The watchers on the wall who guard the realm of market data"
 
-use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::info;
@@ -21,6 +20,8 @@ pub mod tests;
 
 pub use connection::ConnectionManager;
 pub use grpc_service::MarketDataServiceImpl;
+
+use crate::error::{RavenError, RavenResult};
 
 /// The Night's Watch - Main gRPC server implementation
 pub struct MarketDataServer {
@@ -77,8 +78,10 @@ impl MarketDataServer {
     }
 
     /// Start the gRPC server
-    pub async fn start(self, host: &str, port: u16) -> Result<()> {
-        let addr = format!("{host}:{port}").parse()?;
+    pub async fn start(self, host: &str, port: u16) -> RavenResult<()> {
+        let addr = format!("{host}:{port}").parse().map_err(|e| {
+            RavenError::configuration(format!("Invalid gRPC bind address {host}:{port}: {e}"))
+        })?;
 
         info!("▲ The Night's Watch is taking position at {}", addr);
         info!("◦ Ravens are ready to carry messages across the realm");
@@ -101,7 +104,7 @@ impl MarketDataServer {
             .add_service(service)
             .serve(addr)
             .await
-            .map_err(|e| anyhow!("Server failed: {}", e))?;
+            .map_err(|e| RavenError::grpc_connection(format!("Server failed: {e}")))?;
 
         info!("■ gRPC server stopped");
         Ok(())

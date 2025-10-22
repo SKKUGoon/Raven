@@ -11,9 +11,9 @@ pub use metrics::SnapshotMetrics;
 
 use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use crate::database::influx_client::InfluxClient;
+use crate::error::{RavenError, RavenResult};
 use crate::exchanges::types::Exchange;
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
-use anyhow::{Context, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -108,7 +108,7 @@ impl SnapshotService {
     }
 
     /// Start the snapshot service
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> RavenResult<()> {
         if self
             .running
             .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
@@ -142,7 +142,7 @@ impl SnapshotService {
     }
 
     /// Stop the snapshot service
-    pub async fn stop(&self) -> Result<()> {
+    pub async fn stop(&self) -> RavenResult<()> {
         if self
             .running
             .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
@@ -217,7 +217,7 @@ impl SnapshotService {
     }
 
     /// Capture snapshots from atomic storage
-    async fn capture_snapshots(&self) -> Result<u64> {
+    async fn capture_snapshots(&self) -> RavenResult<u64> {
         let mut snapshot_count = 0;
 
         // Get all active symbols for orderbooks and trades
@@ -339,15 +339,19 @@ impl SnapshotService {
     }
 
     /// Broadcast orderbook snapshot to subscribed gRPC clients
-    async fn broadcast_orderbook_snapshot(&self, snapshot: &OrderBookSnapshot) -> Result<()> {
+    async fn broadcast_orderbook_snapshot(&self, snapshot: &OrderBookSnapshot) -> RavenResult<()> {
         // Convert to protobuf message
-        let message = self.create_orderbook_message(snapshot)?;
+        let message = self.create_orderbook_message(snapshot);
 
         // Distribute to subscribed clients
         let sent_count = self
             .subscription_manager
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Orderbook, message)
-            .context("Failed to distribute orderbook snapshot")?;
+            .map_err(|e| {
+                RavenError::subscription_failed(format!(
+                    "Failed to distribute orderbook snapshot: {e}"
+                ))
+            })?;
 
         info!(
             "⟐ Broadcast orderbook snapshot for {} to {} clients",
@@ -358,15 +362,17 @@ impl SnapshotService {
     }
 
     /// Broadcast trade snapshot to subscribed gRPC clients
-    async fn broadcast_trade_snapshot(&self, snapshot: &TradeSnapshot) -> Result<()> {
+    async fn broadcast_trade_snapshot(&self, snapshot: &TradeSnapshot) -> RavenResult<()> {
         // Convert to protobuf message
-        let message = self.create_trade_message(snapshot)?;
+        let message = self.create_trade_message(snapshot);
 
         // Distribute to subscribed clients
         let sent_count = self
             .subscription_manager
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Trades, message)
-            .context("Failed to distribute trade snapshot")?;
+            .map_err(|e| {
+                RavenError::subscription_failed(format!("Failed to distribute trade snapshot: {e}"))
+            })?;
 
         info!(
             "⟐ Broadcast trade snapshot for {} to {} clients",
@@ -399,7 +405,7 @@ impl SnapshotService {
     }
 
     /// Flush current batch to database
-    async fn flush_current_batch(&self) -> Result<()> {
+    async fn flush_current_batch(&self) -> RavenResult<()> {
         let mut batch = self.current_batch.write().await;
 
         if batch.is_empty() {
@@ -414,8 +420,11 @@ impl SnapshotService {
             self.influx_client
                 .write_orderbook_snapshot(snapshot)
                 .await
-                .with_context(|| {
-                    format!("Failed to write orderbook snapshot for {}", snapshot.symbol)
+                .map_err(|e| {
+                    RavenError::database_write(format!(
+                        "Failed to write orderbook snapshot for {}: {e}",
+                        snapshot.symbol
+                    ))
                 })?;
         }
 
@@ -424,8 +433,11 @@ impl SnapshotService {
             self.influx_client
                 .write_trade_snapshot(snapshot)
                 .await
-                .with_context(|| {
-                    format!("Failed to write trade snapshot for {}", snapshot.symbol)
+                .map_err(|e| {
+                    RavenError::database_write(format!(
+                        "Failed to write trade snapshot for {}: {e}",
+                        snapshot.symbol
+                    ))
                 })?;
         }
 
@@ -450,7 +462,7 @@ impl SnapshotService {
     fn create_orderbook_message(
         &self,
         snapshot: &OrderBookSnapshot,
-    ) -> Result<crate::proto::MarketDataMessage> {
+    ) -> crate::proto::MarketDataMessage {
         use crate::proto::{MarketDataMessage, OrderBookSnapshot as ProtoOrderBook, PriceLevel};
 
         let proto_snapshot = ProtoOrderBook {
@@ -467,18 +479,15 @@ impl SnapshotService {
             sequence: snapshot.sequence as i64,
         };
 
-        Ok(MarketDataMessage {
+        MarketDataMessage {
             data: Some(crate::proto::market_data_message::Data::Orderbook(
                 proto_snapshot,
             )),
-        })
+        }
     }
 
     /// Create protobuf message from trade snapshot
-    fn create_trade_message(
-        &self,
-        snapshot: &TradeSnapshot,
-    ) -> Result<crate::proto::MarketDataMessage> {
+    fn create_trade_message(&self, snapshot: &TradeSnapshot) -> crate::proto::MarketDataMessage {
         use crate::proto::{MarketDataMessage, Trade as ProtoTrade};
 
         let proto_trade = ProtoTrade {
@@ -490,9 +499,9 @@ impl SnapshotService {
             trade_id: snapshot.trade_id.to_string(),
         };
 
-        Ok(MarketDataMessage {
+        MarketDataMessage {
             data: Some(crate::proto::market_data_message::Data::Trade(proto_trade)),
-        })
+        }
     }
 
     /// Get snapshot service metrics
@@ -517,7 +526,7 @@ impl SnapshotService {
     }
 
     /// Force flush current batch (for testing or manual operations)
-    pub async fn force_flush(&self) -> Result<()> {
+    pub async fn force_flush(&self) -> RavenResult<()> {
         self.flush_current_batch().await
     }
 

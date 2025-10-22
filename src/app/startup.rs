@@ -1,7 +1,10 @@
 use crate::{
     circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
     client_manager::{ClientManager, ClientManagerConfig},
-    config::{Config, ConfigManager, ConfigUtils},
+    config::{
+        ConfigLoader, ConfigManager, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig,
+        ServerConfig,
+    },
     database::{
         DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
         InfluxWriteRetryHandler,
@@ -13,6 +16,7 @@ use crate::{
     subscription_manager::SubscriptionManager,
     types::HighFrequencyStorage,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -20,68 +24,65 @@ use tracing::{error, info, warn};
 use crate::app::cli::CliArgs;
 
 /// Validate system dependencies and requirements
-pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
+pub async fn validate_dependencies(
+    server: &ServerConfig,
+    monitoring: &MonitoringConfig,
+) -> RavenResult<()> {
     info!("Validating system dependencies...");
 
     // Check if we can bind to the specified port
-    let bind_addr = format!("{}:{}", config.server.host, config.server.port);
+    let bind_addr = format!("{}:{}", server.host, server.port);
     match tokio::net::TcpListener::bind(&bind_addr).await {
         Ok(listener) => {
             drop(listener);
-            info!("  * Port {} is available for binding", config.server.port);
+            info!("  * Port {} is available for binding", server.port);
         }
         Err(e) => {
             error!("  * Cannot bind to {}: {}", bind_addr, e);
             return Err(RavenError::configuration(format!(
                 "  * Port {} is not available: {e}",
-                config.server.port
+                server.port
             )));
         }
     }
 
     // Check if metrics port is available
-    let metrics_bind_addr = format!("{}:{}", config.server.host, config.monitoring.metrics_port);
+    let metrics_bind_addr = format!("{}:{}", server.host, monitoring.metrics_port);
     match tokio::net::TcpListener::bind(&metrics_bind_addr).await {
         Ok(listener) => {
             drop(listener);
-            info!(
-                "  * Metrics port {} is available",
-                config.monitoring.metrics_port
-            );
+            info!("  * Metrics port {} is available", monitoring.metrics_port);
         }
         Err(e) => {
             error!(
                 "  * Cannot bind to metrics port {}: {e}",
-                config.monitoring.metrics_port,
+                monitoring.metrics_port,
             );
             return Err(RavenError::configuration(format!(
                 "  * Metrics port {} is not available: {e}",
-                config.monitoring.metrics_port,
+                monitoring.metrics_port,
             )));
         }
     }
 
     // Check if health check port is available
-    let health_bind_addr = format!(
-        "{}:{}",
-        config.server.host, config.monitoring.health_check_port
-    );
+    let health_bind_addr = format!("{}:{}", server.host, monitoring.health_check_port);
     match tokio::net::TcpListener::bind(&health_bind_addr).await {
         Ok(listener) => {
             drop(listener);
             info!(
                 "  * Health check port {} is available",
-                config.monitoring.health_check_port
+                monitoring.health_check_port
             );
         }
         Err(e) => {
             error!(
                 "  * Cannot bind to health check port {}: {}",
-                config.monitoring.health_check_port, e
+                monitoring.health_check_port, e
             );
             return Err(RavenError::configuration(format!(
                 "  * Health check port {} is not available: {}",
-                config.monitoring.health_check_port, e
+                monitoring.health_check_port, e
             )));
         }
     }
@@ -91,12 +92,8 @@ pub async fn validate_dependencies(config: &Config) -> RavenResult<()> {
 }
 
 /// Initialize logging with the provided configuration
-pub fn initialize_logging(args: &CliArgs) -> RavenResult<()> {
-    let basic_logging = LoggingConfig {
-        level: args.log_level.clone().unwrap_or_else(|| "info".to_string()),
-        format: "pretty".to_string(),
-        ..Default::default()
-    };
+pub fn initialize_logging(_args: &CliArgs) -> RavenResult<()> {
+    let basic_logging = LoggingConfig::default();
 
     if let Err(e) = init_logging(&basic_logging) {
         eprintln!("Failed to initialize logging: {e}");
@@ -106,10 +103,24 @@ pub fn initialize_logging(args: &CliArgs) -> RavenResult<()> {
     Ok(())
 }
 
+/// Build a configuration loader based on CLI arguments.
+pub fn build_config_loader(args: &CliArgs) -> ConfigLoader {
+    let mut loader = ConfigLoader::new();
+
+    if let Some(path) = &args.config_file {
+        loader = loader.with_file(PathBuf::from(path));
+    }
+
+    loader
+}
+
 /// Load and validate configuration with CLI overrides
-pub fn load_and_validate_config(args: &CliArgs) -> RavenResult<Config> {
-    // Initialize configuration with optional custom config file
-    let mut config = match Config::load_with_file(args.config_file.as_deref()) {
+pub fn load_and_validate_config(
+    loader: &ConfigLoader,
+    args: &CliArgs,
+) -> RavenResult<RuntimeConfig> {
+    // Initialize configuration using the selected loader
+    let mut config = match RuntimeConfig::load_with_loader(loader) {
         Ok(config) => {
             info!("Configuration loaded successfully");
             config
@@ -125,23 +136,6 @@ pub fn load_and_validate_config(args: &CliArgs) -> RavenResult<Config> {
     config = crate::app::cli::apply_cli_overrides(config, args);
 
     // Handle special CLI modes
-    if args.validate_only {
-        info!("Validating configuration only...");
-        if let Err(e) = config.validate() {
-            error!("Configuration validation failed: {}", e);
-            return Err(RavenError::configuration(e.to_string()));
-        }
-        info!("Configuration validation passed");
-        println!("Configuration is valid!");
-        std::process::exit(0);
-    }
-
-    if args.print_config {
-        info!("Printing configuration...");
-        ConfigUtils::print_config(&config);
-        std::process::exit(0);
-    }
-
     // Print configuration summary
     ConfigUtils::print_config(&config);
 
@@ -153,12 +147,9 @@ pub fn load_and_validate_config(args: &CliArgs) -> RavenResult<Config> {
 }
 
 /// Initialize configuration manager with hot-reloading
-pub async fn initialize_config_manager() -> RavenResult<ConfigManager> {
-    let config_manager = ConfigManager::new(
-        "config/default.toml".to_string(),
-        Duration::from_secs(5), // Check every 5 seconds
-    )
-    .map_err(|e| RavenError::configuration(e.to_string()))?;
+pub async fn initialize_config_manager(loader: ConfigLoader) -> RavenResult<ConfigManager> {
+    let config_manager = ConfigManager::new(loader, Duration::from_secs(5))
+        .map_err(|e| RavenError::configuration(e.to_string()))?;
 
     // Start hot-reload monitoring
     if let Err(e) = config_manager.start_hot_reload().await {
@@ -241,18 +232,18 @@ pub async fn initialize_circuit_breakers() -> RavenResult<Arc<CircuitBreakerRegi
 
 /// Initialize InfluxDB client with enhanced error handling
 pub async fn initialize_influx_client(
-    config: &Config,
+    database: &DatabaseConfig,
     dead_letter_queue: Arc<DeadLetterQueue>,
 ) -> RavenResult<(Arc<InfluxClient>, Arc<EnhancedInfluxClient>)> {
     let influx_config = InfluxConfig {
-        url: config.database.influx_url.clone(),
-        bucket: config.database.bucket.clone(),
-        org: config.database.org.clone(),
-        token: config.database.token.clone(),
-        pool_size: config.database.connection_pool_size,
-        timeout: Duration::from_secs(config.database.connection_timeout_seconds),
-        retry_attempts: config.database.retry_attempts,
-        retry_delay: Duration::from_millis(config.database.retry_delay_ms),
+        url: database.influx_url.clone(),
+        bucket: database.bucket.clone(),
+        org: database.org.clone(),
+        token: database.token.clone(),
+        pool_size: database.connection_pool_size,
+        timeout: Duration::from_secs(database.connection_timeout_seconds),
+        retry_attempts: database.retry_attempts,
+        retry_delay: Duration::from_millis(database.retry_delay_ms),
         batch_size: 1000, // Default batch size since it's not in config
         flush_interval: Duration::from_millis(5), // Default flush interval since it's not in config
     };
@@ -283,9 +274,9 @@ pub async fn initialize_influx_client(
 }
 
 /// Initialize client manager
-pub async fn initialize_client_manager(config: &Config) -> RavenResult<Arc<ClientManager>> {
+pub async fn initialize_client_manager(server: &ServerConfig) -> RavenResult<Arc<ClientManager>> {
     let client_manager_config = ClientManagerConfig {
-        max_clients: config.server.max_connections,
+        max_clients: server.max_connections,
         heartbeat_timeout: Duration::from_secs(60),
         health_check_interval: Duration::from_secs(30),
         disconnection_grace_period: Duration::from_secs(10),
@@ -313,7 +304,7 @@ pub async fn initialize_client_manager(config: &Config) -> RavenResult<Arc<Clien
 
 /// Initialize monitoring and observability services
 pub async fn initialize_monitoring_services(
-    config: &Config,
+    monitoring: &MonitoringConfig,
     influx_client: Arc<InfluxClient>,
     subscription_manager: Arc<SubscriptionManager>,
     hf_storage: Arc<HighFrequencyStorage>,
@@ -321,7 +312,7 @@ pub async fn initialize_monitoring_services(
     info!("Initializing monitoring and observability services...");
 
     // Initialize tracing service
-    let tracing_service = Arc::new(TracingService::new(config.monitoring.clone()));
+    let tracing_service = Arc::new(TracingService::new(monitoring.clone()));
     if let Err(e) = tracing_service.initialize().await {
         log_error_with_context(
             &RavenError::internal(e.to_string()),
@@ -334,12 +325,11 @@ pub async fn initialize_monitoring_services(
 
     // Initialize metrics service
     let metrics_service = Arc::new(
-        MetricsService::new(config.monitoring.clone())
-            .map_err(|e| RavenError::internal(e.to_string()))?,
+        MetricsService::new(monitoring.clone()).map_err(|e| RavenError::internal(e.to_string()))?,
     );
 
     let health_service = Arc::new(HealthService::new(
-        config.monitoring.clone(),
+        monitoring.clone(),
         Arc::clone(&influx_client),
         Arc::clone(&subscription_manager),
         Arc::clone(&hf_storage),
@@ -359,14 +349,11 @@ pub async fn initialize_monitoring_services(
         .map_err(|e| RavenError::internal(e.to_string()))?;
 
     info!("Monitoring services started:");
-    info!(
-        "  Health checks on port {}",
-        config.monitoring.health_check_port
-    );
-    info!("  Metrics on port {}", config.monitoring.metrics_port);
+    info!("  Health checks on port {}", monitoring.health_check_port);
+    info!("  Metrics on port {}", monitoring.metrics_port);
     info!(
         "  Distributed tracing enabled: {}",
-        config.monitoring.tracing_enabled
+        monitoring.tracing_enabled
     );
 
     Ok((monitoring_service, monitoring_handles))

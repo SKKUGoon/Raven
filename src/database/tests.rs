@@ -1,6 +1,6 @@
 #[cfg(test)]
 use crate::citadel::storage::{
-    CandleData, FundingRateData, OrderBookSnapshot, TradeSide, TradeSnapshot,
+    CandleData, FundingRateData, OrderBookLevel, OrderBookSnapshot, TradeSide, TradeSnapshot,
 };
 #[cfg(test)]
 use crate::database::dead_letter_queue::{DeadLetterQueue, DeadLetterQueueConfig};
@@ -32,6 +32,14 @@ async fn test_database_dead_letter_helper_orderbook() {
         best_ask_price: 45001.0,
         best_ask_quantity: 1.2,
         sequence: 12345,
+        bid_levels: vec![OrderBookLevel {
+            price: 45000.0,
+            quantity: 1.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 45001.0,
+            quantity: 1.2,
+        }],
     };
 
     let entry =
@@ -136,6 +144,14 @@ fn test_datapoint_creation_orderbook() {
         best_ask_price: 45001.0,
         best_ask_quantity: 1.2,
         sequence: 12345,
+        bid_levels: vec![OrderBookLevel {
+            price: 45000.0,
+            quantity: 1.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 45001.0,
+            quantity: 1.2,
+        }],
     };
 
     let datapoint = create_orderbook_datapoint(&snapshot).unwrap();
@@ -268,9 +284,9 @@ async fn test_bucket_provision_creates_bucket_when_missing() {
     let client = InfluxClient::new(config);
     client.ensure_bucket_exists_for_tests().await.unwrap();
 
-    list_mock.assert_async().await;
-    org_mock.assert_async().await;
-    create_mock.assert_async().await;
+    list_mock.assert();
+    org_mock.assert();
+    create_mock.assert();
 }
 
 #[tokio::test]
@@ -316,8 +332,8 @@ async fn test_bucket_provision_noop_when_bucket_exists() {
     let client = InfluxClient::new(config);
     client.ensure_bucket_exists_for_tests().await.unwrap();
 
-    list_mock.assert_async().await;
-    create_mock.assert_async().await;
+    list_mock.assert();
+    create_mock.assert();
 }
 
 #[tokio::test]
@@ -348,7 +364,7 @@ async fn test_bucket_provision_unauthorized_error() {
     let result = client.ensure_bucket_exists_for_tests().await;
 
     assert!(result.is_err());
-    list_mock.assert_async().await;
+    list_mock.assert();
 }
 
 #[tokio::test]
@@ -383,6 +399,14 @@ async fn test_write_operations() {
         best_ask_price: 45001.0,
         best_ask_quantity: 1.2,
         sequence: 12345,
+        bid_levels: vec![OrderBookLevel {
+            price: 45000.0,
+            quantity: 1.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 45001.0,
+            quantity: 1.2,
+        }],
     };
 
     // This will fail because we don't have a real InfluxDB connection,
@@ -502,6 +526,14 @@ async fn test_batch_write_with_datapoints() {
         best_ask_price: 45001.0,
         best_ask_quantity: 1.2,
         sequence: 12345,
+        bid_levels: vec![OrderBookLevel {
+            price: 45000.0,
+            quantity: 1.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 45001.0,
+            quantity: 1.2,
+        }],
     };
 
     let snapshot2 = OrderBookSnapshot {
@@ -513,6 +545,14 @@ async fn test_batch_write_with_datapoints() {
         best_ask_price: 3501.0,
         best_ask_quantity: 2.2,
         sequence: 12346,
+        bid_levels: vec![OrderBookLevel {
+            price: 3500.0,
+            quantity: 2.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 3501.0,
+            quantity: 2.2,
+        }],
     };
 
     let datapoint1 = create_orderbook_datapoint(&snapshot1).unwrap();

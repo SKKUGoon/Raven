@@ -13,7 +13,7 @@ mod tests;
 
 // Re-export commonly used types
 pub use atomic::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage};
-pub use snapshots::{OrderBookSnapshot, TradeSnapshot};
+pub use snapshots::{OrderBookLevel, OrderBookSnapshot, TradeSnapshot};
 
 // Constants for price/quantity conversion
 pub const PRICE_SCALE: f64 = 100_000_000.0; // 8 decimal places precision

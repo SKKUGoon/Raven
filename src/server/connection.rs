@@ -1,10 +1,10 @@
 // Connection management for the gRPC server
 
-use anyhow::{anyhow, Result};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::debug;
 
+use crate::error::{RavenError, RavenResult};
 use crate::monitoring::MetricsCollector;
 
 /// Manages active connections and enforces connection limits
@@ -35,13 +35,16 @@ impl ConnectionManager {
     pub async fn increment_connections(
         &self,
         metrics: Option<&Arc<MetricsCollector>>,
-    ) -> Result<()> {
+    ) -> RavenResult<()> {
         let mut connections = self.active_connections.write().await;
         if *connections >= self.max_connections {
             if let Some(metrics) = metrics {
                 metrics.record_error("max_connections_reached", "server");
             }
-            return Err(anyhow!("Maximum connections reached"));
+            return Err(RavenError::max_connections_exceeded(
+                *connections,
+                self.max_connections,
+            ));
         }
         *connections += 1;
         debug!("⟐ Active connections: {}", *connections);

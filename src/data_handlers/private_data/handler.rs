@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -10,6 +9,7 @@ use super::{
     ClientPermissions, PositionUpdateData, PrivateData, PrivateDataConfig, PrivateDataMetrics,
     PrivateDataStorage, SecureChannelMessage, WalletUpdateData,
 };
+use crate::error::{RavenError, RavenResult};
 
 /// Private data handler with secure processing and client isolation
 pub struct PrivateDataHandler {
@@ -42,7 +42,7 @@ impl PrivateDataHandler {
         }
     }
 
-    pub async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> RavenResult<()> {
         let mut processing_active = self.processing_active.write().await;
         if *processing_active {
             return Ok(());
@@ -51,7 +51,7 @@ impl PrivateDataHandler {
         let mut receiver_guard = self.receiver.write().await;
         let receiver = receiver_guard
             .take()
-            .ok_or_else(|| anyhow::anyhow!("Handler already started"))?;
+            .ok_or_else(|| RavenError::internal("Handler already started"))?;
         drop(receiver_guard);
 
         *processing_active = true;
@@ -66,14 +66,14 @@ impl PrivateDataHandler {
         Ok(())
     }
 
-    pub async fn stop(&self) -> Result<()> {
+    pub async fn stop(&self) -> RavenResult<()> {
         let mut processing_active = self.processing_active.write().await;
         *processing_active = false;
         info!("■ Private data handler stopped");
         Ok(())
     }
 
-    pub async fn ingest_wallet_update(&self, data: &WalletUpdateData) -> Result<()> {
+    pub async fn ingest_wallet_update(&self, data: &WalletUpdateData) -> RavenResult<()> {
         self.validate_wallet_data(data)?;
 
         let message = SecureChannelMessage {
@@ -85,12 +85,14 @@ impl PrivateDataHandler {
                 .as_secs() as i64,
         };
 
-        self.sender.send(message)?;
+        self.sender
+            .send(message)
+            .map_err(|e| RavenError::internal(format!("Failed to enqueue wallet update: {e}")))?;
         debug!("⚿ Wallet update queued for user {}", data.user_id);
         Ok(())
     }
 
-    pub async fn ingest_position_update(&self, data: &PositionUpdateData) -> Result<()> {
+    pub async fn ingest_position_update(&self, data: &PositionUpdateData) -> RavenResult<()> {
         self.validate_position_data(data)?;
 
         let message = SecureChannelMessage {
@@ -102,7 +104,9 @@ impl PrivateDataHandler {
                 .as_secs() as i64,
         };
 
-        self.sender.send(message)?;
+        self.sender
+            .send(message)
+            .map_err(|e| RavenError::internal(format!("Failed to enqueue position update: {e}")))?;
         debug!(
             "⚿ Position update queued for user {} symbol {}",
             data.user_id, data.symbol
@@ -114,7 +118,7 @@ impl PrivateDataHandler {
         &self,
         client_id: &str,
         permissions: ClientPermissions,
-    ) -> Result<()> {
+    ) -> RavenResult<()> {
         self.storage.register_client(client_id, permissions);
         info!("⚿ Client {} registered", client_id);
         Ok(())
@@ -124,14 +128,14 @@ impl PrivateDataHandler {
         &self,
         user_id: &str,
         client_id: &str,
-    ) -> Result<Option<Vec<WalletUpdateData>>> {
+    ) -> RavenResult<Option<Vec<WalletUpdateData>>> {
         match self.storage.get_wallet_updates(user_id, client_id) {
             Ok(data) => Ok(data),
             Err(_) => {
                 self.metrics
                     .access_denied_count
                     .fetch_add(1, Ordering::Relaxed);
-                Err(anyhow::anyhow!("Access denied"))
+                Err(RavenError::authorization("Access denied"))
             }
         }
     }
@@ -140,14 +144,14 @@ impl PrivateDataHandler {
         &self,
         user_id: &str,
         client_id: &str,
-    ) -> Result<Option<Vec<PositionUpdateData>>> {
+    ) -> RavenResult<Option<Vec<PositionUpdateData>>> {
         match self.storage.get_position_updates(user_id, client_id) {
             Ok(data) => Ok(data),
             Err(_) => {
                 self.metrics
                     .access_denied_count
                     .fetch_add(1, Ordering::Relaxed);
-                Err(anyhow::anyhow!("Access denied"))
+                Err(RavenError::authorization("Access denied"))
             }
         }
     }
@@ -192,7 +196,7 @@ impl PrivateDataHandler {
         info!("⚿ Private data processing loop stopped");
     }
 
-    async fn process_message(&self, message: &SecureChannelMessage) -> Result<()> {
+    async fn process_message(&self, message: &SecureChannelMessage) -> RavenResult<()> {
         match &message.data {
             PrivateData::WalletUpdate(wallet) => {
                 self.storage.add_wallet_update(wallet);
@@ -215,39 +219,41 @@ impl PrivateDataHandler {
         Ok(())
     }
 
-    fn validate_wallet_data(&self, data: &WalletUpdateData) -> Result<()> {
+    fn validate_wallet_data(&self, data: &WalletUpdateData) -> RavenResult<()> {
         if data.user_id.is_empty() {
-            return Err(anyhow::anyhow!("User ID cannot be empty"));
+            return Err(RavenError::data_validation("User ID cannot be empty"));
         }
         if data.timestamp <= 0 {
-            return Err(anyhow::anyhow!("Invalid timestamp"));
+            return Err(RavenError::data_validation("Invalid timestamp"));
         }
         if data.balances.is_empty() {
-            return Err(anyhow::anyhow!("Balances cannot be empty"));
+            return Err(RavenError::data_validation("Balances cannot be empty"));
         }
         for balance in &data.balances {
             if balance.available < 0.0 || balance.locked < 0.0 {
-                return Err(anyhow::anyhow!("Balance amounts cannot be negative"));
+                return Err(RavenError::data_validation(
+                    "Balance amounts cannot be negative",
+                ));
             }
         }
         Ok(())
     }
 
-    fn validate_position_data(&self, data: &PositionUpdateData) -> Result<()> {
+    fn validate_position_data(&self, data: &PositionUpdateData) -> RavenResult<()> {
         if data.user_id.is_empty() {
-            return Err(anyhow::anyhow!("User ID cannot be empty"));
+            return Err(RavenError::data_validation("User ID cannot be empty"));
         }
         if data.symbol.is_empty() {
-            return Err(anyhow::anyhow!("Symbol cannot be empty"));
+            return Err(RavenError::data_validation("Symbol cannot be empty"));
         }
         if data.timestamp <= 0 {
-            return Err(anyhow::anyhow!("Invalid timestamp"));
+            return Err(RavenError::data_validation("Invalid timestamp"));
         }
         if !matches!(data.side.as_str(), "long" | "short") {
-            return Err(anyhow::anyhow!("Invalid position side"));
+            return Err(RavenError::data_validation("Invalid position side"));
         }
         if data.entry_price <= 0.0 || data.mark_price <= 0.0 {
-            return Err(anyhow::anyhow!("Prices must be positive"));
+            return Err(RavenError::data_validation("Prices must be positive"));
         }
         Ok(())
     }

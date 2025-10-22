@@ -1,20 +1,20 @@
 // Configuration Utilities - Project Raven
 // "Tools to shape and mold the realm's rules"
 
-use anyhow::Result;
 use serde_json;
 use std::collections::HashMap;
 use std::env;
 use tracing::{info, warn};
 
-use super::Config;
+use super::RuntimeConfig;
+use crate::error::{RavenError, RavenResult};
 
 /// Configuration utilities for debugging and validation
 pub struct ConfigUtils;
 
 impl ConfigUtils {
     /// Print current configuration in a readable format
-    pub fn print_config(config: &Config) {
+    pub fn print_config(config: &RuntimeConfig) {
         info!("Current Configuration for Project Raven:");
         info!("  Server: {}:{}", config.server.host, config.server.port);
         info!("  Max Connections: {}", config.server.max_connections);
@@ -41,7 +41,7 @@ impl ConfigUtils {
     }
 
     /// Get configuration summary for health checks
-    pub fn get_config_summary(config: &Config) -> HashMap<String, String> {
+    pub fn get_config_summary(config: &RuntimeConfig) -> HashMap<String, String> {
         let mut summary = HashMap::new();
 
         summary.insert("server_host".to_string(), config.server.host.clone());
@@ -70,13 +70,12 @@ impl ConfigUtils {
     }
 
     /// Export configuration as JSON for debugging
-    pub fn export_as_json(config: &Config) -> Result<String> {
-        serde_json::to_string_pretty(config)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config to JSON: {}", e))
+    pub fn export_as_json(config: &RuntimeConfig) -> RavenResult<String> {
+        serde_json::to_string_pretty(config).map_err(RavenError::from)
     }
 
     /// Check for common configuration issues
-    pub fn check_configuration_health(config: &Config) -> Vec<String> {
+    pub fn check_configuration_health(config: &RuntimeConfig) -> Vec<String> {
         let mut warnings = Vec::new();
 
         // Check for potential performance issues
@@ -104,19 +103,14 @@ impl ConfigUtils {
         }
 
         // Check retention policies
-        if config
-            .retention_policies
-            .high_frequency
-            .full_resolution_days
-            > 30
-        {
+        if config.retention.high_frequency.full_resolution_days > 30 {
             warnings.push(
                 "High frequency data retention > 30 days may consume significant storage"
                     .to_string(),
             );
         }
 
-        if !config.retention_policies.private_data.auto_cleanup {
+        if !config.retention.private_data.auto_cleanup {
             warnings
                 .push("Private data auto-cleanup disabled - manual cleanup required".to_string());
         }
@@ -176,7 +170,7 @@ impl ConfigUtils {
     }
 
     /// Validate environment variables are properly set
-    pub fn validate_environment() -> Result<()> {
+    pub fn validate_environment() -> RavenResult<()> {
         // With TOML-first configuration, environment variables are optional
         // Only check for ENVIRONMENT variable
         if env::var("ENVIRONMENT").is_err() {
@@ -247,9 +241,12 @@ pub struct ConfigValidator;
 
 impl ConfigValidator {
     /// Validate port ranges
-    pub fn validate_port(port: u16, name: &str) -> Result<()> {
+    pub fn validate_port(port: u16, name: &str) -> RavenResult<()> {
         if port == 0 {
-            return Err(anyhow::anyhow!("{} port cannot be 0", name));
+            return Err(RavenError::invalid_config_value(
+                format!("{name}_port"),
+                port.to_string(),
+            ));
         }
         if port < 1024 {
             warn!("!!! {} port {} requires elevated privileges", name, port);
@@ -258,29 +255,29 @@ impl ConfigValidator {
     }
 
     /// Validate URL format
-    pub fn validate_url(url: &str, name: &str) -> Result<()> {
+    pub fn validate_url(url: &str, name: &str) -> RavenResult<()> {
         if url.is_empty() {
-            return Err(anyhow::anyhow!("{} URL cannot be empty", name));
+            return Err(RavenError::invalid_config_value(
+                format!("{name}_url"),
+                "<empty>".to_string(),
+            ));
         }
 
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err(anyhow::anyhow!(
-                "{} URL must start with http:// or https://",
-                name
-            ));
+            return Err(RavenError::config_error(format!(
+                "{name} URL must start with http:// or https://"
+            )));
         }
 
         Ok(())
     }
 
     /// Validate buffer sizes
-    pub fn validate_buffer_size(size: usize, name: &str, min_size: usize) -> Result<()> {
+    pub fn validate_buffer_size(size: usize, name: &str, min_size: usize) -> RavenResult<()> {
         if size < min_size {
-            return Err(anyhow::anyhow!(
-                "{} buffer size {} is below minimum {}",
-                name,
-                size,
-                min_size
+            return Err(RavenError::invalid_config_value(
+                format!("{name}_buffer_size"),
+                size.to_string(),
             ));
         }
 
@@ -295,9 +292,12 @@ impl ConfigValidator {
     }
 
     /// Validate timeout values
-    pub fn validate_timeout(timeout_ms: u64, name: &str) -> Result<()> {
+    pub fn validate_timeout(timeout_ms: u64, name: &str) -> RavenResult<()> {
         if timeout_ms == 0 {
-            return Err(anyhow::anyhow!("{} timeout cannot be 0", name));
+            return Err(RavenError::invalid_config_value(
+                format!("{name}_timeout_ms"),
+                timeout_ms.to_string(),
+            ));
         }
 
         if timeout_ms > 300_000 {
