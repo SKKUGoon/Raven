@@ -29,12 +29,10 @@ nano config/secret.toml  # Add production tokens and URLs
 
 ```bash
 # Development (default)
-./scripts/run-env.sh development
-# or simply
-./scripts/run-env.sh
+ENVIRONMENT=development cargo run --bin raven
 
 # Production
-./scripts/run-env.sh production
+ENVIRONMENT=production cargo run --bin raven
 ```
 
 ## Configuration Files
@@ -98,10 +96,10 @@ After updating your configuration file, launch the application directly:
 
 ```bash
 # Development
-./scripts/run-env.sh development
+ENVIRONMENT=development cargo run --bin raven
 
 # Production
-./scripts/run-env.sh production
+ENVIRONMENT=production cargo run --bin raven
 ```
 
 ## Security Best Practices
@@ -130,10 +128,10 @@ nano config/development.toml  # Add your dev settings
 nano config/secret.toml       # Add production secrets
 
 # Run development
-./scripts/run-env.sh development
+ENVIRONMENT=development cargo run --bin raven
 
 # Run production
-./scripts/run-env.sh production
+ENVIRONMENT=production cargo run --bin raven
 ```
 
 ### File Summary

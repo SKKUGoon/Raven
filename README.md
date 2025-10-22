@@ -58,17 +58,22 @@ nano config/development.toml
 
 ### 4. Run Server
 ```bash
-./scripts/run-env.sh          # defaults to ENVIRONMENT=development
-# or
 ENVIRONMENT=development cargo run --bin raven
 # or
 make run
 ```
 
-Need a different config? Point the CLI at it directly:
+To target another environment, set `ENVIRONMENT` accordingly (e.g., `ENVIRONMENT=production cargo run --bin raven`) or pass an explicit config file. Need a different config? Point the CLI at it directly:
 
 ```bash
 cargo run --bin raven -- --config config/secret.toml
+```
+
+You can also export the variable once per shell session:
+
+```bash
+export ENVIRONMENT=development
+cargo run --bin raven
 ```
 
 Stream multiple Binance futures symbols (max 10) by passing `--symbols`:
