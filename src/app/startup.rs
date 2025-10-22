@@ -1,11 +1,12 @@
 use crate::{
-    circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
+    citadel::storage::HighFrequencyStorage,
     client_manager::{ClientManager, ClientManagerConfig},
     config::{
         ConfigLoader, ConfigManager, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig,
         ServerConfig,
     },
     database::{
+        circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
         DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
         InfluxWriteRetryHandler,
     },
@@ -14,7 +15,6 @@ use crate::{
     monitoring::{CrowService, HealthService, MetricsService, TracingService},
     raven_bail,
     subscription_manager::SubscriptionManager,
-    types::HighFrequencyStorage,
 };
 use std::path::PathBuf;
 use std::sync::Arc;

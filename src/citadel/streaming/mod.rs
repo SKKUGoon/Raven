@@ -7,8 +7,9 @@ pub use metrics::SnapshotMetrics;
 use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use crate::database::influx_client::InfluxClient;
 use crate::error::RavenResult;
-use crate::exchanges::types::Exchange;
+use crate::exchanges::types::parse_exchange_symbol_key;
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
+use crate::time::current_timestamp_millis;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -29,10 +30,7 @@ impl SnapshotBatch {
         Self {
             orderbook_snapshots: Vec::new(),
             trade_snapshots: Vec::new(),
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64,
+            timestamp: current_timestamp_millis(),
         }
     }
 
@@ -237,7 +235,7 @@ impl SnapshotService {
 
         // Capture orderbook snapshots
         for key in orderbook_symbols {
-            if let Some((exchange, symbol)) = self.parse_key(&key) {
+            if let Some((exchange, symbol)) = parse_exchange_symbol_key(&key) {
                 match self.storage.get_orderbook_snapshot(&symbol, &exchange) {
                     Some(snapshot) => {
                         // Add to batch for persistence
@@ -247,22 +245,39 @@ impl SnapshotService {
 
                         // Broadcast to subscribed clients
                         if self.config.broadcast_enabled {
-                            match self.broadcast_orderbook_snapshot(&snapshot).await {
-                                Ok(_) => {
-                                    self.metrics
-                                        .client_broadcasts
-                                        .fetch_add(1, Ordering::Relaxed);
-                                    info!(
-                                        "Successfully broadcast orderbook for {} seq:{}",
-                                        symbol, snapshot.sequence
-                                    );
+                            if self
+                                .subscription_manager
+                                .has_subscribers(&symbol, SubscriptionDataType::Orderbook)
+                            {
+                                match self.broadcast_orderbook_snapshot(&snapshot).await {
+                                    Ok(sent) => {
+                                        if sent > 0 {
+                                            self.metrics
+                                                .client_broadcasts
+                                                .fetch_add(1, Ordering::Relaxed);
+                                            info!(
+                                                "Successfully broadcast orderbook for {} seq:{}",
+                                                symbol, snapshot.sequence
+                                            );
+                                        } else {
+                                            debug!(
+                                                "Orderbook broadcast for {} skipped after send attempt - no active subscribers",
+                                                symbol
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to broadcast orderbook snapshot for {}: {}",
+                                            symbol, e
+                                        );
+                                    }
                                 }
-                                Err(e) => {
-                                    error!(
-                                        "Failed to broadcast orderbook snapshot for {}: {}",
-                                        symbol, e
-                                    );
-                                }
+                            } else {
+                                debug!(
+                                    "Skipping orderbook broadcast for {} - no active subscribers",
+                                    symbol
+                                );
                             }
                         }
 
@@ -280,7 +295,7 @@ impl SnapshotService {
 
         // Capture trade snapshots
         for key in trade_symbols {
-            if let Some((exchange, symbol)) = self.parse_key(&key) {
+            if let Some((exchange, symbol)) = parse_exchange_symbol_key(&key) {
                 match self.storage.get_trade_snapshot(&symbol, &exchange) {
                     Some(snapshot) => {
                         // Add to batch for persistence
@@ -290,22 +305,39 @@ impl SnapshotService {
 
                         // Broadcast to subscribed clients
                         if self.config.broadcast_enabled {
-                            match self.broadcast_trade_snapshot(&snapshot).await {
-                                Ok(_) => {
-                                    self.metrics
-                                        .client_broadcasts
-                                        .fetch_add(1, Ordering::Relaxed);
-                                    info!(
-                                        "Successfully broadcast trade for {} price:{}",
-                                        symbol, snapshot.price
-                                    );
+                            if self
+                                .subscription_manager
+                                .has_subscribers(&symbol, SubscriptionDataType::Trades)
+                            {
+                                match self.broadcast_trade_snapshot(&snapshot).await {
+                                    Ok(sent) => {
+                                        if sent > 0 {
+                                            self.metrics
+                                                .client_broadcasts
+                                                .fetch_add(1, Ordering::Relaxed);
+                                            info!(
+                                                "Successfully broadcast trade for {} price:{}",
+                                                symbol, snapshot.price
+                                            );
+                                        } else {
+                                            debug!(
+                                                "Trade broadcast for {} skipped after send attempt - no active subscribers",
+                                                symbol
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to broadcast trade snapshot for {}: {}",
+                                            symbol, e
+                                        );
+                                    }
                                 }
-                                Err(e) => {
-                                    error!(
-                                        "Failed to broadcast trade snapshot for {}: {}",
-                                        symbol, e
-                                    );
-                                }
+                            } else {
+                                debug!(
+                                    "Skipping trade broadcast for {} - no active subscribers",
+                                    symbol
+                                );
                             }
                         }
 
@@ -334,7 +366,10 @@ impl SnapshotService {
     }
 
     /// Broadcast orderbook snapshot to subscribed gRPC clients
-    async fn broadcast_orderbook_snapshot(&self, snapshot: &OrderBookSnapshot) -> RavenResult<()> {
+    async fn broadcast_orderbook_snapshot(
+        &self,
+        snapshot: &OrderBookSnapshot,
+    ) -> RavenResult<usize> {
         // Convert to protobuf message
         let message = self.create_orderbook_message(snapshot);
 
@@ -349,16 +384,11 @@ impl SnapshotService {
                 )
             })?;
 
-        info!(
-            "⟐ Broadcast orderbook snapshot for {} to {} clients",
-            snapshot.symbol, sent_count
-        );
-
-        Ok(())
+        Ok(sent_count)
     }
 
     /// Broadcast trade snapshot to subscribed gRPC clients
-    async fn broadcast_trade_snapshot(&self, snapshot: &TradeSnapshot) -> RavenResult<()> {
+    async fn broadcast_trade_snapshot(&self, snapshot: &TradeSnapshot) -> RavenResult<usize> {
         // Convert to protobuf message
         let message = self.create_trade_message(snapshot);
 
@@ -373,12 +403,7 @@ impl SnapshotService {
                 )
             })?;
 
-        info!(
-            "⟐ Broadcast trade snapshot for {} to {} clients",
-            snapshot.symbol, sent_count
-        );
-
-        Ok(())
+        Ok(sent_count)
     }
 
     /// Batch writer loop for database persistence
@@ -538,27 +563,6 @@ impl SnapshotService {
     /// Get current batch size
     pub async fn get_current_batch_size(&self) -> usize {
         self.current_batch.read().await.len()
-    }
-
-    /// Parse exchange and symbol from storage key (format: "exchange:symbol")
-    fn parse_key(&self, key: &str) -> Option<(Exchange, String)> {
-        let parts: Vec<&str> = key.split(':').collect();
-        if parts.len() != 2 {
-            return None;
-        }
-
-        let exchange = match parts[0] {
-            "binance_spot" => Exchange::BinanceSpot,
-            "binance_futures" => Exchange::BinanceFutures,
-            // "coinbase" => Exchange::Coinbase,
-            // "kraken" => Exchange::Kraken,
-            // "bybit" => Exchange::Bybit,
-            // "okx" => Exchange::OKX,
-            // "deribit" => Exchange::Deribit,
-            _ => return None,
-        };
-
-        Some((exchange, parts[1].to_string()))
     }
 }
 

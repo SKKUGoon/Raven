@@ -18,11 +18,11 @@ pub use streaming::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotServ
 use crate::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::error::RavenResult;
 use crate::subscription_manager::SubscriptionManager;
+use crate::time::current_timestamp_millis;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
@@ -274,10 +274,7 @@ impl Citadel {
         let rules = self.validation_rules.read().await;
 
         // Validate timestamp
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let current_time = current_timestamp_millis();
 
         if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
             crate::raven_bail!(crate::raven_error!(
@@ -344,10 +341,7 @@ impl Citadel {
         let rules = self.validation_rules.read().await;
 
         // Validate timestamp
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let current_time = current_timestamp_millis();
 
         if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
             crate::raven_bail!(crate::raven_error!(

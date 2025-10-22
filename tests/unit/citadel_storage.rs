@@ -1,9 +1,9 @@
-use raven::exchanges::types::Exchange;
-use raven::types::{
+use raven::citadel::storage::{
     atomic_to_price, atomic_to_quantity, price_to_atomic, quantity_to_atomic, AtomicOrderBook,
     AtomicTrade, HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSide,
     TradeSnapshot, PRICE_SCALE, QUANTITY_SCALE,
 };
+use raven::exchanges::types::Exchange;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -270,12 +270,12 @@ fn test_price_quantity_conversion_functions() {
     let price = 45000.12345678;
     let atomic_price = price_to_atomic(price);
     let converted_back = atomic_to_price(atomic_price);
-    assert!((price - converted_back).abs() < 0.00000001);
+    assert!((price - converted_back).abs() < 0.00000001_f64);
 
     let quantity = 1.23456789;
     let atomic_quantity = quantity_to_atomic(quantity);
     let converted_back_qty = atomic_to_quantity(atomic_quantity);
-    assert!((quantity - converted_back_qty).abs() < 0.00000001);
+    assert!((quantity - converted_back_qty).abs() < 0.00000001_f64);
 }
 
 #[test]

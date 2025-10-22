@@ -2,9 +2,9 @@
 // "The Hand of the King's command interface"
 
 use clap::{Arg, Command};
+use raven::current_timestamp_millis;
 use raven::proto::control_service_client::ControlServiceClient;
 use raven::proto::{ListCollectionsRequest, StartCollectionRequest, StopCollectionRequest};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Application version information
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -191,10 +191,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Format uptime duration in a human-readable way
 fn format_uptime(started_at: i64) -> String {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as i64;
+    let now = current_timestamp_millis();
 
     let duration_ms = now - started_at;
 

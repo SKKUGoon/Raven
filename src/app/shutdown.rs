@@ -1,6 +1,8 @@
 use crate::{
-    circuit_breaker::CircuitBreakerRegistry, client_manager::ClientManager,
-    database::DeadLetterQueue, error::RavenResult, logging::log_error_with_context,
+    client_manager::ClientManager,
+    database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
+    error::RavenResult,
+    logging::log_error_with_context,
     monitoring::TracingService,
 };
 use std::sync::Arc;

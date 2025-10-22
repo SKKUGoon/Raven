@@ -1,8 +1,8 @@
+use raven::citadel::storage::HighFrequencyStorage;
 use raven::citadel::{Citadel, CitadelConfig};
 use raven::control::CollectorManager;
 use raven::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::subscription_manager::SubscriptionManager;
-use raven::types::HighFrequencyStorage;
 use std::sync::Arc;
 
 fn build_test_citadel() -> Arc<Citadel> {

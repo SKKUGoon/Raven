@@ -1,13 +1,14 @@
 use raven::citadel::storage::{
     CandleData, FundingRateData, OrderBookLevel, OrderBookSnapshot, TradeSide, TradeSnapshot,
 };
+use raven::current_timestamp_millis;
 use raven::database::dead_letter_queue::{DeadLetterQueue, DeadLetterQueueConfig};
 use raven::database::influx_client::{create_orderbook_datapoint, InfluxClient, InfluxConfig};
 use raven::database::EnhancedInfluxClient;
 use raven::exchanges::types::Exchange;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 #[tokio::test]
 async fn test_enhanced_influx_client_creation() {
@@ -47,10 +48,7 @@ async fn test_write_operations() {
     let snapshot = OrderBookSnapshot {
         symbol: "BTCUSDT".to_string(),
         exchange: Exchange::BinanceSpot,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         best_bid_price: 45000.0,
         best_bid_quantity: 1.5,
         best_ask_price: 45001.0,
@@ -71,10 +69,7 @@ async fn test_write_operations() {
     let trade_snapshot = TradeSnapshot {
         symbol: "BTCUSDT".to_string(),
         exchange: Exchange::BinanceSpot,
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         price: 45000.5,
         quantity: 0.1,
         side: TradeSide::Buy,
@@ -85,10 +80,7 @@ async fn test_write_operations() {
 
     let candle = CandleData {
         symbol: "BTCUSDT".to_string(),
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         open: 45000.0,
         high: 45100.0,
         low: 44900.0,
@@ -102,16 +94,9 @@ async fn test_write_operations() {
 
     let funding = FundingRateData {
         symbol: "BTCUSDT".to_string(),
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         rate: 0.0001,
-        next_funding_time: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64
-            + 28800000,
+        next_funding_time: current_timestamp_millis() + 28_800_000,
         exchange: Exchange::BinanceSpot,
     };
 
@@ -123,14 +108,7 @@ async fn test_write_operations() {
     ];
 
     assert!(client
-        .write_wallet_update(
-            "user123",
-            &balances,
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64,
-        )
+        .write_wallet_update("user123", &balances, current_timestamp_millis(),)
         .await
         .is_err());
 }

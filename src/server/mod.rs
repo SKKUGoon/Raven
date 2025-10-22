@@ -6,11 +6,11 @@ use tonic::transport::Server;
 use tracing::info;
 
 // Import our protobuf definitions and other modules
+use crate::citadel::storage::HighFrequencyStorage;
 use crate::database::influx_client::InfluxClient;
 use crate::monitoring::MetricsCollector;
 use crate::proto::market_data_service_server::MarketDataServiceServer;
 use crate::subscription_manager::SubscriptionManager;
-use crate::types::HighFrequencyStorage;
 
 pub mod connection;
 pub mod grpc_service;

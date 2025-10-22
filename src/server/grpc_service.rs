@@ -8,8 +8,9 @@ use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info, warn};
 
+use crate::citadel::storage::HighFrequencyStorage;
 use crate::database::influx_client::InfluxClient;
-use crate::exchanges::types::Exchange;
+use crate::exchanges::types::parse_exchange_symbol_key;
 use crate::monitoring::MetricsCollector;
 use crate::proto::{
     market_data_service_server::MarketDataService, DataType, HistoricalDataRequest,
@@ -17,31 +18,9 @@ use crate::proto::{
     UnsubscribeRequest, UnsubscribeResponse,
 };
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
-use crate::types::HighFrequencyStorage;
 
 use super::connection::ConnectionManager;
 use crate::error::RavenResult;
-
-/// Parse exchange and symbol from storage key (format: "exchange:symbol")
-fn parse_key(key: &str) -> Option<(Exchange, String)> {
-    let parts: Vec<&str> = key.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    let exchange = match parts[0] {
-        "binance_spot" => Exchange::BinanceSpot,
-        "binance_futures" => Exchange::BinanceFutures,
-        // "coinbase" => Exchange::Coinbase,
-        // "kraken" => Exchange::Kraken,
-        // "bybit" => Exchange::Bybit,
-        // "okx" => Exchange::OKX,
-        // "deribit" => Exchange::Deribit,
-        _ => return None,
-    };
-
-    Some((exchange, parts[1].to_string()))
-}
 
 /// gRPC service implementation
 #[derive(Clone)]
@@ -160,7 +139,7 @@ impl MarketDataServiceImpl {
         let stream = async_stream::stream! {
             // Send initial snapshots for all symbols
             for key in hf_storage.get_orderbook_symbols() {
-                if let Some((exchange, symbol)) = parse_key(&key) {
+                if let Some((exchange, symbol)) = parse_exchange_symbol_key(&key) {
                     if let Some(snapshot) = hf_storage.get_orderbook_snapshot(&symbol, &exchange) {
                     let message = Self::create_orderbook_message(
                         &snapshot.symbol,
@@ -177,7 +156,7 @@ impl MarketDataServiceImpl {
             }
 
             for key in hf_storage.get_trade_symbols() {
-                if let Some((exchange, symbol)) = parse_key(&key) {
+                if let Some((exchange, symbol)) = parse_exchange_symbol_key(&key) {
                     if let Some(snapshot) = hf_storage.get_trade_snapshot(&symbol, &exchange) {
                     let message = Self::create_trade_message(
                         &snapshot.symbol,

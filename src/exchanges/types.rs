@@ -27,6 +27,19 @@ impl fmt::Display for Exchange {
 }
 
 impl Exchange {
+    pub fn from_identifier(identifier: &str) -> Option<Self> {
+        match identifier {
+            "binance_spot" => Some(Exchange::BinanceSpot),
+            "binance_futures" => Some(Exchange::BinanceFutures),
+            // "coinbase" => Some(Exchange::Coinbase),
+            // "kraken" => Some(Exchange::Kraken),
+            // "bybit" => Some(Exchange::Bybit),
+            // "okx" => Some(Exchange::OKX),
+            // "deribit" => Some(Exchange::Deribit),
+            _ => None,
+        }
+    }
+
     pub fn websocket_url(&self) -> &'static str {
         match self {
             Exchange::BinanceSpot => "wss://stream.binance.com:9443/ws",
@@ -103,4 +116,10 @@ pub enum DataType {
     SpotTrade,
     FutureTrade,
     Candle,
+}
+
+/// Parse exchange and symbol from a composite storage key (format: "exchange:symbol")
+pub fn parse_exchange_symbol_key(key: &str) -> Option<(Exchange, String)> {
+    let (exchange_id, symbol) = key.split_once(':')?;
+    Exchange::from_identifier(exchange_id).map(|exchange| (exchange, symbol.to_string()))
 }

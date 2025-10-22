@@ -1,7 +1,7 @@
 use super::Citadel;
+use crate::citadel::storage::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
 use crate::data_handlers::HighFrequencyHandler;
 use crate::exchanges::types::{MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide};
-use crate::types::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;

@@ -1,8 +1,9 @@
 use crate::error::RavenResult;
+use crate::time::current_timestamp_millis;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
@@ -40,10 +41,7 @@ impl DeadLetterEntry {
         error_message: S,
         max_retries: u32,
     ) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
 
         Self {
             id: uuid::Uuid::new_v4().to_string(),
@@ -61,10 +59,7 @@ impl DeadLetterEntry {
 
     /// Check if the entry is ready for retry
     pub fn is_ready_for_retry(&self) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
 
         self.retry_count < self.max_retries && now >= self.next_retry_timestamp
     }
@@ -83,10 +78,7 @@ impl DeadLetterEntry {
         let delay_seconds = std::cmp::min(1u64 << self.retry_count, 60);
         let delay_ms = delay_seconds * 1000;
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
 
         self.next_retry_timestamp = now + delay_ms as i64;
     }
@@ -99,10 +91,7 @@ impl DeadLetterEntry {
 
     /// Get age of the entry in milliseconds
     pub fn age_ms(&self) -> i64 {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
         now - self.dead_letter_timestamp
     }
 }
@@ -331,14 +320,12 @@ impl DeadLetterQueue {
                                 entry.retry_count, entry.id, entry.operation_type
                             );
                         } else {
+                            let remaining_ms =
+                                entry.next_retry_timestamp - current_timestamp_millis();
                             debug!(
                                 "⟲ Will retry dead letter entry: {} in {}ms (attempt {}/{})",
                                 entry.id,
-                                entry.next_retry_timestamp
-                                    - SystemTime::now()
-                                        .duration_since(UNIX_EPOCH)
-                                        .unwrap()
-                                        .as_millis() as i64,
+                                remaining_ms,
                                 entry.retry_count + 1,
                                 entry.max_retries
                             );
@@ -364,10 +351,7 @@ impl DeadLetterQueue {
     /// Clean up old entries that have exceeded the maximum age
     async fn cleanup_old_entries(&self) -> RavenResult<()> {
         let mut entries = self.entries.lock().await;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
 
         let initial_count = entries.len();
         entries.retain(|entry| {

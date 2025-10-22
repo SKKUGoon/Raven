@@ -1,19 +1,21 @@
 // Connection management for the gRPC server
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::error::RavenResult;
 use crate::monitoring::MetricsCollector;
 
-/// Manages active connections and enforces connection limits
+/// Tracks active gRPC connections and enforces the server-wide connection limit.
+/// The `SubscriptionManager` owns all client subscription state; this type only
+/// concerns itself with admitting or rejecting new connections.
 #[derive(Clone)]
 pub struct ConnectionManager {
     /// Maximum allowed concurrent connections
     max_connections: usize,
     /// Current active connection count
-    active_connections: Arc<RwLock<usize>>,
+    active_connections: Arc<AtomicUsize>,
 }
 
 impl ConnectionManager {
@@ -21,13 +23,13 @@ impl ConnectionManager {
     pub fn new(max_connections: usize) -> Self {
         Self {
             max_connections,
-            active_connections: Arc::new(RwLock::new(0)),
+            active_connections: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     /// Check if server can accept new connections
     pub async fn can_accept_connection(&self) -> bool {
-        let current_connections = *self.active_connections.read().await;
+        let current_connections = self.active_connections.load(Ordering::Relaxed);
         current_connections < self.max_connections
     }
 
@@ -36,24 +38,36 @@ impl ConnectionManager {
         &self,
         metrics: Option<&Arc<MetricsCollector>>,
     ) -> RavenResult<()> {
-        let mut connections = self.active_connections.write().await;
-        if *connections >= self.max_connections {
-            if let Some(metrics) = metrics {
-                metrics.record_error("max_connections_reached", "server");
+        let mut current = self.active_connections.load(Ordering::Relaxed);
+        loop {
+            if current >= self.max_connections {
+                if let Some(metrics) = metrics {
+                    metrics.record_error("max_connections_reached", "server");
+                }
+                crate::raven_bail!(crate::raven_error!(
+                    max_connections_exceeded,
+                    current,
+                    self.max_connections,
+                ));
             }
-            crate::raven_bail!(crate::raven_error!(
-                max_connections_exceeded,
-                *connections,
-                self.max_connections,
-            ));
+            match self.active_connections.compare_exchange(
+                current,
+                current + 1,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(updated) => current = updated,
+            }
         }
-        *connections += 1;
-        debug!("⟐ Active connections: {}", *connections);
+
+        let updated = current + 1;
+        debug!("⟐ Active connections: {}", updated);
 
         // Update metrics
         if let Some(metrics) = metrics {
             metrics.record_connection("grpc");
-            metrics.active_connections.set(*connections as f64);
+            metrics.active_connections.set(updated as f64);
         }
 
         Ok(())
@@ -65,22 +79,34 @@ impl ConnectionManager {
         duration: std::time::Duration,
         metrics: Option<&Arc<MetricsCollector>>,
     ) {
-        let mut connections = self.active_connections.write().await;
-        if *connections > 0 {
-            *connections -= 1;
-        }
-        debug!("⟐ Active connections: {}", *connections);
+        let mut current = self.active_connections.load(Ordering::Relaxed);
+        let new_count = loop {
+            if current == 0 {
+                break 0;
+            }
+            match self.active_connections.compare_exchange(
+                current,
+                current - 1,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break current - 1,
+                Err(updated) => current = updated,
+            }
+        };
+
+        debug!("⟐ Active connections: {}", new_count);
 
         // Update metrics
         if let Some(metrics) = metrics {
             metrics.record_disconnection("grpc", duration);
-            metrics.active_connections.set(*connections as f64);
+            metrics.active_connections.set(new_count as f64);
         }
     }
 
     /// Get current active connection count
     pub async fn get_active_connections(&self) -> usize {
-        *self.active_connections.read().await
+        self.active_connections.load(Ordering::Relaxed)
     }
 
     /// Get maximum connections limit

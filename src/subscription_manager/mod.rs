@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
 use tracing::{debug, error, info, warn};
@@ -16,6 +15,7 @@ use uuid::Uuid;
 // Re-export protobuf types for convenience
 use crate::error::RavenResult;
 pub use crate::proto::{DataType, MarketDataMessage};
+use crate::time::current_timestamp_millis;
 
 /// Data types that clients can subscribe to
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,7 +68,6 @@ pub struct ClientSubscription {
     pub sender: mpsc::UnboundedSender<MarketDataMessage>,
     pub last_heartbeat: Arc<AtomicI64>,
     pub created_at: i64,
-    pub connection_count: u32,
 }
 
 impl ClientSubscription {
@@ -80,10 +79,7 @@ impl ClientSubscription {
         filters: HashMap<String, String>,
         sender: mpsc::UnboundedSender<MarketDataMessage>,
     ) -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
 
         Self {
             client_id,
@@ -94,25 +90,18 @@ impl ClientSubscription {
             sender,
             last_heartbeat: Arc::new(AtomicI64::new(now)),
             created_at: now,
-            connection_count: 1,
         }
     }
 
     /// Update the last heartbeat timestamp
     pub fn update_heartbeat(&self) {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
         self.last_heartbeat.store(now, Ordering::Relaxed);
     }
 
     /// Check if the client is still alive based on heartbeat
     pub fn is_alive(&self, timeout_ms: i64) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let now = current_timestamp_millis();
         let last_heartbeat = self.last_heartbeat.load(Ordering::Relaxed);
         (now - last_heartbeat) < timeout_ms
     }
@@ -303,7 +292,9 @@ impl Default for TopicRouter {
     }
 }
 
-/// The Maester's Registry - Central subscription management system
+/// The Maester's Registry - Central subscription management system.
+/// Tracks client subscriptions and routing; connection admission and limits are
+/// enforced separately by `server::connection::ConnectionManager`.
 pub struct SubscriptionManager {
     /// Active client subscriptions
     subscriptions: DashMap<String, ClientSubscription>,
@@ -358,7 +349,6 @@ impl SubscriptionManager {
             existing.data_types.extend(data_types_set.clone());
             existing.filters.extend(filters.clone());
             existing.update_heartbeat();
-            existing.connection_count += 1;
             existing.clone()
         } else {
             // Create new subscription
@@ -551,6 +541,12 @@ impl SubscriptionManager {
         }
 
         Ok(sent_count)
+    }
+
+    /// Determine whether any active subscribers exist for the given symbol/data type
+    pub fn has_subscribers(&self, symbol: &str, data_type: SubscriptionDataType) -> bool {
+        let topic = format!("{symbol}:{data_type:?}");
+        !self.topic_router.get_clients_for_topic(&topic).is_empty()
     }
 
     /// Get subscription information for a client

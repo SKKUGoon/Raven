@@ -5,6 +5,7 @@ pub mod cli;
 pub mod shutdown;
 pub mod startup;
 
+use crate::citadel::storage::HighFrequencyStorage;
 use crate::citadel::streaming::{SnapshotConfig, SnapshotService};
 use crate::citadel::{Citadel, CitadelConfig};
 use crate::control::{CollectorManager, ControlServiceImpl};
@@ -12,7 +13,6 @@ use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
 use crate::proto::control_service_server::ControlServiceServer;
 use crate::subscription_manager::SubscriptionManager;
-use crate::types::HighFrequencyStorage;
 use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::{error, info};

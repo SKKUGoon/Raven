@@ -2,6 +2,7 @@
 // "The Hand of the King orchestrates which ravens fly and which rest"
 
 use crate::citadel::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
+use crate::citadel::storage::HighFrequencyStorage;
 use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
 use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futures_orderbook;
@@ -9,10 +10,9 @@ use crate::exchanges::binance::app::futures::trade::initialize_binance_futures_t
 use crate::exchanges::binance::app::spot::orderbook::initialize_binance_spot_orderbook;
 use crate::exchanges::binance::app::spot::trade::initialize_binance_spot_trade;
 use crate::exchanges::types::Exchange;
-use crate::types::HighFrequencyStorage;
+use crate::time::current_timestamp_millis;
 use dashmap::DashMap;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -98,10 +98,7 @@ impl CollectorManager {
         }
 
         let collection_id = Uuid::new_v4().to_string();
-        let started_at = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
+        let started_at = current_timestamp_millis();
 
         info!(
             collection_id = %collection_id,

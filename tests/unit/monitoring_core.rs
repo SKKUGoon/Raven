@@ -1,6 +1,7 @@
 // Monitoring Integration Tests - Project Raven
 // "Testing the crows who watch the watchers"
 
+use raven::citadel::storage::HighFrequencyStorage;
 use raven::config::MonitoringConfig;
 use raven::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::monitoring::{
@@ -13,7 +14,6 @@ use raven::monitoring::{
     CrowService,
 };
 use raven::subscription_manager::SubscriptionManager;
-use raven::types::HighFrequencyStorage;
 use std::sync::Arc;
 use std::time::Duration;
 

@@ -14,20 +14,7 @@ pub mod logging;
 pub mod monitoring;
 pub mod server;
 pub mod subscription_manager;
-
-// Legacy re-exports for backward compatibility
-pub mod types {
-    pub use crate::citadel::storage::*;
-}
-pub mod snapshot_service {
-    pub use crate::citadel::streaming::*;
-}
-pub mod circuit_breaker {
-    pub use crate::database::circuit_breaker::*;
-}
-pub mod dead_letter_queue {
-    pub use crate::database::dead_letter_queue::*;
-}
+pub mod time;
 
 // Generated protobuf modules
 pub mod proto {
@@ -39,3 +26,4 @@ pub use config::{ConfigLoader, ConfigManager, ConfigUtils, RuntimeConfig, Runtim
 pub use error::{RavenError, RavenResult};
 pub use logging::LoggingConfig;
 pub use proto::*;
+pub use time::current_timestamp_millis;

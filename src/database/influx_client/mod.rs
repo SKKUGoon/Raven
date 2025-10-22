@@ -23,7 +23,7 @@ use influxdb2::{Client, RequestError};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{interval, sleep};
 
@@ -32,6 +32,7 @@ use tracing::{debug, error, info, warn};
 use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
 use crate::database::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
 use crate::error::RavenResult;
+use crate::time::current_timestamp_millis;
 use dead_letter::DeadLetterEntry;
 
 type Result<T> = RavenResult<T>;
@@ -540,10 +541,7 @@ impl InfluxClient {
     pub async fn add_to_dead_letter_queue(&self, data: String, error_message: String) {
         let entry = DeadLetterEntry {
             data,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64,
+            timestamp: current_timestamp_millis(),
             retry_count: 0,
             error_message,
         };

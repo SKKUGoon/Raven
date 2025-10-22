@@ -3,12 +3,12 @@
 
 use raven::citadel::storage::{OrderBookData, TradeData, TradeSide};
 use raven::citadel::{Citadel, CitadelConfig, ValidationRules};
+use raven::current_timestamp_millis;
 use raven::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::exchanges::types::Exchange;
 use raven::subscription_manager::SubscriptionManager;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 fn create_test_citadel() -> Citadel {
     let influx_config = InfluxConfig::default();
@@ -22,10 +22,7 @@ fn create_test_citadel() -> Citadel {
 fn create_test_orderbook_data() -> OrderBookData {
     OrderBookData {
         symbol: "BTCUSDT".to_string(),
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         bids: vec![(45000.0, 1.5), (44999.0, 2.0)],
         asks: vec![(45001.0, 1.2), (45002.0, 1.8)],
         sequence: 12345,
@@ -36,10 +33,7 @@ fn create_test_orderbook_data() -> OrderBookData {
 fn create_test_trade_data() -> TradeData {
     TradeData {
         symbol: "BTCUSDT".to_string(),
-        timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64,
+        timestamp: current_timestamp_millis(),
         price: 45000.5,
         quantity: 0.1,
         side: TradeSide::Buy,
