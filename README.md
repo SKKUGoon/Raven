@@ -65,6 +65,12 @@ ENVIRONMENT=development cargo run --bin raven
 make run
 ```
 
+Need a different config? Point the CLI at it directly:
+
+```bash
+cargo run --bin raven -- --config config/secret.toml
+```
+
 ### 5. Test with Python Client
 ```bash
 cd python_client
@@ -275,4 +281,3 @@ cargo audit
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-

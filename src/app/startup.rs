@@ -92,12 +92,8 @@ pub async fn validate_dependencies(
 }
 
 /// Initialize logging with the provided configuration
-pub fn initialize_logging(args: &CliArgs) -> RavenResult<()> {
-    let basic_logging = LoggingConfig {
-        level: args.log_level.clone().unwrap_or_else(|| "info".to_string()),
-        format: "pretty".to_string(),
-        ..Default::default()
-    };
+pub fn initialize_logging(_args: &CliArgs) -> RavenResult<()> {
+    let basic_logging = LoggingConfig::default();
 
     if let Err(e) = init_logging(&basic_logging) {
         eprintln!("Failed to initialize logging: {e}");
@@ -140,23 +136,6 @@ pub fn load_and_validate_config(
     config = crate::app::cli::apply_cli_overrides(config, args);
 
     // Handle special CLI modes
-    if args.validate_only {
-        info!("Validating configuration only...");
-        if let Err(e) = config.validate() {
-            error!("Configuration validation failed: {}", e);
-            return Err(RavenError::configuration(e.to_string()));
-        }
-        info!("Configuration validation passed");
-        println!("Configuration is valid!");
-        std::process::exit(0);
-    }
-
-    if args.print_config {
-        info!("Printing configuration...");
-        ConfigUtils::print_config(&config);
-        std::process::exit(0);
-    }
-
     // Print configuration summary
     ConfigUtils::print_config(&config);
 
