@@ -284,9 +284,9 @@ async fn test_bucket_provision_creates_bucket_when_missing() {
     let client = InfluxClient::new(config);
     client.ensure_bucket_exists_for_tests().await.unwrap();
 
-    list_mock.assert_async().await;
-    org_mock.assert_async().await;
-    create_mock.assert_async().await;
+    list_mock.assert();
+    org_mock.assert();
+    create_mock.assert();
 }
 
 #[tokio::test]
@@ -332,8 +332,8 @@ async fn test_bucket_provision_noop_when_bucket_exists() {
     let client = InfluxClient::new(config);
     client.ensure_bucket_exists_for_tests().await.unwrap();
 
-    list_mock.assert_async().await;
-    create_mock.assert_async().await;
+    list_mock.assert();
+    create_mock.assert();
 }
 
 #[tokio::test]
@@ -364,7 +364,7 @@ async fn test_bucket_provision_unauthorized_error() {
     let result = client.ensure_bucket_exists_for_tests().await;
 
     assert!(result.is_err());
-    list_mock.assert_async().await;
+    list_mock.assert();
 }
 
 #[tokio::test]

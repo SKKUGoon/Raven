@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::RuntimeConfig;
 use clap::{Arg, Command};
 use tracing::info;
 
@@ -40,7 +40,7 @@ pub fn parse_cli_args() -> CliArgs {
                 .long("config")
                 .value_name("FILE")
                 .help("Configuration file path")
-                .long_help("Path to the configuration file. If not specified, will look for config/default.toml")
+                .long_help("Path to the configuration file. Defaults to the environment-specific file (config/development.toml or config/secret.toml)")
         )
         .arg(
             Arg::new("host")
@@ -114,7 +114,7 @@ pub fn parse_cli_args() -> CliArgs {
 }
 
 /// Apply CLI overrides to configuration
-pub fn apply_cli_overrides(mut config: Config, args: &CliArgs) -> Config {
+pub fn apply_cli_overrides(mut config: RuntimeConfig, args: &CliArgs) -> RuntimeConfig {
     if let Some(host) = &args.host {
         info!("CLI override: host = {}", host);
         config.server.host = host.clone();

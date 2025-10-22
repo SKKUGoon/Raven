@@ -268,7 +268,7 @@ impl Default for InfluxConfig {
     fn default() -> Self {
         Self {
             url: "http://localhost:8086".to_string(),
-            bucket: "market_data".to_string(),
+            bucket: "crypto".to_string(),
             org: "raven".to_string(),
             token: None,
             pool_size: 10,

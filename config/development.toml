@@ -11,7 +11,7 @@ enable_compression = false      # Easier debugging
 max_message_size = 2097152      # 2MB
 
 [database]
-influx_url = "http://host.docker.internal:8086"
+influx_url = "http://localhost:8086"
 bucket = "crypto_dev"
 org = "influx"
 token = "admin-token-banana"                    # Your current dev token

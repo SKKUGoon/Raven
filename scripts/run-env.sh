@@ -43,4 +43,4 @@ export ENVIRONMENT=$ENVIRONMENT
 
 # Run the application
 echo "🚀 Launching Raven..."
-cargo run --bin market-data-server
+cargo run --bin raven

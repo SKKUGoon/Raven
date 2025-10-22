@@ -21,9 +21,10 @@ use tracing::{error, info};
 use self::cli::{parse_cli_args, print_version_info};
 use self::shutdown::{perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors};
 use self::startup::{
-    initialize_circuit_breakers, initialize_client_manager, initialize_config_manager,
-    initialize_dead_letter_queue, initialize_influx_client, initialize_logging,
-    initialize_monitoring_services, load_and_validate_config, validate_dependencies,
+    build_config_loader, initialize_circuit_breakers, initialize_client_manager,
+    initialize_config_manager, initialize_dead_letter_queue, initialize_influx_client,
+    initialize_logging, initialize_monitoring_services, load_and_validate_config,
+    validate_dependencies,
 };
 
 /// Main application entry point and coordination
@@ -33,17 +34,18 @@ pub async fn run() -> RavenResult<()> {
     print_version_info();
     initialize_logging(&args)?;
 
-    let config = load_and_validate_config(&args)?;
-    validate_dependencies(&config).await?;
-    let _config_manager = initialize_config_manager().await?;
+    let loader = build_config_loader(&args);
+    let config = load_and_validate_config(&loader, &args)?;
+    validate_dependencies(&config.server, &config.monitoring).await?;
+    let _config_manager = initialize_config_manager(loader.clone()).await?;
 
     info!("Ready: [Kingsguards]");
     let dead_letter_queue = initialize_dead_letter_queue().await?;
     let circuit_breaker_registry = initialize_circuit_breakers().await?;
 
     let (influx_client, _enhanced_influx_client) =
-        initialize_influx_client(&config, dead_letter_queue.clone()).await?;
-    let client_manager = initialize_client_manager(&config).await?;
+        initialize_influx_client(&config.database, dead_letter_queue.clone()).await?;
+    let client_manager = initialize_client_manager(&config.server).await?;
 
     info!("Ready: [Citadel]");
     let subscription_manager = Arc::new(SubscriptionManager::new());
@@ -78,7 +80,7 @@ pub async fn run() -> RavenResult<()> {
 
     info!("[Kingsguards] On guard");
     let (_monitoring_service, monitoring_handles) = initialize_monitoring_services(
-        &config,
+        &config.monitoring,
         Arc::clone(&influx_client),
         Arc::clone(&subscription_manager),
         Arc::clone(&hf_storage),

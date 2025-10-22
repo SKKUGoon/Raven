@@ -6,7 +6,7 @@ use tokio::fs;
 
 #[test]
 fn test_default_config_creation() {
-    let config = Config::default();
+    let config = RuntimeConfig::default();
 
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 50051);
@@ -19,7 +19,7 @@ fn test_default_config_creation() {
 
 #[test]
 fn test_config_validation() {
-    let mut config = Config::default();
+    let mut config = RuntimeConfig::default();
 
     // Valid config should pass
     assert!(config.validate().is_ok());
@@ -29,12 +29,12 @@ fn test_config_validation() {
     assert!(config.validate().is_err());
 
     // Reset and test empty database URL
-    config = Config::default();
+    config = RuntimeConfig::default();
     config.database.influx_url = String::new();
     assert!(config.validate().is_err());
 
     // Reset and test zero snapshot interval
-    config = Config::default();
+    config = RuntimeConfig::default();
     config.data_processing.snapshot_interval_ms = 0;
     assert!(config.validate().is_err());
 }
@@ -84,7 +84,7 @@ fn test_batch_config_validation() {
 
 #[test]
 fn test_config_to_env_vars() {
-    let config = Config::default();
+    let config = RuntimeConfig::default();
     let env_vars = config.to_env_vars();
 
     assert_eq!(
@@ -110,11 +110,12 @@ async fn test_config_manager_creation() {
         .to_string_lossy()
         .to_string();
 
-    let manager = ConfigManager::new(config_path, Duration::from_secs(1));
+    let loader = ConfigLoader::new().with_file(config_path);
+    let manager = ConfigManager::new(loader, Duration::from_secs(1));
     assert!(manager.is_ok());
 
     let manager = manager.unwrap();
-    let config = manager.get_config().await;
+    let config = manager.runtime().await;
     assert_eq!(config.server.port, 50051);
 }
 
@@ -135,22 +136,19 @@ org = "test_org"
 "#;
     fs::write(&config_path, initial_config).await.unwrap();
 
-    let manager = ConfigManager::new(
-        config_path.to_string_lossy().to_string(),
-        Duration::from_millis(100),
-    )
-    .unwrap();
+    let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
+    let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
 
     // Force reload should work
     assert!(manager.force_reload().await.is_ok());
 
-    let config = manager.get_config().await;
-    assert_eq!(config.server.port, 50051); // Should use default since file doesn't have complete config
+    let config = manager.runtime().await;
+    assert_eq!(config.server.port, 8080);
 }
 
 #[test]
 fn test_config_utils_health_check() {
-    let config = Config::default();
+    let config = RuntimeConfig::default();
     let warnings = ConfigUtils::check_configuration_health(&config);
 
     // Should have some warnings for default config
@@ -162,7 +160,7 @@ fn test_config_utils_health_check() {
 
 #[test]
 fn test_config_utils_export_json() {
-    let config = Config::default();
+    let config = RuntimeConfig::default();
     let json = ConfigUtils::export_as_json(&config);
 
     assert!(json.is_ok());

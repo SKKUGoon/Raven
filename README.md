@@ -35,9 +35,8 @@ Exchange WebSocket → Ingestion → Validation → Storage → gRPC Streaming �
 ## 🏃‍♂️ Quick Start
 
 ### Prerequisites
-- Rust 1.70+ 
-- Docker & Docker Compose
-- InfluxDB 2.x
+- Rust 1.70+
+- InfluxDB 2.x (running locally or remotely)
 
 ### 1. Clone and Build
 ```bash
@@ -46,14 +45,18 @@ cd raven2
 cargo build --release
 ```
 
-### 2. Start Infrastructure
+### 2. Configure Environment
 ```bash
-docker-compose -f docker/docker-compose.dev.yml up -d
+cp config/example.toml config/development.toml
+# update InfluxDB credentials and ports as needed
+nano config/development.toml
 ```
 
 ### 3. Run Server
 ```bash
-cargo run --bin raven
+./scripts/run-env.sh
+# or
+make run
 ```
 
 ### 4. Test with Python Client
@@ -207,7 +210,7 @@ cargo test
 
 ### Integration Tests
 ```bash
-cargo test --test integration
+cargo test --test integration_tests
 ```
 
 ### Load Testing
@@ -218,11 +221,17 @@ python test.py  # 30-second streaming test
 
 ## 🚀 Deployment
 
-### Docker
+### CLI Releases
 ```bash
-docker build -t raven-server .
-docker run -p 50051:50051 -p 9090:9090 -p 9091:9091 raven-server
+make build
+./target/release/raven
 ```
+
+### Service Hardening
+- Enable TLS for gRPC endpoints
+- Configure InfluxDB clustering or backups
+- Set up monitoring and alerting
+- Implement log aggregation
 
 ### Production Configuration
 - Enable TLS for gRPC endpoints

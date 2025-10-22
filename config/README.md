@@ -92,18 +92,16 @@ token = "your-secret-token"           # Your InfluxDB token
 log_level = "debug"  # development: debug, production: warn
 ```
 
-## Docker Deployment
+## Running the Server
 
-### Development
-```bash
-# Uses config/development.toml
-docker-compose -f docker/docker-compose.dev.yml up
-```
+After updating your configuration file, launch the application directly:
 
-### Production
 ```bash
-# Uses config/secret.toml (must exist!)
-docker-compose up
+# Development
+./scripts/run-env.sh development
+
+# Production
+./scripts/run-env.sh production
 ```
 
 ## Security Best Practices

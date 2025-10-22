@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::env;
 use tracing::{info, warn};
 
-use super::Config;
+use super::RuntimeConfig;
 use crate::error::{RavenError, RavenResult};
 
 /// Configuration utilities for debugging and validation
@@ -14,7 +14,7 @@ pub struct ConfigUtils;
 
 impl ConfigUtils {
     /// Print current configuration in a readable format
-    pub fn print_config(config: &Config) {
+    pub fn print_config(config: &RuntimeConfig) {
         info!("Current Configuration for Project Raven:");
         info!("  Server: {}:{}", config.server.host, config.server.port);
         info!("  Max Connections: {}", config.server.max_connections);
@@ -41,7 +41,7 @@ impl ConfigUtils {
     }
 
     /// Get configuration summary for health checks
-    pub fn get_config_summary(config: &Config) -> HashMap<String, String> {
+    pub fn get_config_summary(config: &RuntimeConfig) -> HashMap<String, String> {
         let mut summary = HashMap::new();
 
         summary.insert("server_host".to_string(), config.server.host.clone());
@@ -70,12 +70,12 @@ impl ConfigUtils {
     }
 
     /// Export configuration as JSON for debugging
-    pub fn export_as_json(config: &Config) -> RavenResult<String> {
+    pub fn export_as_json(config: &RuntimeConfig) -> RavenResult<String> {
         serde_json::to_string_pretty(config).map_err(RavenError::from)
     }
 
     /// Check for common configuration issues
-    pub fn check_configuration_health(config: &Config) -> Vec<String> {
+    pub fn check_configuration_health(config: &RuntimeConfig) -> Vec<String> {
         let mut warnings = Vec::new();
 
         // Check for potential performance issues
@@ -103,19 +103,14 @@ impl ConfigUtils {
         }
 
         // Check retention policies
-        if config
-            .retention_policies
-            .high_frequency
-            .full_resolution_days
-            > 30
-        {
+        if config.retention.high_frequency.full_resolution_days > 30 {
             warnings.push(
                 "High frequency data retention > 30 days may consume significant storage"
                     .to_string(),
             );
         }
 
-        if !config.retention_policies.private_data.auto_cleanup {
+        if !config.retention.private_data.auto_cleanup {
             warnings
                 .push("Private data auto-cleanup disabled - manual cleanup required".to_string());
         }
