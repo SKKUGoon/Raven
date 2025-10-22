@@ -17,7 +17,6 @@ pub use streaming::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotServ
 
 use crate::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::error::RavenResult;
-use crate::exchanges::types::Exchange;
 use crate::subscription_manager::SubscriptionManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -73,8 +72,6 @@ pub struct ValidationRules {
     pub max_spread_percentage: f64,
     pub max_price_deviation: f64,
     pub required_fields: Vec<String>,
-    pub allowed_exchanges: Vec<Exchange>,
-    pub allowed_symbols: Vec<String>,
 }
 
 impl Default for ValidationRules {
@@ -90,17 +87,6 @@ impl Default for ValidationRules {
                 "symbol".to_string(),
                 "timestamp".to_string(),
                 "exchange".to_string(),
-            ],
-            allowed_exchanges: vec![
-                Exchange::BinanceSpot,
-                Exchange::BinanceFutures,
-                // Exchange::Coinbase,
-                // Exchange::Kraken,
-            ],
-            allowed_symbols: vec![
-                "BTCUSDT".to_string(),
-                "ETHUSDT".to_string(),
-                "ADAUSDT".to_string(),
             ],
         }
     }
@@ -287,23 +273,6 @@ impl Citadel {
     ) -> RavenResult<OrderBookData> {
         let rules = self.validation_rules.read().await;
 
-        // Check if symbol is allowed
-        if !rules.allowed_symbols.is_empty() && !rules.allowed_symbols.contains(&data.symbol) {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Symbol {} not in allowed list", data.symbol)
-            ));
-        }
-
-        // Check if exchange is allowed
-        if !rules.allowed_exchanges.is_empty() && !rules.allowed_exchanges.contains(&data.exchange)
-        {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Exchange {} not in allowed list", data.exchange)
-            ));
-        }
-
         // Validate timestamp
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -373,23 +342,6 @@ impl Citadel {
         data: &TradeData,
     ) -> RavenResult<TradeData> {
         let rules = self.validation_rules.read().await;
-
-        // Check if symbol is allowed
-        if !rules.allowed_symbols.is_empty() && !rules.allowed_symbols.contains(&data.symbol) {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Symbol {} not in allowed list", data.symbol)
-            ));
-        }
-
-        // Check if exchange is allowed
-        if !rules.allowed_exchanges.is_empty() && !rules.allowed_exchanges.contains(&data.exchange)
-        {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Exchange {} not in allowed list", data.exchange)
-            ));
-        }
 
         // Validate timestamp
         let current_time = SystemTime::now()
