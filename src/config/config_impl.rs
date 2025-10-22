@@ -436,14 +436,12 @@ impl RetentionPolicy {
         }
         if self.downsampled_days < self.full_resolution_days {
             return Err(RavenError::configuration(format!(
-                "{}: Downsampled days must be >= full resolution days",
-                name
+                "{name}: Downsampled days must be >= full resolution days",
             )));
         }
         if self.archive_days < self.downsampled_days {
             return Err(RavenError::configuration(format!(
-                "{}: Archive days must be >= downsampled days",
-                name
+                "{name}: Archive days must be >= downsampled days",
             )));
         }
         Ok(())

@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use super::snapshots::{OrderBookSnapshot, TradeSnapshot};
+use super::snapshots::{OrderBookLevel, OrderBookSnapshot, TradeSnapshot};
 use super::{OrderBookData, TradeData, PRICE_SCALE, QUANTITY_SCALE};
 
 // High-frequency atomic data storage for maximum throughput
@@ -64,17 +64,40 @@ impl AtomicOrderBook {
 
     /// Convert to snapshot for periodic captures
     pub fn to_snapshot(&self) -> OrderBookSnapshot {
+        let best_bid_price = self.best_bid_price.load(Ordering::Relaxed) as f64 / PRICE_SCALE;
+        let best_bid_quantity =
+            self.best_bid_quantity.load(Ordering::Relaxed) as f64 / QUANTITY_SCALE;
+        let best_ask_price = self.best_ask_price.load(Ordering::Relaxed) as f64 / PRICE_SCALE;
+        let best_ask_quantity =
+            self.best_ask_quantity.load(Ordering::Relaxed) as f64 / QUANTITY_SCALE;
+
+        let mut bid_levels = Vec::new();
+        if best_bid_price > 0.0 || best_bid_quantity > 0.0 {
+            bid_levels.push(OrderBookLevel {
+                price: best_bid_price,
+                quantity: best_bid_quantity,
+            });
+        }
+
+        let mut ask_levels = Vec::new();
+        if best_ask_price > 0.0 || best_ask_quantity > 0.0 {
+            ask_levels.push(OrderBookLevel {
+                price: best_ask_price,
+                quantity: best_ask_quantity,
+            });
+        }
+
         OrderBookSnapshot {
             symbol: self.symbol.clone(),
             exchange: self.exchange.clone(),
             timestamp: self.timestamp.load(Ordering::Relaxed),
-            best_bid_price: self.best_bid_price.load(Ordering::Relaxed) as f64 / PRICE_SCALE,
-            best_bid_quantity: self.best_bid_quantity.load(Ordering::Relaxed) as f64
-                / QUANTITY_SCALE,
-            best_ask_price: self.best_ask_price.load(Ordering::Relaxed) as f64 / PRICE_SCALE,
-            best_ask_quantity: self.best_ask_quantity.load(Ordering::Relaxed) as f64
-                / QUANTITY_SCALE,
+            best_bid_price,
+            best_bid_quantity,
+            best_ask_price,
+            best_ask_quantity,
             sequence: self.sequence.load(Ordering::Relaxed),
+            bid_levels,
+            ask_levels,
         }
     }
 

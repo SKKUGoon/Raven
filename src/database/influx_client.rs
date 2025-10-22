@@ -27,16 +27,31 @@ type Result<T> = RavenResult<T>;
 // DataPoint creation helper functions
 /// Create a DataPoint for orderbook snapshot data
 pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPoint> {
-    DataPoint::builder("orderbook")
+    let mut builder = DataPoint::builder("orderbook")
         .tag("symbol", &snapshot.symbol)
         .tag("exchange", snapshot.exchange.to_string())
-        .field("best_bid_price", snapshot.best_bid_price)
-        .field("best_bid_quantity", snapshot.best_bid_quantity)
-        .field("best_ask_price", snapshot.best_ask_price)
-        .field("best_ask_quantity", snapshot.best_ask_quantity)
-        .field("sequence", snapshot.sequence as i64)
-        .field("spread", snapshot.best_ask_price - snapshot.best_bid_price)
-        .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
+        .field("sequence", snapshot.sequence as i64);
+
+    if let (Some(bid), Some(ask)) = (snapshot.bid_levels.first(), snapshot.ask_levels.first()) {
+        builder = builder.field("spread", ask.price - bid.price);
+    }
+
+    for (idx, level) in snapshot.bid_levels.iter().enumerate() {
+        let field_price = format!("bl{:02}_price", idx + 1);
+        let field_qty = format!("bl{:02}_qty", idx + 1);
+        builder = builder.field(field_price, level.price);
+        builder = builder.field(field_qty, level.quantity);
+    }
+
+    for (idx, level) in snapshot.ask_levels.iter().enumerate() {
+        let field_price = format!("al{:02}_price", idx + 1);
+        let field_qty = format!("al{:02}_qty", idx + 1);
+        builder = builder.field(field_price, level.price);
+        builder = builder.field(field_qty, level.quantity);
+    }
+
+    builder
+        .timestamp(snapshot.timestamp * 1_000_000)
         .build()
         .map_err(|e| {
             RavenError::data_serialization(format!("Failed to create orderbook DataPoint: {e}"))

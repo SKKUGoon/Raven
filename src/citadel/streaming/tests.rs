@@ -4,7 +4,8 @@ use crate::exchanges::Exchange;
 use crate::snapshot_service::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotService};
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::{
-    HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSide, TradeSnapshot,
+    HighFrequencyStorage, OrderBookData, OrderBookLevel, OrderBookSnapshot, TradeData, TradeSide,
+    TradeSnapshot,
 };
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -38,6 +39,14 @@ async fn test_snapshot_batch() {
         best_ask_price: 45001.0,
         best_ask_quantity: 1.2,
         sequence: 12345,
+        bid_levels: vec![OrderBookLevel {
+            price: 45000.0,
+            quantity: 1.5,
+        }],
+        ask_levels: vec![OrderBookLevel {
+            price: 45001.0,
+            quantity: 1.2,
+        }],
     };
 
     batch.add_orderbook_snapshot(orderbook_snapshot);
