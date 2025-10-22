@@ -14,6 +14,7 @@ use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futur
 use crate::exchanges::binance::app::futures::trade::initialize_binance_futures_trade;
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -88,25 +89,46 @@ pub async fn run() -> RavenResult<()> {
     .await?;
 
     info!("[Citadel] Start research");
-    let sym = "btcusdt".to_string();
-    let (binance_future_clob_collector, binance_clob_receiver) =
-        initialize_binance_futures_orderbook(sym.clone()).await?;
-    let (binance_future_trade_collector, binance_trade_receiver) =
-        initialize_binance_futures_trade(sym).await?;
 
-    // Start market data ingestion pipelines
-    let collector_tasks: Vec<JoinHandle<()>> = vec![
-        spawn_orderbook_ingestor(
-            binance_clob_receiver,
+    let mut symbols = if !args.symbols.is_empty() {
+        args.symbols.clone()
+    } else {
+        vec!["BTCUSDT".to_string()]
+    };
+    symbols.truncate(10);
+
+    let mut seen = HashSet::new();
+    symbols.retain(|sym| seen.insert(sym.clone()));
+
+    info!("[Binance] Collecting symbols: {}", symbols.join(", "));
+
+    let mut collector_tasks: Vec<JoinHandle<()>> = Vec::new();
+    let mut data_collectors = DataCollectors::new();
+
+    for symbol in symbols {
+        let (orderbook_collector, orderbook_receiver) =
+            initialize_binance_futures_orderbook(symbol.clone()).await?;
+        let (trade_collector, trade_receiver) =
+            initialize_binance_futures_trade(symbol.clone()).await?;
+
+        collector_tasks.push(spawn_orderbook_ingestor(
+            orderbook_receiver,
             Arc::clone(&high_freq_handler),
             Arc::clone(&citadel),
-        ),
-        spawn_trade_ingestor(
-            binance_trade_receiver,
+        ));
+        collector_tasks.push(spawn_trade_ingestor(
+            trade_receiver,
             Arc::clone(&high_freq_handler),
             Arc::clone(&citadel),
-        ),
-    ];
+        ));
+
+        let orderbook_name = format!("binance-futures-orderbook-{}", symbol.to_lowercase());
+        let trade_name = format!("binance-futures-trade-{}", symbol.to_lowercase());
+
+        data_collectors = data_collectors
+            .add_collector(orderbook_name, orderbook_collector)
+            .add_collector(trade_name, trade_collector);
+    }
 
     // Initialize gRPC server with circuit breaker protection
     info!("[Raven] 'Send out the ravens'");
@@ -146,17 +168,6 @@ pub async fn run() -> RavenResult<()> {
     for task in collector_tasks {
         task.abort();
     }
-
-    // Create data collectors container
-    let data_collectors = DataCollectors::new()
-        .add_collector(
-            "binance-futures-orderbook".to_string(),
-            binance_future_clob_collector,
-        )
-        .add_collector(
-            "binance-futures-trade".to_string(),
-            binance_future_trade_collector,
-        );
 
     // Perform graceful shutdown
     perform_graceful_shutdown(

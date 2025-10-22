@@ -71,6 +71,12 @@ Need a different config? Point the CLI at it directly:
 cargo run --bin raven -- --config config/secret.toml
 ```
 
+Stream multiple Binance futures symbols (max 10) by passing `--symbols`:
+
+```bash
+cargo run --bin raven -- --symbols BTCUSDT,ETHUSDT,ADAUSDT
+```
+
 ### 5. Test with Python Client
 ```bash
 cd python_client
