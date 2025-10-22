@@ -1,38 +1,38 @@
-# 🐦‍⬛ Raven - High-Performance Market Data Server
+# Raven - High-Performance Market Data Server
 
 > *"The ravens are the memory of the realm"*
 
 Raven is a high-performance, real-time cryptocurrency market data aggregation and streaming server built in Rust. It provides sub-microsecond latency market data processing with gRPC streaming APIs for institutional-grade trading applications.
 
-## 🚀 Features
+## Features
 
-### 🔥 High-Performance Core
+### High-Performance Core
 - **Sub-microsecond processing**: Lock-free atomic operations for maximum throughput
 - **Real-time streaming**: Live orderbook and trade data from major exchanges
 - **Horizontal scaling**: Multi-threaded architecture with async processing
 - **Memory efficient**: Zero-copy data structures and optimized memory layouts
 
-### 📡 Exchange Integration
+### Exchange Integration
 - **Binance Futures**: Real-time WebSocket feeds for BTCUSDT and other pairs
 - **Multiple data types**: Trades, orderbook snapshots, candles, funding rates
 - **Fault tolerance**: Automatic reconnection and error recovery
 - **Rate limiting**: Compliant with exchange API limits
 
-### 🏗️ Architecture
+### Architecture
 - **gRPC API**: High-performance bidirectional streaming
 - **InfluxDB storage**: Time-series database for historical data
 - **Atomic storage**: Lock-free in-memory data structures
 - **Circuit breakers**: Resilient error handling and recovery
 - **Health monitoring**: Comprehensive metrics and health checks
 
-### 📊 Data Pipeline
+### Data Pipeline
 ```
 Exchange WebSocket → Ingestion → Validation → Storage → gRPC Streaming → Clients
                                      ↓
                               InfluxDB (Historical)
 ```
 
-## 🏃‍♂️ Quick Start
+## Quick Start
 
 ### Prerequisites
 - Rust 1.70+
@@ -52,14 +52,20 @@ cp config/example.toml config/development.toml
 nano config/development.toml
 ```
 
-### 3. Run Server
+### 3. Prepare Dependencies
+- Start an InfluxDB 2.x instance reachable at the URL configured in `config/development.toml`.
+- Set `INFLUX_TOKEN` (either in your shell or directly inside the config file).
+
+### 4. Run Server
 ```bash
-./scripts/run-env.sh
+./scripts/run-env.sh          # defaults to ENVIRONMENT=development
+# or
+ENVIRONMENT=development cargo run --bin raven
 # or
 make run
 ```
 
-### 4. Test with Python Client
+### 5. Test with Python Client
 ```bash
 cd python_client
 pip install -r requirements.txt
@@ -67,7 +73,7 @@ python generate_proto.py
 python client.py
 ```
 
-## 📊 Performance Metrics
+## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
@@ -77,27 +83,27 @@ python client.py
 | **CPU** | < 5% single core |
 | **Uptime** | 99.9%+ availability |
 
-## 🏗️ System Architecture
+## System Architecture
 
 ### Core Components
 
-#### 🏰 Citadel (Data Processing)
+#### Citadel (Data Processing)
 - **Validation**: Real-time data integrity checks
 - **Sanitization**: Price and volume normalization  
 - **Storage**: Atomic updates to high-frequency storage
 - **Persistence**: Batched writes to InfluxDB
 
-#### 📸 Snapshot Service
+#### Snapshot Service
 - **Capture**: Periodic snapshots from atomic storage
 - **Broadcasting**: Real-time distribution to gRPC clients
 - **Batching**: Efficient database writes
 
-#### 🔗 gRPC Server
+#### gRPC Server
 - **Streaming**: Bidirectional real-time data streams
 - **Subscriptions**: Dynamic symbol and data type filtering
 - **Connection management**: Heartbeats and graceful cleanup
 
-#### 📊 Monitoring
+#### Monitoring
 - **Health checks**: Component status on port 9091
 - **Metrics**: Prometheus metrics on port 9090
 - **Tracing**: Distributed tracing for debugging
@@ -136,11 +142,12 @@ health_check_port = 9091
 
 ### Environment Variables
 ```bash
+ENVIRONMENT=development        # Select config file (development or production)
 RUST_LOG=info                    # Logging level
 INFLUX_TOKEN=your-token         # InfluxDB authentication
 ```
 
-## 📡 API Reference
+## API Reference
 
 ### gRPC Service: `MarketDataService`
 
@@ -166,7 +173,7 @@ rpc GetHistoricalData(HistoricalDataRequest) returns (stream MarketDataMessage);
 - **Candle**: OHLCV data with configurable intervals
 - **FundingRate**: Perpetual futures funding rates
 
-## 🐍 Python Client
+## Example: Python Client
 
 High-performance Python client for consuming real-time data:
 
@@ -180,7 +187,7 @@ client.stream_market_data(["BTCUSDT", "ETHUSDT"], duration_seconds=30)
 
 See [`python_client/README.md`](python_client/README.md) for detailed usage.
 
-## 🔍 Monitoring & Observability
+## Monitoring & Observability
 
 ### Health Checks
 ```bash
@@ -201,7 +208,7 @@ cargo run --bin raven
 RUST_LOG=raven::server=debug cargo run --bin raven
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Unit Tests
 ```bash
@@ -219,27 +226,32 @@ cd python_client
 python test.py  # 30-second streaming test
 ```
 
-## 🚀 Deployment
+## Deployment
 
-### CLI Releases
+### Build Release Binary
 ```bash
 make build
-./target/release/raven
 ```
 
-### Service Hardening
-- Enable TLS for gRPC endpoints
-- Configure InfluxDB clustering or backups
-- Set up monitoring and alerting
-- Implement log aggregation
+### Configure Production Environment
+```bash
+cp config/example.toml config/secret.toml
+# update secrets, endpoints, retention, and logging levels
+nano config/secret.toml
+```
 
-### Production Configuration
-- Enable TLS for gRPC endpoints
-- Configure InfluxDB clustering
-- Set up monitoring and alerting
-- Implement log aggregation
+### Launch in Production
+```bash
+ENVIRONMENT=production ./target/release/raven
+```
 
-## 🤝 Contributing
+### Service Hardening Checklist
+- Enable TLS for gRPC endpoints and client auth where required
+- Harden and monitor InfluxDB (auth, backups, retention policies)
+- Ship logs to centralized aggregation and wire alerts on health endpoints
+- Consider running under a process supervisor (systemd, supervisord, etc.)
+
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/amazing-feature`
@@ -260,17 +272,7 @@ cargo watch -x run
 cargo audit
 ```
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- **Binance** for providing reliable WebSocket APIs
-- **InfluxDB** for time-series data storage
-- **Tonic** for high-performance gRPC implementation
-- **Tokio** for async runtime excellence
-
----
-
-**Built with ❤️ in Rust** | **Performance-first** | **Production-ready**
