@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -66,21 +66,24 @@ impl Default for BatchConfig {
 impl BatchConfig {
     pub fn validate(&self, name: &str) -> RavenResult<()> {
         if self.size == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}.size"),
                 self.size.to_string(),
             ));
         }
 
         if self.timeout_ms == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}.timeout_ms"),
                 self.timeout_ms.to_string(),
             ));
         }
 
         if self.max_memory_mb == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}.max_memory_mb"),
                 self.max_memory_mb.to_string(),
             ));

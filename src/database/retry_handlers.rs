@@ -3,7 +3,7 @@
 
 use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
 use crate::database::dead_letter_queue::{DeadLetterEntry, RetryHandler};
-use crate::error::{RavenError, RavenResult};
+use crate::error::{EnhancedErrorContext, RavenResult};
 use influxdb2::models::DataPoint;
 use serde_json;
 use std::sync::Arc;
@@ -29,48 +29,51 @@ impl RetryHandler for InfluxWriteRetryHandler {
         debug!("⟲ Retrying InfluxDB write operation: {}", entry.id);
 
         // Parse the operation data based on metadata
-        let operation_subtype = entry
-            .metadata
-            .get("subtype")
-            .ok_or_else(|| RavenError::dead_letter_processing("Missing operation subtype"))?;
+        let operation_subtype = entry.metadata.get("subtype").ok_or_else(|| {
+            crate::raven_error!(dead_letter_processing, "Missing operation subtype")
+        })?;
 
         match operation_subtype.as_str() {
             "orderbook_snapshot" => {
                 let snapshot: OrderBookSnapshot = serde_json::from_str(&entry.data)
-                    .map_err(|e| RavenError::data_serialization(e.to_string()))?;
-                self.influx_client
-                    .write_orderbook_snapshot(&snapshot)
-                    .await
-                    .map_err(|e| RavenError::database_write(e.to_string()))
+                    .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
+                crate::handle_database_error!(
+                    self.influx_client.write_orderbook_snapshot(&snapshot).await,
+                    "write_orderbook_snapshot",
+                    "orderbook_snapshots"
+                )
             }
             "trade_snapshot" => {
                 let snapshot: TradeSnapshot = serde_json::from_str(&entry.data)
-                    .map_err(|e| RavenError::data_serialization(e.to_string()))?;
-                self.influx_client
-                    .write_trade_snapshot(&snapshot)
-                    .await
-                    .map_err(|e| RavenError::database_write(e.to_string()))
+                    .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
+                crate::handle_database_error!(
+                    self.influx_client.write_trade_snapshot(&snapshot).await,
+                    "write_trade_snapshot",
+                    "trade_snapshots"
+                )
             }
             "candle" => {
                 let candle: CandleData = serde_json::from_str(&entry.data)
-                    .map_err(|e| RavenError::data_serialization(e.to_string()))?;
-                self.influx_client
-                    .write_candle(&candle)
-                    .await
-                    .map_err(|e| RavenError::database_write(e.to_string()))
+                    .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
+                crate::handle_database_error!(
+                    self.influx_client.write_candle(&candle).await,
+                    "write_candle",
+                    "candles"
+                )
             }
             "funding_rate" => {
                 let funding: FundingRateData = serde_json::from_str(&entry.data)
-                    .map_err(|e| RavenError::data_serialization(e.to_string()))?;
-                self.influx_client
-                    .write_funding_rate(&funding)
-                    .await
-                    .map_err(|e| RavenError::database_write(e.to_string()))
+                    .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
+                crate::handle_database_error!(
+                    self.influx_client.write_funding_rate(&funding).await,
+                    "write_funding_rate",
+                    "funding_rates"
+                )
             }
             "wallet_update" => {
                 // Parse wallet update data
                 let wallet_data: WalletUpdateData = serde_json::from_str(&entry.data)
-                    .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+                    .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
                 let balances: Vec<(String, f64, f64)> = wallet_data
                     .balances
@@ -78,23 +81,30 @@ impl RetryHandler for InfluxWriteRetryHandler {
                     .map(|b| (b.asset, b.available, b.locked))
                     .collect();
 
-                self.influx_client
-                    .write_wallet_update(&wallet_data.user_id, &balances, wallet_data.timestamp)
-                    .await
-                    .map_err(|e| RavenError::database_write(e.to_string()))
+                crate::handle_database_error!(
+                    self.influx_client
+                        .write_wallet_update(&wallet_data.user_id, &balances, wallet_data.timestamp)
+                        .await,
+                    "write_wallet_update",
+                    "wallet_updates"
+                )
             }
             "batch_write" => {
                 // For batch writes, we store a simplified representation
                 // In a real implementation, you'd need a more sophisticated approach
                 // to serialize/deserialize DataPoint objects
-                return Err(RavenError::dead_letter_processing(
+                crate::raven_bail!(crate::raven_error!(
+                    dead_letter_processing,
                     "Batch write retry not implemented - DataPoint serialization not supported"
                         .to_string(),
                 ));
             }
-            _ => Err(RavenError::dead_letter_processing(format!(
-                "Unknown operation subtype: {operation_subtype}"
-            ))),
+            _ => {
+                crate::raven_bail!(crate::raven_error!(
+                    dead_letter_processing,
+                    format!("Unknown operation subtype: {operation_subtype}")
+                ));
+            }
         }
     }
 
@@ -128,7 +138,7 @@ impl DatabaseDeadLetterHelper {
         error_message: String,
     ) -> RavenResult<DeadLetterEntry> {
         let data = serde_json::to_string(snapshot)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -149,7 +159,7 @@ impl DatabaseDeadLetterHelper {
         error_message: String,
     ) -> RavenResult<DeadLetterEntry> {
         let data = serde_json::to_string(snapshot)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -170,7 +180,7 @@ impl DatabaseDeadLetterHelper {
         error_message: String,
     ) -> RavenResult<DeadLetterEntry> {
         let data = serde_json::to_string(candle)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -192,7 +202,7 @@ impl DatabaseDeadLetterHelper {
         error_message: String,
     ) -> RavenResult<DeadLetterEntry> {
         let data = serde_json::to_string(funding)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -228,7 +238,7 @@ impl DatabaseDeadLetterHelper {
         };
 
         let data = serde_json::to_string(&wallet_data)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -255,7 +265,7 @@ impl DatabaseDeadLetterHelper {
             .collect();
 
         let data = serde_json::to_string(&data_point_info)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let entry = crate::database::dead_letter_queue::DeadLetterEntry::new(
             "influx_write".to_string(),
@@ -300,7 +310,7 @@ impl EnhancedInfluxClient {
                     "⚬ Orderbook write failed, adding to dead letter queue: {}",
                     e
                 );
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_orderbook_entry(
                     snapshot,
                     raven_error.to_string(),
@@ -317,7 +327,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("⚬ Trade write failed, adding to dead letter queue: {}", e);
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_trade_entry(
                     snapshot,
                     raven_error.to_string(),
@@ -334,7 +344,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("⚬ Candle write failed, adding to dead letter queue: {}", e);
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry =
                     DatabaseDeadLetterHelper::create_candle_entry(candle, raven_error.to_string())?;
                 self.dead_letter_queue.add_entry(entry).await?;
@@ -352,7 +362,7 @@ impl EnhancedInfluxClient {
                     "⚬ Funding rate write failed, adding to dead letter queue: {}",
                     e
                 );
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_funding_rate_entry(
                     funding,
                     raven_error.to_string(),
@@ -381,7 +391,7 @@ impl EnhancedInfluxClient {
                     "⚬ Wallet update write failed, adding to dead letter queue: {}",
                     e
                 );
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_wallet_update_entry(
                     user_id,
                     balances,
@@ -400,7 +410,7 @@ impl EnhancedInfluxClient {
             Ok(()) => Ok(()),
             Err(e) => {
                 warn!("⚬ Batch write failed, adding to dead letter queue: {}", e);
-                let raven_error = RavenError::database_write(e.to_string());
+                let raven_error = crate::raven_error!(database_write, e.to_string());
                 let entry = DatabaseDeadLetterHelper::create_batch_write_entry(
                     &data_points,
                     raven_error.to_string(),

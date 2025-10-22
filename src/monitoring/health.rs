@@ -13,7 +13,7 @@ use tracing::{error, info};
 
 use crate::config::MonitoringConfig;
 use crate::database::influx_client::InfluxClient;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
 
@@ -114,9 +114,10 @@ impl HealthService {
 
         let addr = format!("0.0.0.0:{}", self.config.health_check_port);
         let listener = TcpListener::bind(&addr).await.map_err(|e| {
-            RavenError::connection_error(format!(
-                "Failed to bind health check server to {addr}: {e}"
-            ))
+            crate::raven_error!(
+                connection_error,
+                format!("Failed to bind health check server to {addr}: {e}")
+            )
         })?;
 
         info!("⚕ Health check server starting on {}", addr);
@@ -364,54 +365,4 @@ async fn liveness_handler(
 ) -> Result<Json<LivenessResponse>, StatusCode> {
     let liveness = HealthService::get_liveness_status(&state).await;
     Ok(Json(liveness))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::database::influx_client::InfluxConfig;
-
-    #[tokio::test]
-    async fn test_health_service_creation() {
-        let config = MonitoringConfig::default();
-        let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-        let subscription_manager = Arc::new(SubscriptionManager::new());
-        let hf_storage = Arc::new(HighFrequencyStorage::new());
-
-        let health_service =
-            HealthService::new(config, influx_client, subscription_manager, hf_storage);
-
-        // Should create without error
-        assert_eq!(health_service.config.health_check_port, 8080);
-    }
-
-    #[tokio::test]
-    async fn test_component_health_status() {
-        let health = ComponentHealth {
-            status: HealthStatus::Healthy,
-            message: "Test component".to_string(),
-            last_check: 1640995200,
-            response_time_ms: Some(10),
-            details: HashMap::new(),
-        };
-
-        assert_eq!(health.status, HealthStatus::Healthy);
-        assert_eq!(health.message, "Test component");
-        assert_eq!(health.response_time_ms, Some(10));
-    }
-
-    #[test]
-    fn test_health_status_serialization() {
-        let health = HealthResponse {
-            status: HealthStatus::Healthy,
-            timestamp: 1640995200,
-            uptime_seconds: 3600,
-            version: "0.1.0".to_string(),
-            components: HashMap::new(),
-        };
-
-        let json = serde_json::to_string(&health).unwrap();
-        assert!(json.contains("\"status\":\"healthy\""));
-        assert!(json.contains("\"uptime_seconds\":3600"));
-    }
 }

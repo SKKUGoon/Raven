@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -34,21 +34,24 @@ impl ConfigSection for MonitoringConfig {
         const ALLOWED_LEVELS: [&str; 5] = ["trace", "debug", "info", "warn", "error"];
 
         if !ALLOWED_LEVELS.contains(&self.log_level.as_str()) {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "monitoring.log_level",
                 self.log_level.clone(),
             ));
         }
 
         if self.metrics_port == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "monitoring.metrics_port",
                 self.metrics_port.to_string(),
             ));
         }
 
         if self.health_check_port == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "monitoring.health_check_port",
                 self.health_check_port.to_string(),
             ));

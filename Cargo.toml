@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "raven"
 path = "src/main.rs"
 
+[[bin]]
+name = "ravenctl"
+path = "src/bin/ravenctl.rs"
+
 [dependencies]
 # gRPC and Protocol Buffers
 tonic = "0.14.2"

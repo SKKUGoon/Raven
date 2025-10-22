@@ -1,9 +1,6 @@
 use crate::{
-    circuit_breaker::CircuitBreakerRegistry,
-    client_manager::ClientManager,
-    database::DeadLetterQueue,
-    error::{RavenError, RavenResult},
-    logging::log_error_with_context,
+    circuit_breaker::CircuitBreakerRegistry, client_manager::ClientManager,
+    database::DeadLetterQueue, error::RavenResult, logging::log_error_with_context,
     monitoring::TracingService,
 };
 use std::sync::Arc;
@@ -57,10 +54,14 @@ impl Default for DataCollectors {
 /// Wait for shutdown signals
 pub async fn wait_for_shutdown_signal() -> RavenResult<()> {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .map_err(|e| RavenError::internal(format!("Failed to setup SIGTERM handler: {e}")))?;
+        .map_err(|e| {
+            crate::raven_error!(internal, format!("Failed to setup SIGTERM handler: {e}"))
+        })?;
 
     let mut sigint = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-        .map_err(|e| RavenError::internal(format!("Failed to setup SIGINT handler: {e}")))?;
+        .map_err(|e| {
+            crate::raven_error!(internal, format!("Failed to setup SIGINT handler: {e}"))
+        })?;
 
     // Keep the server running and wait for shutdown signals
     tokio::select! {
@@ -125,7 +126,7 @@ pub async fn perform_graceful_shutdown(
     // Shutdown tracing and flush spans
     if let Err(e) = tracing_service.shutdown().await {
         log_error_with_context(
-            &RavenError::internal(e.to_string()),
+            &crate::raven_error!(internal, e.to_string()),
             "Failed to shutdown tracing",
         );
     }

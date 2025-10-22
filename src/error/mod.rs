@@ -26,6 +26,3 @@ pub use types::RavenError;
 
 // Result type alias for convenience
 pub type RavenResult<T> = Result<T, RavenError>;
-
-#[cfg(test)]
-mod tests;

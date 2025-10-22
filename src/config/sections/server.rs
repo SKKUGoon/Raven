@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -40,21 +40,24 @@ impl ConfigSection for ServerConfig {
 
     fn validate(&self) -> RavenResult<()> {
         if self.port == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "server.port",
                 self.port.to_string(),
             ));
         }
 
         if self.max_connections == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "server.max_connections",
                 self.max_connections.to_string(),
             ));
         }
 
         if self.max_message_size == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "server.max_message_size",
                 self.max_message_size.to_string(),
             ));

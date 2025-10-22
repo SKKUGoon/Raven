@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -72,22 +72,25 @@ impl Default for RetentionPolicy {
 impl RetentionPolicy {
     pub fn validate(&self, name: &str) -> RavenResult<()> {
         if self.full_resolution_days == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}.full_resolution_days"),
                 self.full_resolution_days.to_string(),
             ));
         }
 
         if self.downsampled_days < self.full_resolution_days {
-            return Err(RavenError::configuration(format!(
-                "{name}: Downsampled days must be >= full resolution days"
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
+                format!("{name}: Downsampled days must be >= full resolution days")
+            ));
         }
 
         if self.archive_days < self.downsampled_days {
-            return Err(RavenError::configuration(format!(
-                "{name}: Archive days must be >= downsampled days"
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
+                format!("{name}: Archive days must be >= downsampled days")
+            ));
         }
 
         Ok(())

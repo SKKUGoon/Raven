@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -34,7 +34,8 @@ impl ConfigSection for DataProcessingConfig {
 
     fn validate(&self) -> RavenResult<()> {
         if self.snapshot_interval_ms == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "data_processing.snapshot_interval_ms",
                 self.snapshot_interval_ms.to_string(),
             ));

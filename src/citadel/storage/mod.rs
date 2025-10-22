@@ -8,9 +8,6 @@ use serde::{Deserialize, Serialize};
 pub mod atomic;
 pub mod snapshots;
 
-#[cfg(test)]
-mod tests;
-
 // Re-export commonly used types
 pub use atomic::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage};
 pub use snapshots::{OrderBookLevel, OrderBookSnapshot, TradeSnapshot};

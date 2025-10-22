@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use tracing::warn;
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone)]
 pub struct ConfigLoader {
@@ -61,10 +61,10 @@ impl ConfigLoader {
             Ok(section) => section,
             Err(config::ConfigError::NotFound(_)) => T::default(),
             Err(e) => {
-                return Err(RavenError::configuration(format!(
-                    "Failed to load '{}' configuration section: {e}",
-                    T::KEY
-                )))
+                crate::raven_bail!(crate::raven_error!(
+                    configuration,
+                    format!("Failed to load '{}' configuration section: {e}", T::KEY)
+                ))
             }
         };
 
@@ -104,7 +104,10 @@ impl ConfigLoader {
         );
 
         builder.build().map_err(|e| {
-            RavenError::configuration(format!("Failed to build configuration sources: {e}"))
+            crate::raven_error!(
+                configuration,
+                format!("Failed to build configuration sources: {e}")
+            )
         })
     }
 }

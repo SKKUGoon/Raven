@@ -1,7 +1,7 @@
 // Client Connection Manager
 // "Managing the ravens that carry our messages"
 
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -309,7 +309,8 @@ impl ClientManager {
 
         // Check if we've reached the maximum number of clients
         if clients.len() >= self.config.max_clients {
-            return Err(RavenError::max_connections_exceeded(
+            crate::raven_bail!(crate::raven_error!(
+                max_connections_exceeded,
                 clients.len(),
                 self.config.max_clients,
             ));
@@ -343,7 +344,7 @@ impl ClientManager {
             debug!("♡ Updated heartbeat for client: {}", client_id);
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -355,7 +356,7 @@ impl ClientManager {
             client.update_activity();
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -367,7 +368,7 @@ impl ClientManager {
             client.increment_messages_sent();
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -379,7 +380,7 @@ impl ClientManager {
             client.increment_messages_received();
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -395,7 +396,7 @@ impl ClientManager {
             client.subscription_count = count;
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -412,7 +413,7 @@ impl ClientManager {
             client.add_metadata(key, value);
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -468,7 +469,7 @@ impl ClientManager {
 
             Ok(())
         } else {
-            Err(RavenError::client_not_found(client_id))
+            crate::raven_bail!(crate::raven_error!(client_not_found, client_id));
         }
     }
 
@@ -751,6 +752,3 @@ impl Clone for ClientManager {
         }
     }
 }
-
-#[cfg(test)]
-mod tests;

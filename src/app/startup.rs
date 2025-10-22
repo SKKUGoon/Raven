@@ -9,7 +9,7 @@ use crate::{
         DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
         InfluxWriteRetryHandler,
     },
-    error::{RavenError, RavenResult},
+    error::{EnhancedErrorContext, RavenResult},
     logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
     monitoring::{CrowService, HealthService, MetricsService, TracingService},
     raven_bail,
@@ -39,10 +39,10 @@ pub async fn validate_dependencies(
         }
         Err(e) => {
             error!("  * Cannot bind to {}: {}", bind_addr, e);
-            return Err(RavenError::configuration(format!(
-                "  * Port {} is not available: {e}",
-                server.port
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
+                format!("  * Port {} is not available: {e}", server.port)
+            ));
         }
     }
 
@@ -58,10 +58,13 @@ pub async fn validate_dependencies(
                 "  * Cannot bind to metrics port {}: {e}",
                 monitoring.metrics_port,
             );
-            return Err(RavenError::configuration(format!(
-                "  * Metrics port {} is not available: {e}",
-                monitoring.metrics_port,
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
+                format!(
+                    "  * Metrics port {} is not available: {e}",
+                    monitoring.metrics_port,
+                )
+            ));
         }
     }
 
@@ -80,10 +83,13 @@ pub async fn validate_dependencies(
                 "  * Cannot bind to health check port {}: {}",
                 monitoring.health_check_port, e
             );
-            return Err(RavenError::configuration(format!(
-                "  * Health check port {} is not available: {}",
-                monitoring.health_check_port, e
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
+                format!(
+                    "  * Health check port {} is not available: {}",
+                    monitoring.health_check_port, e
+                )
+            ));
         }
     }
 
@@ -128,7 +134,7 @@ pub fn load_and_validate_config(
         Err(e) => {
             error!("Failed to load configuration: {}", e);
             error!("Try running with --validate to check configuration");
-            raven_bail!(RavenError::configuration(e.to_string()));
+            raven_bail!(crate::raven_error!(configuration, e.to_string()));
         }
     };
 
@@ -148,13 +154,15 @@ pub fn load_and_validate_config(
 
 /// Initialize configuration manager with hot-reloading
 pub async fn initialize_config_manager(loader: ConfigLoader) -> RavenResult<ConfigManager> {
-    let config_manager = ConfigManager::new(loader, Duration::from_secs(5))
-        .map_err(|e| RavenError::configuration(e.to_string()))?;
+    let config_manager = crate::handle_config_error!(
+        ConfigManager::new(loader, Duration::from_secs(5)),
+        "config_manager.init"
+    )?;
 
     // Start hot-reload monitoring
     if let Err(e) = config_manager.start_hot_reload().await {
         log_error_with_context(
-            &RavenError::configuration(e.to_string()),
+            &crate::raven_error!(configuration, e.to_string()),
             "Failed to start configuration hot-reload",
         );
         warn!("Continuing without hot-reload capability");
@@ -263,10 +271,10 @@ pub async fn initialize_influx_client(
     // Connect to InfluxDB
     if let Err(e) = influx_client.connect().await {
         log_error_with_context(
-            &RavenError::database_connection(e.to_string()),
+            &crate::raven_error!(database_connection, e.to_string()),
             "Failed to connect to InfluxDB",
         );
-        raven_bail!(RavenError::database_connection(e.to_string()));
+        raven_bail!(crate::raven_error!(database_connection, e.to_string()));
     }
 
     info!("InfluxDB client initialized with enhanced error handling");
@@ -315,7 +323,7 @@ pub async fn initialize_monitoring_services(
     let tracing_service = Arc::new(TracingService::new(monitoring.clone()));
     if let Err(e) = tracing_service.initialize().await {
         log_error_with_context(
-            &RavenError::internal(e.to_string()),
+            &crate::raven_error!(internal, e.to_string()),
             "Failed to initialize distributed tracing",
         );
         warn!("Continuing without distributed tracing");
@@ -325,7 +333,8 @@ pub async fn initialize_monitoring_services(
 
     // Initialize metrics service
     let metrics_service = Arc::new(
-        MetricsService::new(monitoring.clone()).map_err(|e| RavenError::internal(e.to_string()))?,
+        MetricsService::new(monitoring.clone())
+            .map_err(|e| crate::raven_error!(internal, e.to_string()))?,
     );
 
     let health_service = Arc::new(HealthService::new(
@@ -346,7 +355,7 @@ pub async fn initialize_monitoring_services(
     let monitoring_handles = monitoring_service
         .start()
         .await
-        .map_err(|e| RavenError::internal(e.to_string()))?;
+        .map_err(|e| crate::raven_error!(internal, e.to_string()))?;
 
     info!("Monitoring services started:");
     info!("  Health checks on port {}", monitoring.health_check_port);

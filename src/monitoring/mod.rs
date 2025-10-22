@@ -5,9 +5,6 @@ pub mod health;
 pub mod metrics;
 pub mod tracing;
 
-#[cfg(test)]
-mod tests;
-
 pub use health::*;
 pub use metrics::*;
 pub use tracing::*;

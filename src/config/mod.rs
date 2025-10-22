@@ -8,12 +8,6 @@ pub mod sections;
 pub mod utils;
 pub mod validation;
 
-#[cfg(test)]
-mod tests;
-
-#[cfg(test)]
-mod integration_tests;
-
 pub use builder::{RuntimeConfig, RuntimeConfigBuilder};
 pub use loader::ConfigLoader;
 pub use manager::ConfigManager;

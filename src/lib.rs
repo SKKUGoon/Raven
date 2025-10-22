@@ -5,6 +5,7 @@ pub mod app;
 pub mod citadel;
 pub mod client_manager;
 pub mod config;
+pub mod control;
 pub mod data_handlers;
 pub mod database;
 pub mod error;

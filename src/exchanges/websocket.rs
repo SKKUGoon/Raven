@@ -1,4 +1,4 @@
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use crate::exchanges::types::*;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
@@ -49,8 +49,9 @@ pub struct ExchangeWebSocketClient {
 impl ExchangeWebSocketClient {
     pub fn new(parser: Box<dyn WebSocketParser>) -> RavenResult<Self> {
         let exchange = parser.exchange();
-        let url = Url::parse(exchange.websocket_url())
-            .map_err(|e| RavenError::config_error(format!("Invalid WebSocket URL: {e}")))?;
+        let url = Url::parse(exchange.websocket_url()).map_err(|e| {
+            crate::raven_error!(config_error, format!("Invalid WebSocket URL: {e}"))
+        })?;
 
         Ok(Self {
             parser,
@@ -99,7 +100,10 @@ impl ExchangeWebSocketClient {
         );
 
         let (ws_stream, _) = connect_async(self.url.as_str()).await.map_err(|e| {
-            RavenError::connection_error(format!("WebSocket connection failed: {e}"))
+            crate::raven_error!(
+                connection_error,
+                format!("WebSocket connection failed: {e}")
+            )
         })?;
 
         info!("Connected to {} WebSocket", self.parser.exchange());
@@ -113,7 +117,10 @@ impl ExchangeWebSocketClient {
                 .send(Message::Text(subscribe_msg.into()))
                 .await
                 .map_err(|e| {
-                    RavenError::connection_error(format!("Failed to send subscription: {e}"))
+                    crate::raven_error!(
+                        connection_error,
+                        format!("Failed to send subscription: {e}")
+                    )
                 })?;
 
             debug!(
@@ -195,7 +202,7 @@ impl ExchangeWebSocketClient {
                 .parse_message(message, &subscription.data_type)?
             {
                 sender.send(market_data).map_err(|_| {
-                    RavenError::internal_error("Failed to send message".to_string())
+                    crate::raven_error!(internal_error, "Failed to send message".to_string())
                 })?;
                 return Ok(());
             }

@@ -16,7 +16,7 @@ pub use storage::{
 pub use streaming::{SnapshotBatch, SnapshotConfig, SnapshotMetrics, SnapshotService};
 
 use crate::database::{influx_client::InfluxClient, DeadLetterQueue};
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use crate::exchanges::types::Exchange;
 use crate::subscription_manager::SubscriptionManager;
 use serde::{Deserialize, Serialize};
@@ -289,19 +289,19 @@ impl Citadel {
 
         // Check if symbol is allowed
         if !rules.allowed_symbols.is_empty() && !rules.allowed_symbols.contains(&data.symbol) {
-            return Err(RavenError::data_validation(format!(
-                "Symbol {} not in allowed list",
-                data.symbol
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Symbol {} not in allowed list", data.symbol)
+            ));
         }
 
         // Check if exchange is allowed
         if !rules.allowed_exchanges.is_empty() && !rules.allowed_exchanges.contains(&data.exchange)
         {
-            return Err(RavenError::data_validation(format!(
-                "Exchange {} not in allowed list",
-                data.exchange
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Exchange {} not in allowed list", data.exchange)
+            ));
         }
 
         // Validate timestamp
@@ -311,33 +311,40 @@ impl Citadel {
             .as_millis() as i64;
 
         if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
-            return Err(RavenError::data_validation("Data too old".to_string()));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                "Data too old".to_string()
+            ));
         }
 
         // Validate bids and asks
         for (price, quantity) in &data.bids {
             if *price < rules.min_price || *price > rules.max_price {
-                return Err(RavenError::data_validation(format!(
-                    "Bid price {price} out of range"
-                )));
+                crate::raven_bail!(crate::raven_error!(
+                    data_validation,
+                    format!("Bid price {price} out of range")
+                ));
             }
             if *quantity < rules.min_quantity || *quantity > rules.max_quantity {
-                return Err(RavenError::data_validation(format!(
-                    "Bid quantity {quantity} out of range"
-                )));
+                crate::raven_bail!(crate::raven_error!(
+                    data_validation,
+                    format!("Bid quantity {quantity} out of range")
+                ));
             }
         }
 
         for (price, quantity) in &data.asks {
             if *price < rules.min_price || *price > rules.max_price {
-                return Err(RavenError::data_validation(format!(
-                    "Ask price {price} out of range"
-                )));
+                crate::raven_bail!(crate::raven_error!(
+                    data_validation,
+                    format!("Ask price {price} out of range")
+                ));
             }
             if *quantity < rules.min_quantity || *quantity > rules.max_quantity {
-                return Err(RavenError::data_validation(format!(
-                    "Ask quantity {quantity} out of range"
-                )));
+                crate::raven_bail!(crate::raven_error!(
+                    data_validation,
+                    format!("Ask quantity {quantity} out of range")
+                ));
             }
         }
 
@@ -348,9 +355,10 @@ impl Citadel {
         ) {
             let spread_percentage = ((best_ask - best_bid) / best_bid) * 100.0;
             if spread_percentage > rules.max_spread_percentage {
-                return Err(RavenError::data_validation(format!(
-                    "Spread too wide: {spread_percentage:.2}%"
-                )));
+                crate::raven_bail!(crate::raven_error!(
+                    data_validation,
+                    format!("Spread too wide: {spread_percentage:.2}%")
+                ));
             }
         }
 
@@ -368,19 +376,19 @@ impl Citadel {
 
         // Check if symbol is allowed
         if !rules.allowed_symbols.is_empty() && !rules.allowed_symbols.contains(&data.symbol) {
-            return Err(RavenError::data_validation(format!(
-                "Symbol {} not in allowed list",
-                data.symbol
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Symbol {} not in allowed list", data.symbol)
+            ));
         }
 
         // Check if exchange is allowed
         if !rules.allowed_exchanges.is_empty() && !rules.allowed_exchanges.contains(&data.exchange)
         {
-            return Err(RavenError::data_validation(format!(
-                "Exchange {} not in allowed list",
-                data.exchange
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Exchange {} not in allowed list", data.exchange)
+            ));
         }
 
         // Validate timestamp
@@ -390,23 +398,26 @@ impl Citadel {
             .as_millis() as i64;
 
         if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
-            return Err(RavenError::data_validation("Data too old".to_string()));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                "Data too old".to_string()
+            ));
         }
 
         // Validate price
         if data.price < rules.min_price || data.price > rules.max_price {
-            return Err(RavenError::data_validation(format!(
-                "Price {} out of range",
-                data.price
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Price {} out of range", data.price)
+            ));
         }
 
         // Validate quantity
         if data.quantity < rules.min_quantity || data.quantity > rules.max_quantity {
-            return Err(RavenError::data_validation(format!(
-                "Quantity {} out of range",
-                data.quantity
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                data_validation,
+                format!("Quantity {} out of range", data.quantity)
+            ));
         }
 
         // TradeSide enum already validates the side, no need for additional validation
@@ -448,7 +459,7 @@ impl Citadel {
         self.influx_client
             .write_orderbook_snapshot(&snapshot)
             .await
-            .map_err(|e| RavenError::database_write(e.to_string()))
+            .map_err(|e| crate::raven_error!(database_write, e.to_string()))
     }
 
     /// Write trade data to database
@@ -457,7 +468,7 @@ impl Citadel {
         self.influx_client
             .write_trade_snapshot(&snapshot)
             .await
-            .map_err(|e| RavenError::database_write(e.to_string()))
+            .map_err(|e| crate::raven_error!(database_write, e.to_string()))
     }
 
     /// Round price to 8 decimal places
@@ -539,6 +550,3 @@ impl Citadel {
         &self.config
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -5,18 +5,16 @@ pub mod cli;
 pub mod shutdown;
 pub mod startup;
 
-use crate::citadel::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
 use crate::citadel::streaming::{SnapshotConfig, SnapshotService};
 use crate::citadel::{Citadel, CitadelConfig};
+use crate::control::{CollectorManager, ControlServiceImpl};
 use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
-use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futures_orderbook;
-use crate::exchanges::binance::app::futures::trade::initialize_binance_futures_trade;
+use crate::proto::control_service_server::ControlServiceServer;
 use crate::subscription_manager::SubscriptionManager;
 use crate::types::HighFrequencyStorage;
-use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::task::JoinHandle;
+use tonic::transport::Server;
 use tracing::{error, info};
 
 use self::cli::{parse_cli_args, print_version_info};
@@ -51,7 +49,7 @@ pub async fn run() -> RavenResult<()> {
     info!("Ready: [Citadel]");
     let subscription_manager = Arc::new(SubscriptionManager::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
-    let high_freq_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
+    let _high_freq_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
     let citadel = Arc::new(Citadel::new(
         CitadelConfig::default(),
         Arc::clone(&influx_client),
@@ -88,47 +86,16 @@ pub async fn run() -> RavenResult<()> {
     )
     .await?;
 
-    info!("[Citadel] Start research");
+    info!("[Citadel] Ready for dynamic collection");
 
-    let mut symbols = if !args.symbols.is_empty() {
-        args.symbols.clone()
-    } else {
-        vec!["BTCUSDT".to_string()]
-    };
-    symbols.truncate(10);
+    // Initialize CollectorManager for dynamic data collection
+    let collector_manager = Arc::new(CollectorManager::new(
+        Arc::clone(&hf_storage),
+        Arc::clone(&citadel),
+    ));
 
-    let mut seen = HashSet::new();
-    symbols.retain(|sym| seen.insert(sym.clone()));
-
-    info!("[Binance] Collecting symbols: {}", symbols.join(", "));
-
-    let mut collector_tasks: Vec<JoinHandle<()>> = Vec::new();
-    let mut data_collectors = DataCollectors::new();
-
-    for symbol in symbols {
-        let (orderbook_collector, orderbook_receiver) =
-            initialize_binance_futures_orderbook(symbol.clone()).await?;
-        let (trade_collector, trade_receiver) =
-            initialize_binance_futures_trade(symbol.clone()).await?;
-
-        collector_tasks.push(spawn_orderbook_ingestor(
-            orderbook_receiver,
-            Arc::clone(&high_freq_handler),
-            Arc::clone(&citadel),
-        ));
-        collector_tasks.push(spawn_trade_ingestor(
-            trade_receiver,
-            Arc::clone(&high_freq_handler),
-            Arc::clone(&citadel),
-        ));
-
-        let orderbook_name = format!("binance-futures-orderbook-{}", symbol.to_lowercase());
-        let trade_name = format!("binance-futures-trade-{}", symbol.to_lowercase());
-
-        data_collectors = data_collectors
-            .add_collector(orderbook_name, orderbook_collector)
-            .add_collector(trade_name, trade_collector);
-    }
+    // Initialize control service
+    let control_service = ControlServiceImpl::new(Arc::clone(&collector_manager));
 
     // Initialize gRPC server with circuit breaker protection
     info!("[Raven] 'Send out the ravens'");
@@ -136,24 +103,43 @@ pub async fn run() -> RavenResult<()> {
     info!("Metric check :{}", config.monitoring.metrics_port);
     info!("Health check :{}", config.monitoring.health_check_port);
 
-    // Start the gRPC server
-    let server = crate::server::MarketDataServer::new(
+    // Start the gRPC servers
+    let market_data_server = crate::server::MarketDataServer::new(
         Arc::clone(&subscription_manager),
         Arc::clone(&influx_client),
         Arc::clone(&hf_storage),
         config.server.max_connections,
     );
 
-    // Spawn the gRPC server in a separate task
-    let server_handle = {
+    // Spawn the market data gRPC server
+    let market_data_server_handle = {
         let host = "0.0.0.0".to_string(); // Bind to all interfaces
         let port = config.server.port;
         tokio::spawn(async move {
-            info!("▶ Starting gRPC server on {}:{}", host, port);
-            if let Err(e) = server.start(&host, port).await {
-                tracing::error!("✗ gRPC server failed: {}", e);
+            info!("▶ Starting Market Data gRPC server on {}:{}", host, port);
+            if let Err(e) = market_data_server.start(&host, port).await {
+                tracing::error!("✗ Market Data gRPC server failed: {}", e);
             } else {
-                info!("✓ gRPC server started successfully");
+                info!("✓ Market Data gRPC server started successfully");
+            }
+        })
+    };
+
+    // Spawn the control gRPC server (localhost only for security)
+    let control_server_handle = {
+        let control_service = control_service;
+        let host = "127.0.0.1".to_string(); // Localhost only for security
+        let port = config.server.port + 1; // Use next port
+        tokio::spawn(async move {
+            let addr = format!("{host}:{port}").parse().unwrap();
+            info!("▶ Starting Control gRPC server on {}", addr);
+
+            let service = ControlServiceServer::new(control_service);
+
+            if let Err(e) = Server::builder().add_service(service).serve(addr).await {
+                tracing::error!("✗ Control gRPC server failed: {}", e);
+            } else {
+                info!("✓ Control gRPC server started successfully");
             }
         })
     };
@@ -161,13 +147,12 @@ pub async fn run() -> RavenResult<()> {
     // Wait for shutdown signals
     wait_for_shutdown_signal().await?;
 
-    // Stop gRPC server
-    server_handle.abort();
+    // Stop gRPC servers
+    market_data_server_handle.abort();
+    control_server_handle.abort();
 
-    // Stop background collector tasks before shutdown
-    for task in collector_tasks {
-        task.abort();
-    }
+    // Stop all active collections
+    collector_manager.stop_all_collections().await;
 
     // Perform graceful shutdown
     perform_graceful_shutdown(
@@ -179,7 +164,7 @@ pub async fn run() -> RavenResult<()> {
         )),
         circuit_breaker_registry,
         monitoring_handles,
-        data_collectors,
+        DataCollectors::new(), // Empty since we're using CollectorManager now
     )
     .await?;
 

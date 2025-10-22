@@ -11,13 +11,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .out_dir(&out_dir)
         .compile_protos(
-            &["proto/market_data.proto", "proto/subscription.proto"],
+            &[
+                "proto/market_data.proto",
+                "proto/subscription.proto",
+                "proto/control.proto",
+            ],
             &["proto"],
         )?;
 
     // Tell cargo to recompile if proto files change
     println!("cargo:rerun-if-changed=proto/market_data.proto");
     println!("cargo:rerun-if-changed=proto/subscription.proto");
+    println!("cargo:rerun-if-changed=proto/control.proto");
     println!("cargo:rerun-if-changed=build.rs");
 
     // Add build metadata for version information

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::config::validation::ConfigSection;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -44,28 +44,32 @@ impl ConfigSection for DatabaseConfig {
 
     fn validate(&self) -> RavenResult<()> {
         if self.influx_url.is_empty() {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "database.influx_url",
                 "<empty>".to_string(),
             ));
         }
 
         if self.bucket.is_empty() {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "database.bucket",
                 "<empty>".to_string(),
             ));
         }
 
         if self.org.is_empty() {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "database.org",
                 "<empty>".to_string(),
             ));
         }
 
         if self.connection_pool_size == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 "database.connection_pool_size",
                 self.connection_pool_size.to_string(),
             ));

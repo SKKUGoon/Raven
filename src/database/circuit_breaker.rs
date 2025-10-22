@@ -1,6 +1,3 @@
-// Circuit Breaker Implementation
-// "When the wall falls, we must know when to rebuild it"
-
 use crate::error::RavenError;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -403,10 +400,13 @@ where
     fn from(error: CircuitBreakerError<E>) -> Self {
         match error {
             CircuitBreakerError::CircuitOpen { name, state } => {
-                RavenError::circuit_breaker_open(format!("Circuit breaker {name} is {state}"))
+                crate::raven_error!(
+                    circuit_breaker_open,
+                    format!("Circuit breaker {name} is {state}")
+                )
             }
             CircuitBreakerError::OperationFailed { error } => {
-                RavenError::internal(error.to_string())
+                crate::raven_error!(internal, error.to_string())
             }
         }
     }

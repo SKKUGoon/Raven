@@ -243,7 +243,8 @@ impl ConfigValidator {
     /// Validate port ranges
     pub fn validate_port(port: u16, name: &str) -> RavenResult<()> {
         if port == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}_port"),
                 port.to_string(),
             ));
@@ -257,16 +258,18 @@ impl ConfigValidator {
     /// Validate URL format
     pub fn validate_url(url: &str, name: &str) -> RavenResult<()> {
         if url.is_empty() {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}_url"),
                 "<empty>".to_string(),
             ));
         }
 
         if !url.starts_with("http://") && !url.starts_with("https://") {
-            return Err(RavenError::config_error(format!(
-                "{name} URL must start with http:// or https://"
-            )));
+            crate::raven_bail!(crate::raven_error!(
+                config_error,
+                format!("{name} URL must start with http:// or https://")
+            ));
         }
 
         Ok(())
@@ -275,7 +278,8 @@ impl ConfigValidator {
     /// Validate buffer sizes
     pub fn validate_buffer_size(size: usize, name: &str, min_size: usize) -> RavenResult<()> {
         if size < min_size {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}_buffer_size"),
                 size.to_string(),
             ));
@@ -294,7 +298,8 @@ impl ConfigValidator {
     /// Validate timeout values
     pub fn validate_timeout(timeout_ms: u64, name: &str) -> RavenResult<()> {
         if timeout_ms == 0 {
-            return Err(RavenError::invalid_config_value(
+            crate::raven_bail!(crate::raven_error!(
+                invalid_config_value,
                 format!("{name}_timeout_ms"),
                 timeout_ms.to_string(),
             ));

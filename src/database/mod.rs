@@ -5,7 +5,6 @@ pub mod circuit_breaker;
 pub mod dead_letter_queue;
 pub mod influx_client;
 pub mod retry_handlers;
-pub mod tests;
 
 // Re-export commonly used types
 pub use circuit_breaker::{

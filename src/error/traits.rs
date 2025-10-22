@@ -1,7 +1,7 @@
 // Error Context Traits
 // "Enhanced error context with operation-specific information"
 
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use std::fmt;
 
 /// Error context trait for adding context to errors
@@ -33,19 +33,19 @@ where
     where
         F: FnOnce() -> String,
     {
-        self.map_err(|e| RavenError::internal(format!("{}: {}", f(), e)))
+        self.map_err(|e| crate::raven_error!(internal, format!("{}: {}", f(), e)))
     }
 
     fn with_database_context(self) -> RavenResult<T> {
-        self.map_err(|e| RavenError::database_connection(e.to_string()))
+        self.map_err(|e| crate::raven_error!(database_connection, e.to_string()))
     }
 
     fn with_grpc_context(self) -> RavenResult<T> {
-        self.map_err(|e| RavenError::grpc_connection(e.to_string()))
+        self.map_err(|e| crate::raven_error!(grpc_connection, e.to_string()))
     }
 
     fn with_subscription_context(self) -> RavenResult<T> {
-        self.map_err(|e| RavenError::subscription_failed(e.to_string()))
+        self.map_err(|e| crate::raven_error!(subscription_failed, e.to_string()))
     }
 }
 
@@ -58,22 +58,22 @@ where
             Some(table) => format!("Database {operation} operation on table {table}"),
             None => format!("Database {operation} operation"),
         };
-        self.map_err(|e| RavenError::database_connection(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(database_connection, format!("{context}: {e}")))
     }
 
     fn with_grpc_context(self, service: &str, method: &str) -> RavenResult<T> {
         let context = format!("gRPC {service} service {method} method");
-        self.map_err(|e| RavenError::grpc_connection(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(grpc_connection, format!("{context}: {e}")))
     }
 
     fn with_subscription_context(self, client_id: &str, subscription_type: &str) -> RavenResult<T> {
         let context = format!("Subscription {subscription_type} for client {client_id}",);
-        self.map_err(|e| RavenError::subscription_failed(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(subscription_failed, format!("{context}: {e}")))
     }
 
     fn with_config_context(self, config_key: &str) -> RavenResult<T> {
         let context = format!("Configuration key: {config_key}");
-        self.map_err(|e| RavenError::configuration(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(configuration, format!("{context}: {e}")))
     }
 
     fn with_exchange_context(self, exchange: &str, symbol: Option<&str>) -> RavenResult<T> {
@@ -81,7 +81,7 @@ where
             Some(symbol) => format!("Exchange {exchange} symbol {symbol}"),
             None => format!("Exchange {exchange}"),
         };
-        self.map_err(|e| RavenError::connection_error(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(connection_error, format!("{context}: {e}")))
     }
 
     fn with_operation_context(self, operation: &str, component: Option<&str>) -> RavenResult<T> {
@@ -89,6 +89,6 @@ where
             Some(component) => format!("{operation} operation in {component}"),
             None => format!("{operation} operation"),
         };
-        self.map_err(|e| RavenError::internal(format!("{context}: {e}")))
+        self.map_err(|e| crate::raven_error!(internal, format!("{context}: {e}")))
     }
 }

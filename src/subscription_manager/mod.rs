@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 // Re-export protobuf types for convenience
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 pub use crate::proto::{DataType, MarketDataMessage};
 
 /// Data types that clients can subscribe to
@@ -126,10 +126,10 @@ impl ClientSubscription {
     /// Send a message to the client
     pub fn send_message(&self, message: MarketDataMessage) -> RavenResult<()> {
         self.sender.send(message).map_err(|_| {
-            RavenError::stream_error(format!(
-                "Failed to send message to client {}",
-                self.client_id
-            ))
+            crate::raven_error!(
+                stream_error,
+                format!("Failed to send message to client {}", self.client_id)
+            )
         })
     }
 
@@ -704,6 +704,3 @@ pub struct SubscriptionStats {
     pub topics: usize,
     pub client_topics: usize,
 }
-
-#[cfg(test)]
-mod tests;

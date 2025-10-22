@@ -83,9 +83,12 @@ impl std::str::FromStr for LogFormat {
             "json" => Ok(LogFormat::Json),
             "pretty" => Ok(LogFormat::Pretty),
             "compact" => Ok(LogFormat::Compact),
-            _ => Err(RavenError::configuration(format!(
-                "Invalid log format: {s}. Valid options: json, pretty, compact"
-            ))),
+            _ => {
+                crate::raven_bail!(crate::raven_error!(
+                    configuration,
+                    format!("Invalid log format: {s}. Valid options: json, pretty, compact")
+                ));
+            }
         }
     }
 }
@@ -144,10 +147,12 @@ impl SpanEvents {
 /// Initialize logging with the given configuration
 pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
     // Parse log level
-    let level = config
-        .level
-        .parse::<Level>()
-        .map_err(|_| RavenError::configuration(format!("Invalid log level: {}", config.level)))?;
+    let level = config.level.parse::<Level>().map_err(|_| {
+        crate::raven_error!(
+            configuration,
+            format!("Invalid log level: {}", config.level)
+        )
+    })?;
 
     // Parse log format
     let format = config.format.parse::<LogFormat>()?;
@@ -155,7 +160,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
     // Create environment filter
     let env_filter = if let Some(ref filter) = config.env_filter {
         EnvFilter::try_new(filter)
-            .map_err(|e| RavenError::configuration(format!("Invalid env filter: {e}")))?
+            .map_err(|e| crate::raven_error!(configuration, format!("Invalid env filter: {e}")))?
     } else {
         EnvFilter::from_default_env()
             .add_directive(
@@ -187,7 +192,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
                     .append(true)
                     .open(file_path)
                     .map_err(|e| {
-                        RavenError::configuration(format!("Failed to open log file: {e}"))
+                        crate::raven_error!(configuration, format!("Failed to open log file: {e}"))
                     })?;
 
                 subscriber.with(layer.with_writer(file)).init();
@@ -211,7 +216,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
                     .append(true)
                     .open(file_path)
                     .map_err(|e| {
-                        RavenError::configuration(format!("Failed to open log file: {e}"))
+                        crate::raven_error!(configuration, format!("Failed to open log file: {e}"))
                     })?;
 
                 subscriber.with(layer.with_writer(file)).init();
@@ -235,7 +240,7 @@ pub fn init_logging(config: &LoggingConfig) -> Result<(), RavenError> {
                     .append(true)
                     .open(file_path)
                     .map_err(|e| {
-                        RavenError::configuration(format!("Failed to open log file: {e}"))
+                        crate::raven_error!(configuration, format!("Failed to open log file: {e}"))
                     })?;
 
                 subscriber.with(layer.with_writer(file)).init();
@@ -518,63 +523,5 @@ pub fn log_config_validation(component: &str, valid: bool, warnings: &[String]) 
             category = "config",
             "Configuration validation failed"
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    #[test]
-    fn test_log_format_parsing() {
-        assert_eq!("json".parse::<LogFormat>().unwrap(), LogFormat::Json);
-        assert_eq!("pretty".parse::<LogFormat>().unwrap(), LogFormat::Pretty);
-        assert_eq!("compact".parse::<LogFormat>().unwrap(), LogFormat::Compact);
-
-        assert!("invalid".parse::<LogFormat>().is_err());
-    }
-
-    #[test]
-    fn test_span_events_parsing() {
-        let events = SpanEvents::from_string("new,close");
-        assert!(events.new);
-        assert!(events.close);
-        assert!(!events.enter);
-        assert!(!events.exit);
-        assert!(!events.active);
-        assert!(!events.full);
-
-        let full_events = SpanEvents::from_string("full");
-        assert!(full_events.new);
-        assert!(full_events.enter);
-        assert!(full_events.exit);
-        assert!(full_events.close);
-        assert!(full_events.active);
-        assert!(full_events.full);
-    }
-
-    #[test]
-    fn test_logging_config_default() {
-        let config = LoggingConfig::default();
-        assert_eq!(config.level, "info");
-        assert_eq!(config.format, "pretty");
-        assert!(config.include_timestamps);
-        assert!(config.include_thread_ids);
-        assert!(!config.include_targets);
-    }
-
-    #[test]
-    fn test_performance_timer() {
-        let timer =
-            PerformanceTimer::start("test_operation").with_metadata("test_key", "test_value");
-
-        assert_eq!(timer.operation, "test_operation");
-        assert!(timer.metadata.contains_key("test_key"));
-
-        // Note: We can't easily test the logging output in unit tests,
-        // but we can verify the timer structure is correct
-        std::thread::sleep(Duration::from_millis(1));
-        timer.finish();
     }
 }

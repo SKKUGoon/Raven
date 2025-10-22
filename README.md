@@ -224,12 +224,17 @@ RUST_LOG=raven::server=debug cargo run --bin raven
 
 ### Unit Tests
 ```bash
-cargo test
+cargo test --test unit
 ```
 
 ### Integration Tests
 ```bash
-cargo test --test integration_tests
+cargo test --test integration
+```
+
+### Optional Network Suites
+```bash
+RAVEN_ENABLE_NETWORK_TESTS=1 cargo test --test integration -- binance
 ```
 
 ### Load Testing

@@ -17,7 +17,7 @@ use tokio::time::{interval, sleep};
 use tracing::{debug, error, info, warn};
 
 use crate::citadel::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 type Result<T> = RavenResult<T>;
 
@@ -54,7 +54,10 @@ pub fn create_orderbook_datapoint(snapshot: &OrderBookSnapshot) -> Result<DataPo
         .timestamp(snapshot.timestamp * 1_000_000)
         .build()
         .map_err(|e| {
-            RavenError::data_serialization(format!("Failed to create orderbook DataPoint: {e}"))
+            crate::raven_error!(
+                data_serialization,
+                format!("Failed to create orderbook DataPoint: {e}")
+            )
         })
 }
 
@@ -72,7 +75,10 @@ pub fn create_trade_datapoint(snapshot: &TradeSnapshot) -> Result<DataPoint> {
         .timestamp(snapshot.timestamp * 1_000_000) // Convert milliseconds to nanoseconds
         .build()
         .map_err(|e| {
-            RavenError::data_serialization(format!("Failed to create trade DataPoint: {e}"))
+            crate::raven_error!(
+                data_serialization,
+                format!("Failed to create trade DataPoint: {e}")
+            )
         })
 }
 
@@ -90,7 +96,10 @@ pub fn create_candle_datapoint(candle: &CandleData) -> Result<DataPoint> {
         .timestamp(candle.timestamp)
         .build()
         .map_err(|e| {
-            RavenError::data_serialization(format!("Failed to create candle DataPoint: {e}"))
+            crate::raven_error!(
+                data_serialization,
+                format!("Failed to create candle DataPoint: {e}")
+            )
         })
 }
 
@@ -104,7 +113,10 @@ pub fn create_funding_rate_datapoint(funding: &FundingRateData) -> Result<DataPo
         .timestamp(funding.timestamp)
         .build()
         .map_err(|e| {
-            RavenError::data_serialization(format!("Failed to create funding rate DataPoint: {e}"))
+            crate::raven_error!(
+                data_serialization,
+                format!("Failed to create funding rate DataPoint: {e}")
+            )
         })
 }
 
@@ -125,7 +137,10 @@ pub fn create_wallet_update_datapoint(
         .timestamp(timestamp)
         .build()
         .map_err(|e| {
-            RavenError::data_serialization(format!("Failed to create wallet update DataPoint: {e}"))
+            crate::raven_error!(
+                data_serialization,
+                format!("Failed to create wallet update DataPoint: {e}")
+            )
         })
 }
 
@@ -393,10 +408,12 @@ impl InfluxClient {
                 );
                 Ok(())
             }
-            Err(e) => Err(RavenError::database_write(format!(
-                "Failed to create bucket '{}': {e}",
-                self.config.bucket
-            ))),
+            Err(e) => {
+                crate::raven_bail!(crate::raven_error!(
+                    database_write,
+                    format!("Failed to create bucket '{}': {e}", self.config.bucket)
+                ));
+            }
         }
     }
 
@@ -408,10 +425,22 @@ impl InfluxClient {
             ..Default::default()
         };
 
-        let response = client
-            .list_buckets(Some(request))
-            .await
-            .map_err(|e| RavenError::database_query(format!("Failed to list buckets: {e}")))?;
+        let response = match client.list_buckets(Some(request)).await {
+            Ok(response) => response,
+            Err(RequestError::Http { status, text }) if status.as_u16() == 404 => {
+                debug!(
+                    "⚬ Bucket '{}' not found via list_buckets (HTTP 404): {text}",
+                    self.config.bucket
+                );
+                return Ok(false);
+            }
+            Err(e) => {
+                crate::raven_bail!(crate::raven_error!(
+                    database_query,
+                    format!("Failed to list buckets: {e}")
+                ));
+            }
+        };
 
         Ok(response
             .buckets
@@ -427,7 +456,7 @@ impl InfluxClient {
         };
 
         let organizations = client.list_organizations(request).await.map_err(|e| {
-            RavenError::database_query(format!("Failed to list organizations: {e}"))
+            crate::raven_error!(database_query, format!("Failed to list organizations: {e}"))
         })?;
 
         if let Some(org) = organizations
@@ -451,7 +480,10 @@ impl InfluxClient {
             .list_organizations(fallback_request)
             .await
             .map_err(|e| {
-                RavenError::database_query(format!("Failed to look up organization by ID: {e}"))
+                crate::raven_error!(
+                    database_query,
+                    format!("Failed to look up organization by ID: {e}")
+                )
             })?;
 
         organizations
@@ -459,18 +491,17 @@ impl InfluxClient {
             .into_iter()
             .find_map(|org| org.id)
             .ok_or_else(|| {
-                RavenError::database_query(format!("Organization '{}' not found", self.config.org))
+                crate::raven_error!(
+                    database_query,
+                    format!("Organization '{}' not found", self.config.org)
+                )
             })
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn ensure_bucket_exists_for_tests(&self) -> Result<()> {
-        self.ensure_bucket_exists().await
     }
 
     async fn get_connection(&self) -> Result<(Client, usize)> {
         if !self.circuit_breaker.can_execute().await {
-            return Err(RavenError::circuit_breaker_open(
+            crate::raven_bail!(crate::raven_error!(
+                circuit_breaker_open,
                 "Circuit breaker is open - Iron Bank temporarily closed",
             ));
         }
@@ -489,7 +520,10 @@ impl InfluxClient {
         if let Some(client) = pool.first() {
             Ok((client.clone(), 0))
         } else {
-            Err(RavenError::resource_exhausted("InfluxDB connection pool"))
+            crate::raven_bail!(crate::raven_error!(
+                resource_exhausted,
+                "InfluxDB connection pool"
+            ));
         }
     }
 
@@ -516,7 +550,10 @@ impl InfluxClient {
                 self.circuit_breaker.record_failure().await;
                 self.mark_connection_healthy(connection_index, false).await;
                 error!("✗ Iron Bank ping failed: {}", e);
-                Err(RavenError::database_connection(format!("Ping failed: {e}")))
+                crate::raven_bail!(crate::raven_error!(
+                    database_connection,
+                    format!("Ping failed: {e}")
+                ));
             }
         }
     }
@@ -528,7 +565,8 @@ impl InfluxClient {
         // Check circuit breaker state first
         let cb_state = self.circuit_breaker.get_state().await;
         if cb_state == CircuitBreakerState::Open {
-            return Err(RavenError::circuit_breaker_open(
+            crate::raven_bail!(crate::raven_error!(
+                circuit_breaker_open,
                 "Circuit breaker is open - database unavailable",
             ));
         }
@@ -542,7 +580,8 @@ impl InfluxClient {
         let total_connections = pool_status.get("total_connections").unwrap_or(&0);
 
         if *healthy_connections == 0 {
-            return Err(RavenError::database_connection(
+            crate::raven_bail!(crate::raven_error!(
+                database_connection,
                 "No healthy database connections available",
             ));
         }
@@ -596,9 +635,10 @@ impl InfluxClient {
                 .timestamp(timestamp)
                 .build()
                 .map_err(|e| {
-                    RavenError::data_serialization(format!(
-                        "Failed to create wallet update DataPoint: {e}"
-                    ))
+                    crate::raven_error!(
+                        data_serialization,
+                        format!("Failed to create wallet update DataPoint: {e}")
+                    )
                 })?;
 
             self.execute_write(data_point).await?;
@@ -645,9 +685,10 @@ impl InfluxClient {
                             .await;
                         }
 
-                        return Err(RavenError::database_write(format!(
-                            "Batch write failed after {attempt} attempts",
-                        )));
+                        crate::raven_bail!(crate::raven_error!(
+                            database_write,
+                            format!("Batch write failed after {attempt} attempts",)
+                        ));
                     }
 
                     sleep(self.config.retry_delay * attempt).await;
@@ -713,9 +754,10 @@ impl InfluxClient {
                         self.circuit_breaker.record_failure().await;
                         self.add_to_dead_letter_queue(format!("{data_point:?}"), e.to_string())
                             .await;
-                        return Err(RavenError::database_write(format!(
-                            "Write failed after {attempt} attempts: {e}"
-                        )));
+                        crate::raven_bail!(crate::raven_error!(
+                            database_write,
+                            format!("Write failed after {attempt} attempts: {e}")
+                        ));
                     }
 
                     sleep(self.config.retry_delay * attempt).await;

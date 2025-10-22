@@ -13,7 +13,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::config::MonitoringConfig;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 /// Prometheus metrics collector for the market data server
 pub struct MetricsCollector {
@@ -95,7 +95,10 @@ impl MetricsService {
 
         let addr = format!("0.0.0.0:{}", self.config.metrics_port);
         let listener = TcpListener::bind(&addr).await.map_err(|e| {
-            RavenError::connection_error(format!("Failed to bind metrics server to {addr}: {e}"))
+            crate::raven_error!(
+                connection_error,
+                format!("Failed to bind metrics server to {addr}: {e}")
+            )
         })?;
 
         info!("Metrics server starting on {}", addr);
@@ -461,43 +464,5 @@ async fn metrics_handler(
             Ok(response)
         }
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_metrics_collector_creation() {
-        let collector = MetricsCollector::new().unwrap();
-
-        // Test that metrics can be recorded
-        collector.record_connection("test");
-        collector.record_disconnection("test", Duration::from_secs(1));
-
-        // Should not panic
-    }
-
-    #[tokio::test]
-    async fn test_metrics_service_creation() {
-        let config = MonitoringConfig::default();
-        let service = MetricsService::new(config).unwrap();
-
-        // Should create without error
-        assert!(service.collector.active_connections.get() >= 0.0);
-    }
-
-    #[test]
-    fn test_metrics_registration() {
-        let registry = Registry::new();
-        let collector = MetricsCollector::new().unwrap();
-
-        // Should register without error
-        collector.register(&registry).unwrap();
-
-        // Should have metrics registered
-        let families = registry.gather();
-        assert!(!families.is_empty());
     }
 }

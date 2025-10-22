@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::debug;
 
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use crate::monitoring::MetricsCollector;
 
 /// Manages active connections and enforces connection limits
@@ -41,7 +41,8 @@ impl ConnectionManager {
             if let Some(metrics) = metrics {
                 metrics.record_error("max_connections_reached", "server");
             }
-            return Err(RavenError::max_connections_exceeded(
+            crate::raven_bail!(crate::raven_error!(
+                max_connections_exceeded,
                 *connections,
                 self.max_connections,
             ));

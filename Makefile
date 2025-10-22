@@ -23,10 +23,10 @@ test:
 	cargo test --all
 
 test-unit:
-	cargo test --lib --bins
+	cargo test --test unit
 
 test-integration:
-	cargo test --test integration_tests
+	cargo test --test integration
 
 lint:
 	cargo clippy --all-targets --all-features -- -D warnings

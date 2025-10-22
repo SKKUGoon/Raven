@@ -109,12 +109,14 @@ impl From<std::io::Error> for RavenError {
     fn from(error: std::io::Error) -> Self {
         match error.kind() {
             std::io::ErrorKind::TimedOut => {
-                RavenError::timeout("IO operation", 0) // Duration not available from std::io::Error
+                crate::raven_error!(timeout, "IO operation", 0) // Duration not available from std::io::Error
             }
             std::io::ErrorKind::ConnectionRefused
             | std::io::ErrorKind::ConnectionAborted
-            | std::io::ErrorKind::ConnectionReset => RavenError::grpc_connection(error.to_string()),
-            _ => RavenError::internal(error.to_string()),
+            | std::io::ErrorKind::ConnectionReset => {
+                crate::raven_error!(grpc_connection, error.to_string())
+            }
+            _ => crate::raven_error!(internal, error.to_string()),
         }
     }
 }
@@ -122,13 +124,13 @@ impl From<std::io::Error> for RavenError {
 /// Convert serde_json::Error to RavenError
 impl From<serde_json::Error> for RavenError {
     fn from(error: serde_json::Error) -> Self {
-        RavenError::data_serialization(error.to_string())
+        crate::raven_error!(data_serialization, error.to_string())
     }
 }
 
 /// Convert prometheus::Error to RavenError
 impl From<prometheus::Error> for RavenError {
     fn from(error: prometheus::Error) -> Self {
-        RavenError::internal(format!("Metrics error: {error}"))
+        crate::raven_error!(internal, format!("Metrics error: {error}"))
     }
 }

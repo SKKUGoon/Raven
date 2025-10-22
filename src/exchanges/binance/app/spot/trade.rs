@@ -1,3 +1,4 @@
+use crate::app::shutdown::DataCollector;
 use crate::error::RavenResult;
 use crate::exchanges::binance::BinanceSpotParser;
 use crate::exchanges::types::{
@@ -6,6 +7,7 @@ use crate::exchanges::types::{
 use crate::exchanges::websocket::{ExchangeWebSocketClient, WebSocketParser};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+use tracing::info;
 
 #[derive(Clone)]
 pub struct BinanceSpotTrade {
@@ -147,5 +149,25 @@ impl BinanceSpotTrade {
         } else {
             None
         }
+    }
+}
+
+pub async fn initialize_binance_spot_trade(
+    symbol: String,
+) -> RavenResult<(
+    Arc<BinanceSpotTrade>,
+    mpsc::UnboundedReceiver<MarketDataMessage>,
+)> {
+    info!("Send out the raven for Binance Spot Trade for symbol: {symbol}");
+
+    let mut binance_collector = BinanceSpotTrade::new(symbol)?;
+    let rx = binance_collector.start_streaming().await?;
+
+    Ok((Arc::new(binance_collector), rx))
+}
+
+impl DataCollector for BinanceSpotTrade {
+    fn name(&self) -> &'static str {
+        "BinanceSpotTrade"
     }
 }

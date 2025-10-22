@@ -1,7 +1,4 @@
-// Dead Letter Queue Implementation
-// "Even dead ravens are remembered"
-
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -458,21 +455,26 @@ impl DeadLetterQueue {
                     }
                     Err(e) => {
                         entry.prepare_for_retry(e.to_string());
-                        Err(RavenError::dead_letter_processing(format!(
-                            "Manual retry failed for entry {entry_id}: {e}"
-                        )))
+                        crate::raven_bail!(crate::raven_error!(
+                            dead_letter_processing,
+                            format!("Manual retry failed for entry {entry_id}: {e}")
+                        ));
                     }
                 }
             } else {
-                Err(RavenError::dead_letter_processing(format!(
-                    "No retry handler found for entry {} (type: {})",
-                    entry_id, entry.operation_type
-                )))
+                crate::raven_bail!(crate::raven_error!(
+                    dead_letter_processing,
+                    format!(
+                        "No retry handler found for entry {} (type: {})",
+                        entry_id, entry.operation_type
+                    )
+                ));
             }
         } else {
-            Err(RavenError::dead_letter_processing(format!(
-                "Entry not found: {entry_id}"
-            )))
+            crate::raven_bail!(crate::raven_error!(
+                dead_letter_processing,
+                format!("Entry not found: {entry_id}")
+            ));
         }
     }
 
@@ -493,17 +495,21 @@ impl DeadLetterQueue {
         }
 
         let Some(ref file_path) = self.config.persistence_file else {
-            return Err(RavenError::configuration(
+            crate::raven_bail!(crate::raven_error!(
+                configuration,
                 "Persistence enabled but no file path configured",
             ));
         };
 
         let entries = self.entries.lock().await;
         let serialized = serde_json::to_string_pretty(&*entries)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         tokio::fs::write(file_path, serialized).await.map_err(|e| {
-            RavenError::internal(format!("Failed to persist dead letter queue: {e}"))
+            crate::raven_error!(
+                internal,
+                format!("Failed to persist dead letter queue: {e}")
+            )
         })?;
 
         debug!("⚬ Persisted {} dead letter entries to disk", entries.len());
@@ -524,12 +530,12 @@ impl DeadLetterQueue {
             return Ok(());
         }
 
-        let content = tokio::fs::read_to_string(file_path)
-            .await
-            .map_err(|e| RavenError::internal(format!("Failed to load dead letter queue: {e}")))?;
+        let content = tokio::fs::read_to_string(file_path).await.map_err(|e| {
+            crate::raven_error!(internal, format!("Failed to load dead letter queue: {e}"))
+        })?;
 
         let loaded_entries: VecDeque<DeadLetterEntry> = serde_json::from_str(&content)
-            .map_err(|e| RavenError::data_serialization(e.to_string()))?;
+            .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
         let mut entries = self.entries.lock().await;
         *entries = loaded_entries;

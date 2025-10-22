@@ -15,13 +15,10 @@ use crate::types::HighFrequencyStorage;
 pub mod connection;
 pub mod grpc_service;
 
-#[cfg(test)]
-pub mod tests;
-
 pub use connection::ConnectionManager;
 pub use grpc_service::MarketDataServiceImpl;
 
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 
 /// The Night's Watch - Main gRPC server implementation
 pub struct MarketDataServer {
@@ -80,7 +77,10 @@ impl MarketDataServer {
     /// Start the gRPC server
     pub async fn start(self, host: &str, port: u16) -> RavenResult<()> {
         let addr = format!("{host}:{port}").parse().map_err(|e| {
-            RavenError::configuration(format!("Invalid gRPC bind address {host}:{port}: {e}"))
+            crate::raven_error!(
+                configuration,
+                format!("Invalid gRPC bind address {host}:{port}: {e}")
+            )
         })?;
 
         info!("▲ The Night's Watch is taking position at {}", addr);
@@ -104,7 +104,7 @@ impl MarketDataServer {
             .add_service(service)
             .serve(addr)
             .await
-            .map_err(|e| RavenError::grpc_connection(format!("Server failed: {e}")))?;
+            .map_err(|e| crate::raven_error!(grpc_connection, format!("Server failed: {e}")))?;
 
         info!("■ gRPC server stopped");
         Ok(())

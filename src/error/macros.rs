@@ -4,7 +4,7 @@
 /// Macro for creating errors with context
 #[macro_export]
 macro_rules! raven_error {
-    ($variant:ident, $($arg:expr),*) => {
+    ($variant:ident $(, $arg:expr)* $(,)?) => {
         $crate::error::RavenError::$variant($($arg),*)
     };
 }

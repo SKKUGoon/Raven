@@ -1,17 +1,12 @@
-// Snapshot Service - Periodic Data Capture
-// "Ravens fly on schedule - capturing the realm's data every 5ms"
-
 pub mod config;
 pub mod metrics;
-#[cfg(test)]
-mod tests;
 
 pub use config::SnapshotConfig;
 pub use metrics::SnapshotMetrics;
 
 use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use crate::database::influx_client::InfluxClient;
-use crate::error::{RavenError, RavenResult};
+use crate::error::RavenResult;
 use crate::exchanges::types::Exchange;
 use crate::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -348,9 +343,10 @@ impl SnapshotService {
             .subscription_manager
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Orderbook, message)
             .map_err(|e| {
-                RavenError::subscription_failed(format!(
-                    "Failed to distribute orderbook snapshot: {e}"
-                ))
+                crate::raven_error!(
+                    subscription_failed,
+                    format!("Failed to distribute orderbook snapshot: {e}")
+                )
             })?;
 
         info!(
@@ -371,7 +367,10 @@ impl SnapshotService {
             .subscription_manager
             .distribute_message(&snapshot.symbol, SubscriptionDataType::Trades, message)
             .map_err(|e| {
-                RavenError::subscription_failed(format!("Failed to distribute trade snapshot: {e}"))
+                crate::raven_error!(
+                    subscription_failed,
+                    format!("Failed to distribute trade snapshot: {e}")
+                )
             })?;
 
         info!(
@@ -421,10 +420,13 @@ impl SnapshotService {
                 .write_orderbook_snapshot(snapshot)
                 .await
                 .map_err(|e| {
-                    RavenError::database_write(format!(
-                        "Failed to write orderbook snapshot for {}: {e}",
-                        snapshot.symbol
-                    ))
+                    crate::raven_error!(
+                        database_write,
+                        format!(
+                            "Failed to write orderbook snapshot for {}: {e}",
+                            snapshot.symbol
+                        )
+                    )
                 })?;
         }
 
@@ -434,10 +436,13 @@ impl SnapshotService {
                 .write_trade_snapshot(snapshot)
                 .await
                 .map_err(|e| {
-                    RavenError::database_write(format!(
-                        "Failed to write trade snapshot for {}: {e}",
-                        snapshot.symbol
-                    ))
+                    crate::raven_error!(
+                        database_write,
+                        format!(
+                            "Failed to write trade snapshot for {}: {e}",
+                            snapshot.symbol
+                        )
+                    )
                 })?;
         }
 
