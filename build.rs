@@ -5,6 +5,11 @@ use std::process::Command;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
+    // tonic_prost_build requires the vendored protoc binary
+    let protoc_path =
+        protoc_bin_vendored::protoc_bin_path().expect("Failed to find vendored protoc");
+    std::env::set_var("PROTOC", &protoc_path);
+
     // Compile protobuf files together so imports work correctly
     tonic_prost_build::configure()
         .build_server(true)
