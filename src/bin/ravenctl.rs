@@ -94,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let exchange = sub_matches.get_one::<String>("exchange").unwrap();
             let symbol = sub_matches.get_one::<String>("symbol").unwrap();
 
-            println!("🚀 Starting collection for {exchange}:{symbol}");
+            println!("🟢 Starting collection for {exchange}:{symbol}");
 
             let request = StartCollectionRequest {
                 exchange: exchange.clone(),

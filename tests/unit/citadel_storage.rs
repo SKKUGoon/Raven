@@ -347,3 +347,48 @@ fn test_high_frequency_storage_symbols() {
     assert!(orderbook_symbols.contains(&format!("{}:{}", Exchange::BinanceSpot, "BTCUSDT")));
     assert!(trade_symbols.contains(&format!("{}:{}", Exchange::BinanceSpot, "ETHUSDT")));
 }
+
+#[test]
+fn test_high_frequency_storage_remove_symbol() {
+    let storage = HighFrequencyStorage::new();
+
+    let exchange = Exchange::BinanceFutures;
+    let symbol = "ETHUSDC";
+
+    let orderbook_data = OrderBookData {
+        symbol: symbol.to_string(),
+        timestamp: 1640995200000,
+        bids: vec![(2500.0, 3.0)],
+        asks: vec![(2500.5, 1.0)],
+        sequence: 42,
+        exchange: exchange.clone(),
+    };
+
+    let trade_data = TradeData {
+        symbol: symbol.to_string(),
+        timestamp: 1640995200500,
+        price: 2500.25,
+        quantity: 0.5,
+        side: TradeSide::Sell,
+        trade_id: "ethusdc-trade-1".to_string(),
+        exchange: exchange.clone(),
+    };
+
+    storage.update_orderbook(&orderbook_data);
+    storage.update_trade(&trade_data);
+
+    assert!(storage.get_orderbook_snapshot(symbol, &exchange).is_some());
+    assert!(storage.get_trade_snapshot(symbol, &exchange).is_some());
+
+    assert!(storage.remove_symbol(symbol, &exchange));
+
+    assert!(storage.get_orderbook_snapshot(symbol, &exchange).is_none());
+    assert!(storage.get_trade_snapshot(symbol, &exchange).is_none());
+
+    let orderbook_symbols = storage.get_orderbook_symbols();
+    let trade_symbols = storage.get_trade_symbols();
+
+    let composite_key = format!("{exchange}:{symbol}");
+    assert!(!orderbook_symbols.contains(&composite_key));
+    assert!(!trade_symbols.contains(&composite_key));
+}

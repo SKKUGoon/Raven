@@ -166,6 +166,9 @@ impl CollectorManager {
 
         if let Some((_, handles)) = self.active_collections.remove(&key) {
             handles.stop();
+            self.hf_handler
+                .clear_symbol_data(&handles.symbol, &handles.exchange);
+
             info!(
                 collection_id = %handles.collection_id,
                 exchange = ?exchange,

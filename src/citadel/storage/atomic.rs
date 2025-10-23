@@ -326,6 +326,23 @@ impl HighFrequencyStorage {
             .map(|entry| entry.key().clone())
             .collect()
     }
+
+    /// Remove all cached data for a symbol/exchange pair.
+    /// Returns true when any cache entry was removed.
+    pub fn remove_symbol(&self, symbol: &str, exchange: &super::Exchange) -> bool {
+        let key = format!("{exchange}:{symbol}");
+        let mut removed = false;
+
+        if self.orderbooks.remove(&key).is_some() {
+            removed = true;
+        }
+
+        if self.latest_trades.remove(&key).is_some() {
+            removed = true;
+        }
+
+        removed
+    }
 }
 
 impl Default for HighFrequencyStorage {

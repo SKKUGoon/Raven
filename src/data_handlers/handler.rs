@@ -39,6 +39,11 @@ impl HighFrequencyHandler {
         Arc::clone(&self.storage)
     }
 
+    /// Remove any cached orderbook/trade data for the given symbol and exchange.
+    pub fn clear_symbol_data(&self, symbol: &str, exchange: &Exchange) -> bool {
+        self.storage.remove_symbol(symbol, exchange)
+    }
+
     /// Ingest orderbook data with lock-free atomic updates
     /// This function is designed for maximum throughput with direct memory updates
     /// No async overhead, no channel bottlenecks - pure speed
