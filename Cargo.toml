@@ -1,6 +1,6 @@
 [package]
 name = "raven"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 [lib]
@@ -90,3 +90,4 @@ mockito = "1.4"
 [build-dependencies]
 tonic-prost-build = "0.14.2"
 chrono = { version = "0.4", features = ["serde"] }
+protoc-bin-vendored = "3.0"
