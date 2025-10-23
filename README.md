@@ -1,7 +1,60 @@
 # Raven
 
 ## Summary
-Raven is a Rust-powered market data service that ingests cryptocurrency feeds, validates them in real time, and streams the results over gRPC. The runtime orchestrated by `app::run()` wires together configuration loading, dependency validation, InfluxDB persistence, and graceful shutdown handling, exposing both public streaming APIs and a control plane for collectors.
+Raven is a Rust-powered market data service centered around two CLIs: `raven` launches the streaming server, while `ravenctl` orchestrates live collectors across supported exchanges like Binance spot and futures. Together they let operators stand up the gRPC API, start exchange feeds, and stream validated market data in real time. The runtime orchestrated by `app::run()` wires together configuration loading, dependency validation, InfluxDB persistence, and graceful shutdown handling, exposing both public streaming APIs and a control plane for collectors.
+
+## CLI Reference
+
+### Raven (`raven` binary)
+- **Purpose:** Starts the market data server and wires configuration, storage, and gRPC services.
+- **Environment selection:** Set `ENVIRONMENT=<tier>` (default: `development`). The loader resolves `config/<tier>.toml` unless a CLI override is supplied.
+- **Configuration overrides:** Provide a path with `--config /path/to/config.toml` to bypass environment defaults.
+- **Symbol filters:** Use `--symbols BTCUSDT,ETHUSDT` to limit collectors to a comma-delimited list when starting via CLI.
+- **Version details:** `cargo run --bin raven -- --help` prints build metadata (version, git SHA, rustc) sourced from `src/app/cli.rs`.
+
+```bash
+# Run the server with the default development configuration
+ENVIRONMENT=development cargo run --bin raven
+
+# Override the configuration file
+cargo run --bin raven -- --config config/local.toml
+
+# Limit subscriptions to specific symbols
+cargo run --bin raven -- --symbols BTCUSDT,ETHUSDT
+```
+
+During startup the CLI emits ASCII art, version information, and applies any overrides before invoking `app::run()`.
+
+### Raven Control (`ravenctl` binary)
+- **Purpose:** Manages live exchange collectors and inspects configuration through the control gRPC service (`http://127.0.0.1:50052` by default).
+- **Target server:** Override with `--server http://host:port` when the control plane is exposed elsewhere.
+- **Collection lifecycle:** `use` starts a collector, `stop` terminates it, and `list` prints the current roster with uptime details.
+- **Configuration utilities:** `validate`, `show`, `health`, and `template` delegate to `ConfigUtils` helpers to audit, render, or scaffold configuration files.
+
+```bash
+# Start Binance futures collection for BTCUSDT
+cargo run --bin ravenctl -- use --exchange binance_futures --symbol BTCUSDT
+
+# Stop the collection
+cargo run --bin ravenctl -- stop --exchange binance_futures --symbol BTCUSDT
+
+# Inspect active collectors
+cargo run --bin ravenctl -- list
+
+# Validate a specific configuration file
+cargo run --bin ravenctl -- validate --config config/example.toml
+
+# Render the current configuration in JSON
+cargo run --bin ravenctl -- show --format json
+```
+
+All subcommands reuse the same connection bootstrap logic, surface errors with descriptive messages, and rely on `CollectorManager` to orchestrate asynchronous ingestion tasks.
+
+## Dependencies
+- Rust 1.70+
+- Cargo toolchain
+- InfluxDB 2.x instance (local or remote) for persistence
+- Access to target exchange WebSocket endpoints (e.g., Binance spot and futures)
 
 ## Key Capabilities
 - **High-frequency ingestion:** `HighFrequencyHandler` writes directly into lock-free `HighFrequencyStorage` for ultra-low latency updates.
@@ -47,22 +100,6 @@ For local work, copy `config/example.toml` to `config/development.toml` and fill
    ```bash
    cargo run --bin raven -- --symbols BTCUSDT,ETHUSDT
    ```
-
-## Collector Control (`ravenctl`)
-The `ravenctl` binary manages live exchange collectors through the control gRPC service on `127.0.0.1:50052`.
-
-```bash
-# Start Binance futures data for BTCUSDT
-cargo run --bin ravenctl -- use --exchange binance_futures --symbol BTCUSDT
-
-# Stop the collection
-cargo run --bin ravenctl -- stop --exchange binance_futures --symbol BTCUSDT
-
-# Inspect active collectors
-cargo run --bin ravenctl -- list
-```
-
-These commands invoke `CollectorManager`, which spawns or terminates the asynchronous ingestion tasks and cleans associated in-memory state.
 
 ## Monitoring
 - **Health checks:** HTTP health service listens on `monitoring.health_check_port` with component-level diagnostics.
