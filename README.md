@@ -3,6 +3,28 @@
 ## Summary
 Raven is a Rust-powered market data service centered around two CLIs: `raven` launches the streaming server, while `ravenctl` orchestrates live collectors across supported exchanges like Binance spot and futures. Together they let operators stand up the gRPC API, start exchange feeds, and stream validated market data in real time. The runtime orchestrated by `app::run()` wires together configuration loading, dependency validation, InfluxDB persistence, and graceful shutdown handling, exposing both public streaming APIs and a control plane for collectors.
 
+## Installation
+1. **Download the release tarball:**
+   ```bash
+   VERSION=v0.1.5
+   wget https://github.com/<your-username>/<your-repo>/releases/download/${VERSION}/raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
+   ```
+2. **Extract the binaries:**
+   ```bash
+   tar -xzf raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
+   ```
+3. **Install system-wide:**
+   ```bash
+   sudo mv raven ravenctl /usr/local/bin
+   ```
+4. **Verify installation:**
+   ```bash
+   raven -V
+   ravenctl --version
+   ```
+
+Replace `VERSION` with the desired release tag when downloading new builds.
+
 ## CLI Reference
 
 ### Raven (`raven` binary)
