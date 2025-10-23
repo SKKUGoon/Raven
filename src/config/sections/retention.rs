@@ -7,8 +7,6 @@ use crate::error::RavenResult;
 #[serde(default)]
 pub struct RetentionPolicies {
     pub high_frequency: RetentionPolicy,
-    pub low_frequency: RetentionPolicy,
-    pub private_data: RetentionPolicy,
     pub system_logs: RetentionPolicy,
 }
 
@@ -30,20 +28,6 @@ impl Default for RetentionPolicies {
                 downsampled_days: 30,
                 archive_days: 90,
                 auto_cleanup: true,
-                compression_enabled: true,
-            },
-            low_frequency: RetentionPolicy {
-                full_resolution_days: 730, // 2 years
-                downsampled_days: 1_095,   // 3 years
-                archive_days: 1_825,       // 5 years
-                auto_cleanup: true,
-                compression_enabled: true,
-            },
-            private_data: RetentionPolicy {
-                full_resolution_days: 365, // 1 year
-                downsampled_days: 730,     // 2 years
-                archive_days: 1_095,       // 3 years
-                auto_cleanup: false,
                 compression_enabled: true,
             },
             system_logs: RetentionPolicy {
@@ -103,10 +87,6 @@ impl ConfigSection for RetentionPolicies {
     fn validate(&self) -> RavenResult<()> {
         self.high_frequency
             .validate("retention_policies.high_frequency")?;
-        self.low_frequency
-            .validate("retention_policies.low_frequency")?;
-        self.private_data
-            .validate("retention_policies.private_data")?;
         self.system_logs
             .validate("retention_policies.system_logs")?;
         Ok(())

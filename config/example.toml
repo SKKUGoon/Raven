@@ -40,25 +40,12 @@ sanitization_enabled = true
 dead_letter_queue_size = 1000
 
 # Retention Policies
+# Only high_frequency data and system logs require retention settings today.
 [retention_policies.high_frequency]
 full_resolution_days = 7
 downsampled_days = 30
 archive_days = 90
 auto_cleanup = true
-compression_enabled = true
-
-[retention_policies.low_frequency]
-full_resolution_days = 730  # 2 years
-downsampled_days = 1095     # 3 years
-archive_days = 1825         # 5 years
-auto_cleanup = true
-compression_enabled = true
-
-[retention_policies.private_data]
-full_resolution_days = 365  # 1 year
-downsampled_days = 730      # 2 years
-archive_days = 1095         # 3 years
-auto_cleanup = false        # Manual cleanup for sensitive data
 compression_enabled = true
 
 [retention_policies.system_logs]

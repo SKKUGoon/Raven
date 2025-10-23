@@ -34,25 +34,12 @@ sanitization_enabled = true
 dead_letter_queue_size = 100
 
 # Development retention policies - shorter retention
+# Only high-frequency data and system logs remain configurable.
 [retention_policies.high_frequency]
 full_resolution_days = 1
 downsampled_days = 3
 archive_days = 7
 auto_cleanup = true
-compression_enabled = false
-
-[retention_policies.low_frequency]
-full_resolution_days = 7
-downsampled_days = 14
-archive_days = 30
-auto_cleanup = true
-compression_enabled = false
-
-[retention_policies.private_data]
-full_resolution_days = 3
-downsampled_days = 7
-archive_days = 14
-auto_cleanup = true         # Auto cleanup in dev
 compression_enabled = false
 
 [retention_policies.system_logs]

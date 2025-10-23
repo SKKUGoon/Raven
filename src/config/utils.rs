@@ -110,11 +110,6 @@ impl ConfigUtils {
             );
         }
 
-        if !config.retention.private_data.auto_cleanup {
-            warnings
-                .push("Private data auto-cleanup disabled - manual cleanup required".to_string());
-        }
-
         // Check batching configuration
         if config.batching.database_writes.size > 10000 {
             warnings.push("Very large database write batches may cause memory issues".to_string());

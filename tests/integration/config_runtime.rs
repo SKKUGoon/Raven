@@ -166,14 +166,14 @@ fn test_retention_policy_comprehensive_validation() {
     policies.high_frequency.full_resolution_days = 7;
 
     // Test invalid ordering
-    policies.low_frequency.downsampled_days = 5; // Less than full_resolution_days
+    policies.system_logs.downsampled_days = 5; // Less than full_resolution_days
     assert!(policies.validate().is_err());
-    policies.low_frequency.downsampled_days = 1095;
+    policies.system_logs.downsampled_days = 90;
 
     // Test archive days validation
-    policies.private_data.archive_days = 100; // Less than downsampled_days
+    policies.system_logs.archive_days = 50; // Less than downsampled_days
     assert!(policies.validate().is_err());
-    policies.private_data.archive_days = 1095;
+    policies.system_logs.archive_days = 180;
 
     assert!(policies.validate().is_ok());
 }
