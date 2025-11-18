@@ -1,3 +1,6 @@
+![Rust Edition](https://img.shields.io/badge/Rust-Edition%202025-b7410e) ![Tokio](https://img.shields.io/badge/Tokio-1.48-blueviolet) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17%2B-336791) ![SQLx](https://img.shields.io/badge/sqlx-0.8-blue)
+
+
 # Raven
 
 ## Summary
@@ -7,7 +10,7 @@ Raven is a Rust-powered market data service centered around two CLIs: `raven` la
 1. **Download the release tarball:**
    ```bash
    VERSION=v0.1.5
-   wget https://github.com/<your-username>/<your-repo>/releases/download/${VERSION}/raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
+   wget https://github.com/skkugoon/raven/releases/download/${VERSION}/raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
    ```
 2. **Extract the binaries:**
    ```bash
@@ -24,6 +27,12 @@ Raven is a Rust-powered market data service centered around two CLIs: `raven` la
    ```
 
 Replace `VERSION` with the desired release tag when downloading new builds.
+
+## To Start Collection
+
+1. Make sure you have influx db
+2. `tmux`
+3. `raven` and on the other panel use `ravenctl -- use --exchange binance_futures --symbol BTCUSDT` to start the collection
 
 ## CLI Reference
 

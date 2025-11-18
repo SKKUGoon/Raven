@@ -29,15 +29,12 @@ class RavenClient:
         
     def connect(self):
         """Connect to the gRPC server"""
-        try:
-            self.channel = grpc.insecure_channel(self.server_address)
-            self.stub = subscription_pb2_grpc.MarketDataServiceStub(self.channel)
-            print(f"Connected to Raven server at {self.server_address}")
-            print(f"Client ID: {self.client_id}")
-            return True
-        except Exception as e:
-            print(f"Failed to connect: {e}")
-            return False
+
+        self.channel = grpc.insecure_channel(self.server_address)
+        self.stub = subscription_pb2_grpc.MarketDataServiceStub(self.channel)
+        print(f"Connected to Raven server at {self.server_address}")
+        print(f"Client ID: {self.client_id}")
+        return True
     
     def disconnect(self):
         """Disconnect from the server"""

@@ -3,6 +3,7 @@
 Quick test script for Raven client
 """
 
+from grpc import server
 from client import RavenClient
 
 def quick_test():
@@ -18,7 +19,7 @@ def quick_test():
 
 def full_test():
     """Full 30-second test with multiple symbols"""
-    client = RavenClient()
+    client = RavenClient(server_address="18.183.227.234:50051")
     
     if client.connect():
         print("Running full test (30 seconds)...")
