@@ -1,11 +1,10 @@
 // Project Raven - Core Library
-// "The ravens are the memory of the realm"
 
 pub mod app;
-pub mod citadel;
 pub mod client_manager;
 pub mod config;
 pub mod control;
+pub mod data_engine;
 pub mod data_handlers;
 pub mod database;
 pub mod error;

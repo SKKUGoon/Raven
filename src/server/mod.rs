@@ -1,12 +1,11 @@
-// The Night's Watch - gRPC Server Implementation
-// "The watchers on the wall who guard the realm of market data"
+// Market Data Server - gRPC Server Implementation
 
 use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::info;
 
 // Import our protobuf definitions and other modules
-use crate::citadel::storage::HighFrequencyStorage;
+use crate::data_engine::storage::HighFrequencyStorage;
 use crate::database::influx_client::InfluxClient;
 use crate::monitoring::MetricsCollector;
 use crate::proto::market_data_service_server::MarketDataServiceServer;
@@ -20,11 +19,11 @@ pub use grpc_service::MarketDataServiceImpl;
 
 use crate::error::RavenResult;
 
-/// The Night's Watch - Main gRPC server implementation
+/// Market Data Server - Main gRPC server implementation
 pub struct MarketDataServer {
-    /// The Maester's Registry - manages all client subscriptions
+    /// Subscription Registry - manages all client subscriptions
     subscription_manager: Arc<SubscriptionManager>,
-    /// The Iron Bank - InfluxDB client for historical data
+    /// InfluxDB client for historical data
     influx_client: Arc<InfluxClient>,
     /// High-frequency atomic storage for real-time data
     hf_storage: Arc<HighFrequencyStorage>,
@@ -42,7 +41,7 @@ impl MarketDataServer {
         hf_storage: Arc<HighFrequencyStorage>,
         max_connections: usize,
     ) -> Self {
-        info!("▲ The Night's Watch is assembling...");
+        info!("▲ Market Data Server is assembling...");
         info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
@@ -62,7 +61,7 @@ impl MarketDataServer {
         metrics: Arc<MetricsCollector>,
         max_connections: usize,
     ) -> Self {
-        info!("▲ The Night's Watch is assembling with monitoring...");
+        info!("▲ Market Data Server is assembling with monitoring...");
         info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
@@ -83,8 +82,8 @@ impl MarketDataServer {
             )
         })?;
 
-        info!("▲ The Night's Watch is taking position at {}", addr);
-        info!("◦ Ravens are ready to carry messages across the realm");
+        info!("▲ Market Data Server is taking position at {}", addr);
+        info!("◦ Data streams are ready to carry messages");
 
         let service_impl = MarketDataServiceImpl::new(
             self.subscription_manager,

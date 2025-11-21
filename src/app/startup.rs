@@ -1,10 +1,10 @@
 use crate::{
-    citadel::storage::HighFrequencyStorage,
     client_manager::{ClientManager, ClientManagerConfig},
     config::{
         ConfigLoader, ConfigManager, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig,
         ServerConfig,
     },
+    data_engine::storage::HighFrequencyStorage,
     database::{
         circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
         DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
@@ -12,7 +12,7 @@ use crate::{
     },
     error::{EnhancedErrorContext, RavenResult},
     logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
-    monitoring::{CrowService, HealthService, MetricsService, TracingService},
+    monitoring::{HealthService, MetricsService, ObservabilityService, TracingService},
     raven_bail,
     subscription_manager::SubscriptionManager,
 };
@@ -316,7 +316,7 @@ pub async fn initialize_monitoring_services(
     influx_client: Arc<InfluxClient>,
     subscription_manager: Arc<SubscriptionManager>,
     hf_storage: Arc<HighFrequencyStorage>,
-) -> RavenResult<(CrowService, Vec<tokio::task::JoinHandle<()>>)> {
+) -> RavenResult<(ObservabilityService, Vec<tokio::task::JoinHandle<()>>)> {
     info!("Initializing monitoring and observability services...");
 
     // Initialize tracing service
@@ -345,7 +345,7 @@ pub async fn initialize_monitoring_services(
     ));
 
     // Create monitoring service
-    let monitoring_service = CrowService::new(
+    let monitoring_service = ObservabilityService::new(
         Arc::clone(&health_service),
         Arc::clone(&metrics_service),
         Arc::clone(&tracing_service),

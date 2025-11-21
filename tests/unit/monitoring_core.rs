@@ -1,8 +1,8 @@
 // Monitoring Integration Tests - Project Raven
 // "Testing the crows who watch the watchers"
 
-use raven::citadel::storage::HighFrequencyStorage;
 use raven::config::MonitoringConfig;
+use raven::data_engine::storage::HighFrequencyStorage;
 use raven::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::monitoring::{
     health::{
@@ -11,7 +11,7 @@ use raven::monitoring::{
     },
     metrics::{MetricsCollector, MetricsService},
     tracing::{PerformanceSpan, TracingService, TracingUtils},
-    CrowService,
+    ObservabilityService,
 };
 use raven::subscription_manager::SubscriptionManager;
 use std::sync::Arc;
@@ -45,7 +45,8 @@ async fn test_monitoring_service_integration() {
     let tracing_service = Arc::new(TracingService::new(config.clone()));
 
     // Create monitoring service
-    let monitoring_service = CrowService::new(health_service, metrics_service, tracing_service);
+    let monitoring_service =
+        ObservabilityService::new(health_service, metrics_service, tracing_service);
 
     match monitoring_service.start().await {
         Ok(handles) => assert_eq!(handles.len(), 1),

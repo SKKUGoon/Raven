@@ -24,7 +24,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let matches = Command::new("ravenctl")
         .version(VERSION)
-        .author("The Crow's Watch")
+        .author("The Raven Team")
         .about("Raven Control CLI - Manage data collection and configuration")
         .long_about(format!(
             "Raven Control CLI - Command line interface for managing Raven data collection and configuration\n\

@@ -1,8 +1,7 @@
 // Collector Manager - Dynamic lifecycle management for data collectors
-// "The Hand of the King orchestrates which ravens fly and which rest"
 
-use crate::citadel::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
-use crate::citadel::storage::HighFrequencyStorage;
+use crate::data_engine::app::{spawn_orderbook_ingestor, spawn_trade_ingestor};
+use crate::data_engine::storage::HighFrequencyStorage;
 use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
 use crate::exchanges::binance::app::futures::orderbook::initialize_binance_futures_orderbook;
@@ -59,21 +58,21 @@ pub struct CollectorManager {
     active_collections: DashMap<(Exchange, String), CollectorHandles>,
     /// High frequency handler for data processing
     hf_handler: Arc<HighFrequencyHandler>,
-    /// Citadel for data processing
-    citadel: Arc<crate::citadel::Citadel>,
+    /// DataEngine for data processing
+    data_engine: Arc<crate::data_engine::DataEngine>,
 }
 
 impl CollectorManager {
     /// Create a new CollectorManager
     pub fn new(
         hf_storage: Arc<HighFrequencyStorage>,
-        citadel: Arc<crate::citadel::Citadel>,
+        data_engine: Arc<crate::data_engine::DataEngine>,
     ) -> Self {
         let hf_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
         Self {
             active_collections: DashMap::new(),
             hf_handler,
-            citadel,
+            data_engine,
         }
     }
 
@@ -129,13 +128,13 @@ impl CollectorManager {
         let orderbook_task = spawn_orderbook_ingestor(
             orderbook_receiver,
             Arc::clone(&self.hf_handler),
-            Arc::clone(&self.citadel),
+            Arc::clone(&self.data_engine),
         );
 
         let trade_task = spawn_trade_ingestor(
             trade_receiver,
             Arc::clone(&self.hf_handler),
-            Arc::clone(&self.citadel),
+            Arc::clone(&self.data_engine),
         );
 
         let handles = CollectorHandles {

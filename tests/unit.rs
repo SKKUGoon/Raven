@@ -1,15 +1,15 @@
-#[path = "unit/citadel.rs"]
-mod citadel;
-#[path = "unit/citadel_storage.rs"]
-mod citadel_storage;
-#[path = "unit/citadel_streaming.rs"]
-mod citadel_streaming;
 #[path = "unit/client_manager.rs"]
 mod client_manager;
 #[path = "unit/config.rs"]
 mod config;
 #[path = "unit/control_manager.rs"]
 mod control_manager;
+#[path = "unit/data_engine.rs"]
+mod data_engine;
+#[path = "unit/data_engine_storage.rs"]
+mod data_engine_storage;
+#[path = "unit/data_engine_streaming.rs"]
+mod data_engine_streaming;
 #[path = "unit/data_handlers.rs"]
 mod data_handlers;
 #[path = "unit/error.rs"]

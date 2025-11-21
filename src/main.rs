@@ -1,5 +1,4 @@
 // Project Raven - Market Data Subscription Server
-// The Night's Watch begins here - "Crown the king"
 
 use raven::{app, error::RavenResult};
 

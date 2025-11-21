@@ -1,5 +1,5 @@
-use super::Citadel;
-use crate::citadel::storage::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
+use super::DataEngine;
+use crate::data_engine::storage::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
 use crate::data_handlers::HighFrequencyHandler;
 use crate::exchanges::types::{MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide};
 use std::collections::HashMap;
@@ -12,7 +12,7 @@ use tracing::{error, warn};
 pub fn spawn_orderbook_ingestor(
     mut receiver: UnboundedReceiver<MarketDataMessage>,
     handler: Arc<HighFrequencyHandler>,
-    citadel: Arc<Citadel>,
+    data_engine: Arc<DataEngine>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut sequence_map: HashMap<String, u64> = HashMap::new();
@@ -43,14 +43,14 @@ pub fn spawn_orderbook_ingestor(
                         error!(symbol = %symbol, ?err, "Failed to ingest order book update");
                     }
 
-                    if let Err(err) = citadel
+                    if let Err(err) = data_engine
                         .process_orderbook_data(&symbol, orderbook.clone())
                         .await
                     {
                         error!(
                             symbol = %symbol,
                             ?err,
-                            "Failed to process order book data in Citadel"
+                            "Failed to process order book data in DataEngine"
                         );
                     }
                 }
@@ -69,7 +69,7 @@ pub fn spawn_orderbook_ingestor(
 pub fn spawn_trade_ingestor(
     mut receiver: UnboundedReceiver<MarketDataMessage>,
     handler: Arc<HighFrequencyHandler>,
-    citadel: Arc<Citadel>,
+    data_engine: Arc<DataEngine>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(message) = receiver.recv().await {
@@ -113,11 +113,11 @@ pub fn spawn_trade_ingestor(
                         error!(symbol = %symbol, ?err, "Failed to ingest trade update");
                     }
 
-                    if let Err(err) = citadel.process_trade_data(&symbol, trade.clone()).await {
+                    if let Err(err) = data_engine.process_trade_data(&symbol, trade.clone()).await {
                         error!(
                             symbol = %symbol,
                             ?err,
-                            "Failed to process trade data in Citadel"
+                            "Failed to process trade data in DataEngine"
                         );
                     }
                 }

@@ -1,4 +1,4 @@
-// Subscription Manager - The Maester's Registry
+// Subscription Manager - The Subscription Registry
 // "The great ledger of all client subscriptions across the Seven Kingdoms"
 
 // Note: types module not needed for this implementation
@@ -292,7 +292,7 @@ impl Default for TopicRouter {
     }
 }
 
-/// The Maester's Registry - Central subscription management system.
+/// The Subscription Registry - Central subscription management system.
 /// Tracks client subscriptions and routing; connection admission and limits are
 /// enforced separately by `server::connection::ConnectionManager`.
 pub struct SubscriptionManager {

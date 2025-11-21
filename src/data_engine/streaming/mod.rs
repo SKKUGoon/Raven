@@ -4,7 +4,7 @@ pub mod metrics;
 pub use config::SnapshotConfig;
 pub use metrics::SnapshotMetrics;
 
-use crate::citadel::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
+use crate::data_engine::storage::{HighFrequencyStorage, OrderBookSnapshot, TradeSnapshot};
 use crate::database::influx_client::InfluxClient;
 use crate::error::RavenResult;
 use crate::exchanges::types::parse_exchange_symbol_key;
@@ -58,7 +58,7 @@ impl Default for SnapshotBatch {
 }
 
 /// The Snapshot Service - Periodic data capture and distribution
-/// "Ravens that fly on schedule, capturing the realm's data every 5ms"
+/// "Periodic data capture and distribution"
 pub struct SnapshotService {
     /// Configuration
     config: SnapshotConfig,
@@ -108,7 +108,7 @@ impl SnapshotService {
             .is_ok()
         {
             info!(
-                "[Raven Cage] Starting snapshot service - ravens will fly every {:?}",
+                "[SnapshotService] Starting snapshot service - processing every {:?}",
                 self.config.snapshot_interval
             );
 
@@ -126,7 +126,7 @@ impl SnapshotService {
                 });
             }
 
-            info!("[Raven Cage] Snapshot service started successfully");
+            info!("[SnapshotService] Snapshot service started successfully");
         } else {
             warn!("!!! Snapshot service is already running");
         }
@@ -141,7 +141,7 @@ impl SnapshotService {
             .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
             .is_ok()
         {
-            info!("[Raven Cage] Stopping snapshot service...");
+            info!("[SnapshotService] Stopping snapshot service...");
 
             // Flush any remaining batches
             if self.config.persistence_enabled {
@@ -150,7 +150,7 @@ impl SnapshotService {
                 }
             }
 
-            info!("[Raven Cage] Snapshot service stopped");
+            info!("[SnapshotService] Snapshot service stopped");
         }
 
         Ok(())
@@ -160,7 +160,7 @@ impl SnapshotService {
     async fn snapshot_loop(&self) {
         let mut interval = interval(self.config.snapshot_interval);
         info!(
-            "[Raven Cage] Snapshot loop started - capturing data every {:?}",
+            "[SnapshotService] Snapshot loop started - capturing data every {:?}",
             self.config.snapshot_interval
         );
 
@@ -185,7 +185,7 @@ impl SnapshotService {
                     );
 
                     debug!(
-                        "[Raven Cage] Captured {} snapshots in {:?}",
+                        "[SnapshotService] Captured {} snapshots in {:?}",
                         snapshot_count, capture_duration
                     );
 
@@ -206,7 +206,7 @@ impl SnapshotService {
             }
         }
 
-        info!("[Raven Cage] Snapshot loop stopped");
+        info!("[SnapshotService] Snapshot loop stopped");
     }
 
     /// Capture snapshots from atomic storage
@@ -220,13 +220,13 @@ impl SnapshotService {
         // Debug logging to see what symbols are available
         if orderbook_symbols.is_empty() && trade_symbols.is_empty() {
             info!(
-                "[Raven Cage] No symbols found in storage - orderbook: {}, trades: {}",
+                "[SnapshotService] No symbols found in storage - orderbook: {}, trades: {}",
                 orderbook_symbols.len(),
                 trade_symbols.len()
             );
         } else {
             info!(
-                "[Raven Cage] Found symbols - orderbook: {:?}, trades: {:?}",
+                "[SnapshotService] Found symbols - orderbook: {:?}, trades: {:?}",
                 orderbook_symbols, trade_symbols
             );
         }

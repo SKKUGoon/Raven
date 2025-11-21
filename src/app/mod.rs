@@ -1,14 +1,14 @@
 // Project Raven - Market Data Subscription Server
-// The Crow's Watch begins here - "Crown the king"
+// The Raven Server begins here
 
 pub mod cli;
 pub mod shutdown;
 pub mod startup;
 
-use crate::citadel::storage::HighFrequencyStorage;
-use crate::citadel::streaming::{SnapshotConfig, SnapshotService};
-use crate::citadel::{Citadel, CitadelConfig};
 use crate::control::{CollectorManager, ControlServiceImpl};
+use crate::data_engine::storage::HighFrequencyStorage;
+use crate::data_engine::streaming::{SnapshotConfig, SnapshotService};
+use crate::data_engine::{DataEngine, DataEngineConfig};
 use crate::data_handlers::HighFrequencyHandler;
 use crate::error::RavenResult;
 use crate::proto::control_service_server::ControlServiceServer;
@@ -38,7 +38,7 @@ pub async fn run() -> RavenResult<()> {
     validate_dependencies(&config.server, &config.monitoring).await?;
     let _config_manager = initialize_config_manager(loader.clone()).await?;
 
-    info!("Ready: [Kingsguards]");
+    info!("Ready: [Server]");
     let dead_letter_queue = initialize_dead_letter_queue().await?;
     let circuit_breaker_registry = initialize_circuit_breakers().await?;
 
@@ -46,12 +46,12 @@ pub async fn run() -> RavenResult<()> {
         initialize_influx_client(&config.database, dead_letter_queue.clone()).await?;
     let client_manager = initialize_client_manager(&config.server).await?;
 
-    info!("Ready: [Citadel]");
+    info!("Ready: [DataEngine]");
     let subscription_manager = Arc::new(SubscriptionManager::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
     let _high_freq_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
-    let citadel = Arc::new(Citadel::new(
-        CitadelConfig::default(),
+    let data_engine = Arc::new(DataEngine::new(
+        DataEngineConfig::default(),
         Arc::clone(&influx_client),
         Arc::clone(&subscription_manager),
     ));
@@ -72,12 +72,12 @@ pub async fn run() -> RavenResult<()> {
         Arc::clone(&subscription_manager),
     ));
 
-    info!("[Citadel] Starting snapshot service for live data distribution");
+    info!("[DataEngine] Starting snapshot service for live data distribution");
     if let Err(e) = snapshot_service.start().await {
         error!("!!! Failed to start snapshot service: {}", e);
     }
 
-    info!("[Kingsguards] On guard");
+    info!("[Server] On guard");
     let (_monitoring_service, monitoring_handles) = initialize_monitoring_services(
         &config.monitoring,
         Arc::clone(&influx_client),
@@ -86,19 +86,19 @@ pub async fn run() -> RavenResult<()> {
     )
     .await?;
 
-    info!("[Citadel] Ready for dynamic collection");
+    info!("[DataEngine] Ready for dynamic collection");
 
     // Initialize CollectorManager for dynamic data collection
     let collector_manager = Arc::new(CollectorManager::new(
         Arc::clone(&hf_storage),
-        Arc::clone(&citadel),
+        Arc::clone(&data_engine),
     ));
 
     // Initialize control service
     let control_service = ControlServiceImpl::new(Arc::clone(&collector_manager));
 
     // Initialize gRPC server with circuit breaker protection
-    info!("[Raven] 'Send out the ravens'");
+    info!("[Raven] Starting servers");
     info!("Server {}:{}", config.server.host, config.server.port);
     info!("Metric check :{}", config.monitoring.metrics_port);
     info!("Health check :{}", config.monitoring.health_check_port);

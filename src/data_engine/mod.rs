@@ -1,5 +1,5 @@
-// Citadel - Unified Data Management System
-// "The fortress that guards the integrity of our data, stores it atomically, and streams it to the realm"
+// Data Engine - Unified Data Management System
+// "Guards the integrity of our data, stores it atomically, and streams it to the realm"
 
 // Sub-modules
 pub mod app; // Ingestion orchestration for data collectors
@@ -26,9 +26,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-/// Configuration for the Citadel validation engine
+/// Configuration for the Data Engine validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CitadelConfig {
+pub struct DataEngineConfig {
     /// Enable strict validation mode
     pub strict_validation: bool,
     /// Maximum allowed price deviation (percentage)
@@ -47,7 +47,7 @@ pub struct CitadelConfig {
     pub enable_dead_letter_queue: bool,
 }
 
-impl Default for CitadelConfig {
+impl Default for DataEngineConfig {
     fn default() -> Self {
         Self {
             strict_validation: true,
@@ -92,9 +92,9 @@ impl Default for ValidationRules {
     }
 }
 
-/// Citadel metrics for monitoring validation performance
+/// Data Engine metrics for monitoring validation performance
 #[derive(Debug)]
-pub struct CitadelMetrics {
+pub struct DataEngineMetrics {
     pub total_ingested: AtomicU64,
     pub total_validated: AtomicU64,
     pub total_written: AtomicU64,
@@ -104,7 +104,7 @@ pub struct CitadelMetrics {
     pub dead_letter_entries: AtomicU64,
 }
 
-impl Default for CitadelMetrics {
+impl Default for DataEngineMetrics {
     fn default() -> Self {
         Self {
             total_ingested: AtomicU64::new(0),
@@ -118,24 +118,24 @@ impl Default for CitadelMetrics {
     }
 }
 
-/// The Citadel - Main data validation and processing engine
-pub struct Citadel {
-    config: CitadelConfig,
+/// The Data Engine - Main data validation and processing engine
+pub struct DataEngine {
+    config: DataEngineConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
     influx_client: Arc<InfluxClient>,
     _subscription_manager: Arc<SubscriptionManager>,
     _dead_letter_queue: Arc<DeadLetterQueue>,
-    pub metrics: CitadelMetrics,
+    pub metrics: DataEngineMetrics,
 }
 
-impl Citadel {
-    /// Create a new Citadel instance
+impl DataEngine {
+    /// Create a new DataEngine instance
     pub fn new(
-        config: CitadelConfig,
+        config: DataEngineConfig,
         influx_client: Arc<InfluxClient>,
         subscription_manager: Arc<SubscriptionManager>,
     ) -> Self {
-        info!("▲ Initializing Citadel with config: {:?}", config);
+        info!("▲ Initializing DataEngine with config: {:?}", config);
 
         let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
@@ -145,7 +145,7 @@ impl Citadel {
             influx_client,
             _subscription_manager: subscription_manager,
             _dead_letter_queue: dead_letter_queue,
-            metrics: CitadelMetrics::default(),
+            metrics: DataEngineMetrics::default(),
         }
     }
 
@@ -457,7 +457,7 @@ impl Citadel {
         status
     }
 
-    /// Get Citadel metrics
+    /// Get DataEngine metrics
     pub fn get_metrics(&self) -> HashMap<String, u64> {
         let mut metrics = HashMap::new();
         metrics.insert(
@@ -492,7 +492,7 @@ impl Citadel {
     }
 
     /// Get configuration
-    pub fn get_config(&self) -> &CitadelConfig {
+    pub fn get_config(&self) -> &DataEngineConfig {
         &self.config
     }
 }

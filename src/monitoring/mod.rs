@@ -1,5 +1,5 @@
 // Monitoring Module - Project Raven
-// "The crows keep watch - comprehensive monitoring and observability"
+// "Comprehensive monitoring and observability"
 
 pub mod health;
 pub mod metrics;
@@ -14,15 +14,15 @@ use tokio::task::JoinHandle;
 
 use crate::error::RavenResult;
 
-/// Crow service that coordinates all observability components
-pub struct CrowService {
+/// Observability service that coordinates all monitoring components
+pub struct ObservabilityService {
     health_service: Arc<HealthService>,
     metrics_service: Arc<MetricsService>,
     tracing_service: Arc<TracingService>,
 }
 
-impl CrowService {
-    /// Create a new crow service
+impl ObservabilityService {
+    /// Create a new observability service
     pub fn new(
         health_service: Arc<HealthService>,
         metrics_service: Arc<MetricsService>,
@@ -35,7 +35,7 @@ impl CrowService {
         }
     }
 
-    /// Start all crow services
+    /// Start all observability services
     pub async fn start(&self) -> RavenResult<Vec<JoinHandle<()>>> {
         let mut handles = Vec::new();
 

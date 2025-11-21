@@ -8,7 +8,7 @@ use tokio_stream::{Stream, StreamExt};
 use tonic::{Request, Response, Status, Streaming};
 use tracing::{debug, error, info, warn};
 
-use crate::citadel::storage::HighFrequencyStorage;
+use crate::data_engine::storage::HighFrequencyStorage;
 use crate::database::influx_client::InfluxClient;
 use crate::exchanges::types::parse_exchange_symbol_key;
 use crate::monitoring::MetricsCollector;
@@ -25,9 +25,9 @@ use crate::error::RavenResult;
 /// gRPC service implementation
 #[derive(Clone)]
 pub struct MarketDataServiceImpl {
-    /// The Maester's Registry - manages all client subscriptions
+    /// Subscription Registry - manages all client subscriptions
     subscription_manager: Arc<SubscriptionManager>,
-    /// The Iron Bank - InfluxDB client for historical data
+    /// InfluxDB client for historical data
     influx_client: Arc<InfluxClient>,
     /// High-frequency atomic storage for real-time data
     hf_storage: Arc<HighFrequencyStorage>,

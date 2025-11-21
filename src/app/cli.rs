@@ -17,7 +17,7 @@ pub struct CliArgs {
 pub fn parse_cli_args() -> CliArgs {
     let matches = Command::new("Project Raven")
         .version(VERSION)
-        .author("The Crow's Watch")
+        .author("The Raven Team")
         .about("High-performance market data subscription server")
         .long_about(format!(
             "Project Raven - Market Data Subscription Server\n\
