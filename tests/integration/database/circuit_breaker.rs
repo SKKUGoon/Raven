@@ -1,4 +1,4 @@
-use raven::database::circuit_breaker::{
+use raven::server::database::circuit_breaker::{
     CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError, CircuitBreakerState,
 };
 use std::time::Duration;

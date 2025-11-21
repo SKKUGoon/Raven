@@ -1,4 +1,4 @@
-use raven::config::*;
+use raven::common::config::*;
 use std::env;
 use std::time::Duration;
 use tempfile::tempdir;

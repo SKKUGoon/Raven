@@ -1,7 +1,7 @@
 // Configuration Integration Tests - Project Raven
 // "Testing the complete wisdom of the realm"
 
-use raven::config::*;
+use raven::common::config::*;
 use std::env;
 use std::time::Duration;
 use tempfile::tempdir;

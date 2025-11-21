@@ -9,7 +9,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "raven"
-path = "src/main.rs"
+path = "src/bin/raven.rs"
 
 [[bin]]
 name = "ravenctl"

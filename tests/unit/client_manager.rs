@@ -1,7 +1,7 @@
 // Client Manager Tests - Project Raven
 // "Testing the managers of our message carriers"
 
-use raven::client_manager::{
+use raven::server::client_manager::{
     ClientManager, ClientManagerConfig, ClientState, ConnectionQuality, DisconnectionReason,
 };
 use raven::RavenError;

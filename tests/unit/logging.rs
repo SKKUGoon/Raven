@@ -1,4 +1,4 @@
-use raven::logging::{LogFormat, LoggingConfig, PerformanceTimer, SpanEvents};
+use raven::common::logging::{LogFormat, LoggingConfig, PerformanceTimer, SpanEvents};
 use std::time::Duration;
 
 #[test]

@@ -1,10 +1,10 @@
 // Monitoring Integration Tests - Project Raven
 // "Testing the crows who watch the watchers"
 
-use raven::config::MonitoringConfig;
-use raven::data_engine::storage::HighFrequencyStorage;
-use raven::database::influx_client::{InfluxClient, InfluxConfig};
-use raven::monitoring::{
+use raven::common::config::MonitoringConfig;
+use raven::server::data_engine::storage::HighFrequencyStorage;
+use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
+use raven::server::monitoring::{
     health::{
         ComponentHealth, HealthResponse, HealthService, HealthStatus, LivenessResponse,
         ReadinessResponse,
@@ -13,7 +13,7 @@ use raven::monitoring::{
     tracing::{PerformanceSpan, TracingService, TracingUtils},
     ObservabilityService,
 };
-use raven::subscription_manager::SubscriptionManager;
+use raven::server::subscription_manager::SubscriptionManager;
 use std::sync::Arc;
 use std::time::Duration;
 

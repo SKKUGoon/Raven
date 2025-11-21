@@ -1,4 +1,4 @@
-use raven::error::ErrorContext;
+use raven::common::error::ErrorContext;
 use tonic::Status;
 
 #[test]

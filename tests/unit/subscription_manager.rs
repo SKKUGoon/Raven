@@ -2,7 +2,7 @@
 // "Testing the great ledger of client subscriptions"
 
 use raven::proto::DataType;
-use raven::subscription_manager::{
+use raven::server::subscription_manager::{
     ClientSubscription, SubscriptionDataType, SubscriptionManager, TopicRouter,
 };
 use std::collections::{HashMap, HashSet};
