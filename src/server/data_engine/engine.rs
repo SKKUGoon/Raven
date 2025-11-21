@@ -1,6 +1,6 @@
 use crate::server::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::common::error::RavenResult;
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::common::time::current_timestamp_millis;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -295,6 +295,98 @@ impl DataEngine {
         Ok(sanitized)
     }
 
+    /// Broadcast order book update to subscribers
+    pub async fn broadcast_orderbook_update(
+        &self,
+        symbol: &str,
+        data: &OrderBookData,
+        subscription_manager: &SubscriptionManager,
+    ) -> RavenResult<()> {
+         if !subscription_manager.has_subscribers(symbol, SubscriptionDataType::Orderbook) {
+            return Ok(());
+        }
+
+        let snapshot = OrderBookSnapshot::from(data);
+        let message = self.create_orderbook_message(&snapshot);
+
+        subscription_manager.distribute_message(
+            symbol,
+            SubscriptionDataType::Orderbook,
+            message,
+        )?;
+
+        Ok(())
+    }
+
+    /// Broadcast trade update to subscribers
+    pub async fn broadcast_trade_update(
+        &self,
+        symbol: &str,
+        data: &TradeData,
+        subscription_manager: &SubscriptionManager,
+    ) -> RavenResult<()> {
+         if !subscription_manager.has_subscribers(symbol, SubscriptionDataType::Trades) {
+            return Ok(());
+        }
+
+        let snapshot = TradeSnapshot::from(data);
+        let message = self.create_trade_message(&snapshot);
+
+        subscription_manager.distribute_message(
+            symbol,
+            SubscriptionDataType::Trades,
+            message,
+        )?;
+
+        Ok(())
+    }
+
+    /// Create protobuf message from orderbook snapshot
+    fn create_orderbook_message(
+        &self,
+        snapshot: &OrderBookSnapshot,
+    ) -> crate::proto::MarketDataMessage {
+        use crate::proto::{MarketDataMessage, OrderBookSnapshot as ProtoOrderBook, PriceLevel};
+
+        let proto_snapshot = ProtoOrderBook {
+            symbol: snapshot.symbol.clone(),
+            timestamp: snapshot.timestamp,
+            bids: vec![PriceLevel {
+                price: snapshot.best_bid_price,
+                quantity: snapshot.best_bid_quantity,
+            }],
+            asks: vec![PriceLevel {
+                price: snapshot.best_ask_price,
+                quantity: snapshot.best_ask_quantity,
+            }],
+            sequence: snapshot.sequence as i64,
+        };
+
+        MarketDataMessage {
+            data: Some(crate::proto::market_data_message::Data::Orderbook(
+                proto_snapshot,
+            )),
+        }
+    }
+
+    /// Create protobuf message from trade snapshot
+    fn create_trade_message(&self, snapshot: &TradeSnapshot) -> crate::proto::MarketDataMessage {
+        use crate::proto::{MarketDataMessage, Trade as ProtoTrade};
+
+        let proto_trade = ProtoTrade {
+            symbol: snapshot.symbol.clone(),
+            timestamp: snapshot.timestamp,
+            price: snapshot.price,
+            quantity: snapshot.quantity,
+            side: snapshot.side.to_string(),
+            trade_id: snapshot.trade_id.to_string(),
+        };
+
+        MarketDataMessage {
+            data: Some(crate::proto::market_data_message::Data::Trade(proto_trade)),
+        }
+    }
+
     /// Write order book data to database
     async fn write_orderbook_data(&self, data: &OrderBookData) -> RavenResult<()> {
         let snapshot = OrderBookSnapshot::from(data);
@@ -363,4 +455,3 @@ impl DataEngine {
         &self.config
     }
 }
-

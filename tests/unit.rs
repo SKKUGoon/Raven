@@ -8,8 +8,6 @@ mod control_manager;
 mod data_engine;
 #[path = "unit/data_engine_storage.rs"]
 mod data_engine_storage;
-#[path = "unit/data_engine_streaming.rs"]
-mod data_engine_streaming;
 #[path = "unit/data_handlers.rs"]
 mod data_handlers;
 #[path = "unit/error.rs"]

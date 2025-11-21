@@ -9,13 +9,12 @@ use crate::common::error::RavenResult;
 use crate::proto::control_service_server::ControlServiceServer;
 use crate::server::controller_service::{CollectorManager, ControlServiceImpl};
 use crate::server::data_engine::storage::HighFrequencyStorage;
-use crate::server::data_engine::streaming::{SnapshotConfig, SnapshotService};
 use crate::server::data_engine::{DataEngine, DataEngineConfig};
 use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::subscription_manager::SubscriptionManager;
 use std::sync::Arc;
 use tonic::transport::Server;
-use tracing::{error, info};
+use tracing::info;
 
 use self::cli::{parse_cli_args, print_version_info};
 use self::shutdown::{perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors};
@@ -56,26 +55,7 @@ pub async fn run() -> RavenResult<()> {
         Arc::clone(&subscription_manager),
     ));
 
-    // Initialize and start the snapshot service for live data distribution
-    let snapshot_config = SnapshotConfig {
-        snapshot_interval: std::time::Duration::from_millis(100), // 100ms snapshots
-        max_batch_size: 1000,
-        write_timeout: std::time::Duration::from_millis(100),
-        broadcast_enabled: true, // Enable broadcasting to gRPC clients
-        persistence_enabled: true,
-    };
-
-    let snapshot_service = Arc::new(SnapshotService::new(
-        snapshot_config,
-        Arc::clone(&hf_storage),
-        Arc::clone(&influx_client),
-        Arc::clone(&subscription_manager),
-    ));
-
-    info!("[DataEngine] Starting snapshot service for live data distribution");
-    if let Err(e) = snapshot_service.start().await {
-        error!("!!! Failed to start snapshot service: {}", e);
-    }
+    // Note: SnapshotService removed in favor of raw broadcast from ingestion layer
 
     info!("[Server] On guard");
     let (_monitoring_service, monitoring_handles) = initialize_monitoring_services(
@@ -92,6 +72,7 @@ pub async fn run() -> RavenResult<()> {
     let collector_manager = Arc::new(CollectorManager::new(
         Arc::clone(&hf_storage),
         Arc::clone(&data_engine),
+        Arc::clone(&subscription_manager),
     ));
 
     // Initialize control service
