@@ -73,8 +73,6 @@ All configuration files follow the same structure. See `config/example.toml` for
 - **`[server]`** - gRPC server settings (host, port, connections)
 - **`[database]`** - InfluxDB connection and crypto bucket settings
 - **`[data_processing]`** - Buffer sizes and processing intervals
-- **`[retention_policies]`** - Retention rules for high-frequency data and system logs
-- **`[batching]`** - Batch processing configuration
 - **`[monitoring]`** - Metrics, health checks, and logging
 
 ### Critical Settings to Customize
