@@ -53,6 +53,7 @@ pub async fn run() -> RavenResult<()> {
         DataEngineConfig::default(),
         Arc::clone(&influx_client),
         Arc::clone(&subscription_manager),
+        Arc::clone(&dead_letter_queue),
     ));
 
     // Note: SnapshotService removed in favor of raw broadcast from ingestion layer

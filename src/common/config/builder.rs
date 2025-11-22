@@ -4,8 +4,7 @@ use serde::Serialize;
 
 use crate::common::config::loader::ConfigLoader;
 use crate::common::config::sections::{
-    BatchingConfig, DataProcessingConfig, DatabaseConfig, MonitoringConfig, RetentionPolicies,
-    ServerConfig,
+    DataProcessingConfig, DatabaseConfig, MonitoringConfig, ServerConfig,
 };
 use crate::common::config::validation::ConfigSection;
 use crate::common::error::RavenResult;
@@ -15,8 +14,6 @@ pub struct RuntimeConfig {
     pub server: ServerConfig,
     pub database: DatabaseConfig,
     pub data_processing: DataProcessingConfig,
-    pub retention: RetentionPolicies,
-    pub batching: BatchingConfig,
     pub monitoring: MonitoringConfig,
 }
 
@@ -39,8 +36,6 @@ impl RuntimeConfig {
         self.server.validate()?;
         self.database.validate()?;
         self.data_processing.validate()?;
-        self.retention.validate()?;
-        self.batching.validate()?;
         self.monitoring.validate()?;
         Ok(())
     }
@@ -85,8 +80,6 @@ pub struct RuntimeConfigBuilder {
     server: Option<ServerConfig>,
     database: Option<DatabaseConfig>,
     data_processing: Option<DataProcessingConfig>,
-    retention: Option<RetentionPolicies>,
-    batching: Option<BatchingConfig>,
     monitoring: Option<MonitoringConfig>,
 }
 
@@ -110,16 +103,6 @@ impl RuntimeConfigBuilder {
         self
     }
 
-    pub fn retention(mut self, config: RetentionPolicies) -> Self {
-        self.retention = Some(config);
-        self
-    }
-
-    pub fn batching(mut self, config: BatchingConfig) -> Self {
-        self.batching = Some(config);
-        self
-    }
-
     pub fn monitoring(mut self, config: MonitoringConfig) -> Self {
         self.monitoring = Some(config);
         self
@@ -129,8 +112,6 @@ impl RuntimeConfigBuilder {
         self.server = Some(loader.load_section::<ServerConfig>()?);
         self.database = Some(loader.load_section::<DatabaseConfig>()?);
         self.data_processing = Some(loader.load_section::<DataProcessingConfig>()?);
-        self.retention = Some(loader.load_section::<RetentionPolicies>()?);
-        self.batching = Some(loader.load_section::<BatchingConfig>()?);
         self.monitoring = Some(loader.load_section::<MonitoringConfig>()?);
         Ok(self)
     }
@@ -139,23 +120,17 @@ impl RuntimeConfigBuilder {
         let server = self.server.unwrap_or_default();
         let database = self.database.unwrap_or_default();
         let data_processing = self.data_processing.unwrap_or_default();
-        let retention = self.retention.unwrap_or_default();
-        let batching = self.batching.unwrap_or_default();
         let monitoring = self.monitoring.unwrap_or_default();
 
         server.validate()?;
         database.validate()?;
         data_processing.validate()?;
-        retention.validate()?;
-        batching.validate()?;
         monitoring.validate()?;
 
         Ok(RuntimeConfig {
             server,
             database,
             data_processing,
-            retention,
-            batching,
             monitoring,
         })
     }

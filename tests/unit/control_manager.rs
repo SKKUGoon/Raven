@@ -2,17 +2,20 @@ use raven::server::controller_service::CollectorManager;
 use raven::server::data_engine::storage::HighFrequencyStorage;
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
+use raven::server::database::DeadLetterQueue;
 use raven::server::subscription_manager::SubscriptionManager;
 use std::sync::Arc;
 
 fn build_test_data_engine() -> (Arc<DataEngine>, Arc<SubscriptionManager>) {
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
     let subscription_manager = Arc::new(SubscriptionManager::new());
+    let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
     let data_engine = Arc::new(DataEngine::new(
         DataEngineConfig::default(),
         influx_client,
         Arc::clone(&subscription_manager),
+        dead_letter_queue,
     ));
 
     (data_engine, subscription_manager)

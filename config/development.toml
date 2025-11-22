@@ -25,7 +25,6 @@ circuit_breaker_threshold = 10
 circuit_breaker_timeout_seconds = 120
 
 [data_processing]
-snapshot_interval_ms = 100        # Slower for development
 high_frequency_buffer_size = 1000
 low_frequency_buffer_size = 100
 private_data_buffer_size = 50
@@ -35,45 +34,6 @@ dead_letter_queue_size = 100
 
 # Development retention policies - shorter retention
 # Only high-frequency data and system logs remain configurable.
-[retention_policies.high_frequency]
-full_resolution_days = 1
-downsampled_days = 3
-archive_days = 7
-auto_cleanup = true
-compression_enabled = false
-
-[retention_policies.system_logs]
-full_resolution_days = 1
-downsampled_days = 3
-archive_days = 7
-auto_cleanup = true
-compression_enabled = false
-
-# Development batching - smaller batches for easier debugging
-[batching.database_writes]
-size = 10
-timeout_ms = 100
-max_memory_mb = 10
-compression_threshold = 5
-
-[batching.client_broadcasts]
-size = 5
-timeout_ms = 50
-max_memory_mb = 5
-compression_threshold = 3
-
-[batching.snapshot_captures]
-size = 3
-timeout_ms = 100
-max_memory_mb = 3
-compression_threshold = 2
-
-[batching.metrics_collection]
-size = 20
-timeout_ms = 5000
-max_memory_mb = 2
-compression_threshold = 10
-
 [monitoring]
 metrics_enabled = true
 metrics_port = 9090

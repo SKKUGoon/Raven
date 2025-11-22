@@ -140,67 +140,12 @@ fn test_configuration_validation_comprehensive() {
     assert!(config.validate().is_err());
     config.database.connection_pool_size = 20;
 
-    // Test data processing validation
-    config.data_processing.snapshot_interval_ms = 0;
-    assert!(config.validate().is_err());
-    config.data_processing.snapshot_interval_ms = 5;
-
     // Test monitoring validation
     config.monitoring.log_level = "invalid".to_string();
     assert!(config.validate().is_err());
     config.monitoring.log_level = "info".to_string();
 
     assert!(config.validate().is_ok());
-}
-
-#[test]
-fn test_retention_policy_comprehensive_validation() {
-    let mut policies = RetentionPolicies::default();
-
-    // Valid policies should pass
-    assert!(policies.validate().is_ok());
-
-    // Test invalid high frequency policy
-    policies.high_frequency.full_resolution_days = 0;
-    assert!(policies.validate().is_err());
-    policies.high_frequency.full_resolution_days = 7;
-
-    // Test invalid ordering
-    policies.system_logs.downsampled_days = 5; // Less than full_resolution_days
-    assert!(policies.validate().is_err());
-    policies.system_logs.downsampled_days = 90;
-
-    // Test archive days validation
-    policies.system_logs.archive_days = 50; // Less than downsampled_days
-    assert!(policies.validate().is_err());
-    policies.system_logs.archive_days = 180;
-
-    assert!(policies.validate().is_ok());
-}
-
-#[test]
-fn test_batching_configuration_comprehensive() {
-    let mut batching = BatchingConfig::default();
-
-    // Valid batching should pass
-    assert!(batching.validate().is_ok());
-
-    // Test zero size validation
-    batching.database_writes.size = 0;
-    assert!(batching.validate().is_err());
-    batching.database_writes.size = 1000;
-
-    // Test zero timeout validation
-    batching.client_broadcasts.timeout_ms = 0;
-    assert!(batching.validate().is_err());
-    batching.client_broadcasts.timeout_ms = 1;
-
-    // Test zero memory validation
-    batching.snapshot_captures.max_memory_mb = 0;
-    assert!(batching.validate().is_err());
-    batching.snapshot_captures.max_memory_mb = 25;
-
-    assert!(batching.validate().is_ok());
 }
 
 #[test]
@@ -218,8 +163,6 @@ fn test_config_utils_comprehensive() {
     let json = ConfigUtils::export_as_json(&config).unwrap();
     assert!(json.contains("server"));
     assert!(json.contains("database"));
-    assert!(json.contains("retention"));
-    assert!(json.contains("batching"));
 
     // Test health check warnings
     let warnings = ConfigUtils::check_configuration_health(&config);

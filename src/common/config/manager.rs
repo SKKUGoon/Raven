@@ -10,8 +10,7 @@ use tracing::{error, info, warn};
 use crate::common::config::builder::RuntimeConfig;
 use crate::common::config::loader::ConfigLoader;
 use crate::common::config::sections::{
-    BatchingConfig, DataProcessingConfig, DatabaseConfig, MonitoringConfig, RetentionPolicies,
-    ServerConfig,
+    DataProcessingConfig, DatabaseConfig, MonitoringConfig, ServerConfig,
 };
 use crate::common::error::RavenResult;
 
@@ -57,14 +56,6 @@ impl ConfigManager {
 
     pub async fn data_processing(&self) -> DataProcessingConfig {
         self.runtime.read().await.data_processing.clone()
-    }
-
-    pub async fn batching(&self) -> BatchingConfig {
-        self.runtime.read().await.batching.clone()
-    }
-
-    pub async fn retention(&self) -> RetentionPolicies {
-        self.runtime.read().await.retention.clone()
     }
 
     pub async fn monitoring(&self) -> MonitoringConfig {

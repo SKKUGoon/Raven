@@ -1,7 +1,7 @@
-use crate::server::database::{influx_client::InfluxClient, DeadLetterQueue};
 use crate::common::error::RavenResult;
-use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use crate::common::time::current_timestamp_millis;
+use crate::server::database::{influx_client::InfluxClient, DeadLetterEntry, DeadLetterQueue};
+use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -11,16 +11,16 @@ use tracing::{debug, error, info, warn};
 use super::config::DataEngineConfig;
 use super::metrics::DataEngineMetrics;
 use super::storage::{OrderBookSnapshot, TradeSnapshot};
-use super::{OrderBookData, TradeData};
 use super::validation::ValidationRules;
+use super::{OrderBookData, TradeData};
 
 /// The Data Engine - Main data validation and processing engine
 pub struct DataEngine {
     config: DataEngineConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
     influx_client: Arc<InfluxClient>,
-    _subscription_manager: Arc<SubscriptionManager>,
-    _dead_letter_queue: Arc<DeadLetterQueue>,
+    subscription_manager: Arc<SubscriptionManager>,
+    dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: DataEngineMetrics,
 }
 
@@ -30,17 +30,18 @@ impl DataEngine {
         config: DataEngineConfig,
         influx_client: Arc<InfluxClient>,
         subscription_manager: Arc<SubscriptionManager>,
+        dead_letter_queue: Arc<DeadLetterQueue>,
     ) -> Self {
         info!("▲ Initializing DataEngine with config: {:?}", config);
 
-        let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
+        let validation_rules = ValidationRules::from(&config);
 
         Self {
             config,
-            validation_rules: Arc::new(RwLock::new(ValidationRules::default())),
+            validation_rules: Arc::new(RwLock::new(validation_rules)),
             influx_client,
-            _subscription_manager: subscription_manager,
-            _dead_letter_queue: dead_letter_queue,
+            subscription_manager,
+            dead_letter_queue,
             metrics: DataEngineMetrics::default(),
         }
     }
@@ -107,6 +108,16 @@ impl DataEngine {
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
                 error!("✗ Failed to write orderbook data for {}: {}", symbol, e);
+
+                if self.config.enable_dead_letter_queue {
+                    self.add_to_dead_letter_queue(
+                        symbol.to_string(),
+                        serde_json::to_string(&final_data).unwrap_or_default(),
+                        format!("Persistence failed: {e}"),
+                    )
+                    .await;
+                }
+
                 return Err(e);
             }
         }
@@ -154,6 +165,16 @@ impl DataEngine {
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
                 error!("✗ Failed to write trade data for {}: {}", symbol, e);
+
+                if self.config.enable_dead_letter_queue {
+                    self.add_to_dead_letter_queue(
+                        symbol.to_string(),
+                        serde_json::to_string(&validated_data).unwrap_or_default(),
+                        format!("Persistence failed: {e}"),
+                    )
+                    .await;
+                }
+
                 return Err(e);
             }
         }
@@ -300,16 +321,19 @@ impl DataEngine {
         &self,
         symbol: &str,
         data: &OrderBookData,
-        subscription_manager: &SubscriptionManager,
+        _subscription_manager: &SubscriptionManager, // Deprecated argument, using self.subscription_manager
     ) -> RavenResult<()> {
-         if !subscription_manager.has_subscribers(symbol, SubscriptionDataType::Orderbook) {
+        if !self
+            .subscription_manager
+            .has_subscribers(symbol, SubscriptionDataType::Orderbook)
+        {
             return Ok(());
         }
 
         let snapshot = OrderBookSnapshot::from(data);
         let message = self.create_orderbook_message(&snapshot);
 
-        subscription_manager.distribute_message(
+        self.subscription_manager.distribute_message(
             symbol,
             SubscriptionDataType::Orderbook,
             message,
@@ -323,16 +347,19 @@ impl DataEngine {
         &self,
         symbol: &str,
         data: &TradeData,
-        subscription_manager: &SubscriptionManager,
+        _subscription_manager: &SubscriptionManager, // Deprecated argument
     ) -> RavenResult<()> {
-         if !subscription_manager.has_subscribers(symbol, SubscriptionDataType::Trades) {
+        if !self
+            .subscription_manager
+            .has_subscribers(symbol, SubscriptionDataType::Trades)
+        {
             return Ok(());
         }
 
         let snapshot = TradeSnapshot::from(data);
         let message = self.create_trade_message(&snapshot);
 
-        subscription_manager.distribute_message(
+        self.subscription_manager.distribute_message(
             symbol,
             SubscriptionDataType::Trades,
             message,
@@ -429,9 +456,21 @@ impl DataEngine {
     }
 
     /// Add entry to dead letter queue
-    pub async fn add_to_dead_letter_queue(&self, symbol: String, _data: String, error: String) {
-        // TODO: Create proper dead letter entry
-        debug!("Would add to dead letter queue: {} - {}", symbol, error);
+    pub async fn add_to_dead_letter_queue(&self, symbol: String, data: String, error: String) {
+        debug!("Adding to dead letter queue: {} - {}", symbol, error);
+
+        let entry = DeadLetterEntry::new(
+            "data_ingestion",
+            &data,
+            &error,
+            self.config.enable_dead_letter_queue as u32 * 3, // Logic slightly weird but effectively 3 if enabled
+        )
+        .with_metadata("symbol", &symbol);
+
+        if let Err(e) = self.dead_letter_queue.add_entry(entry).await {
+            error!("Critical: Failed to add to dead letter queue: {}", e);
+        }
+
         self.metrics
             .dead_letter_entries
             .fetch_add(1, Ordering::Relaxed);

@@ -22,10 +22,6 @@ impl ConfigUtils {
         info!("  Bucket: {}", config.database.bucket);
         info!("  Organization: {}", config.database.org);
         info!(
-            "  Snapshot Interval: {}ms",
-            config.data_processing.snapshot_interval_ms
-        );
-        info!(
             "  ↗ High Freq Buffer: {}",
             config.data_processing.high_frequency_buffer_size
         );
@@ -56,10 +52,6 @@ impl ConfigUtils {
         );
         summary.insert("bucket".to_string(), config.database.bucket.clone());
         summary.insert("org".to_string(), config.database.org.clone());
-        summary.insert(
-            "snapshot_interval_ms".to_string(),
-            config.data_processing.snapshot_interval_ms.to_string(),
-        );
         summary.insert("log_level".to_string(), config.monitoring.log_level.clone());
         summary.insert(
             "metrics_enabled".to_string(),
@@ -79,10 +71,6 @@ impl ConfigUtils {
         let mut warnings = Vec::new();
 
         // Check for potential performance issues
-        if config.data_processing.snapshot_interval_ms > 100 {
-            warnings.push("Snapshot interval > 100ms may impact real-time performance".to_string());
-        }
-
         if config.server.max_connections > 10000 {
             warnings.push("Very high max_connections may require system tuning".to_string());
         }
@@ -102,24 +90,6 @@ impl ConfigUtils {
             );
         }
 
-        // Check retention policies
-        if config.retention.high_frequency.full_resolution_days > 30 {
-            warnings.push(
-                "High frequency data retention > 30 days may consume significant storage"
-                    .to_string(),
-            );
-        }
-
-        // Check batching configuration
-        if config.batching.database_writes.size > 10000 {
-            warnings.push("Very large database write batches may cause memory issues".to_string());
-        }
-
-        if config.batching.database_writes.timeout_ms > 1000 {
-            warnings
-                .push("High database write timeout may impact real-time performance".to_string());
-        }
-
         warnings
     }
 
@@ -133,8 +103,6 @@ impl ConfigUtils {
                 "Use smaller buffer sizes for easier debugging".to_string(),
                 "Enable verbose logging (debug level)".to_string(),
                 "Disable compression for easier inspection".to_string(),
-                "Use shorter retention periods to save storage".to_string(),
-                "Enable auto-cleanup for all data types".to_string(),
             ],
         );
 
@@ -144,8 +112,6 @@ impl ConfigUtils {
                 "Use larger buffer sizes for better performance".to_string(),
                 "Set log level to 'warn' or 'error' to reduce overhead".to_string(),
                 "Enable compression for all data types".to_string(),
-                "Configure appropriate retention policies for compliance".to_string(),
-                "Disable auto-cleanup for sensitive data".to_string(),
                 "Use connection pooling with adequate pool size".to_string(),
                 "Enable circuit breakers for resilience".to_string(),
             ],
@@ -218,7 +184,6 @@ org = "raven"
 # token = "your_influxdb_v2_token"
 
 [data_processing]
-snapshot_interval_ms = 5
 high_frequency_buffer_size = 10000
 
 [monitoring]

@@ -31,7 +31,6 @@ circuit_breaker_threshold = 5
 circuit_breaker_timeout_seconds = 60
 
 [data_processing]
-snapshot_interval_ms = 5
 high_frequency_buffer_size = 10000
 low_frequency_buffer_size = 1000
 private_data_buffer_size = 500
@@ -67,12 +66,6 @@ size = 100
 timeout_ms = 1
 max_memory_mb = 50
 compression_threshold = 50
-
-[batching.snapshot_captures]
-size = 50
-timeout_ms = 5
-max_memory_mb = 25
-compression_threshold = 25
 
 [batching.metrics_collection]
 size = 500

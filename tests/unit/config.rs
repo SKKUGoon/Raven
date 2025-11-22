@@ -14,7 +14,7 @@ fn test_default_config_creation() {
     assert_eq!(config.database.influx_url, "http://localhost:8086");
     assert_eq!(config.database.bucket, "crypto");
     assert_eq!(config.database.org, "raven");
-    assert_eq!(config.data_processing.snapshot_interval_ms, 5);
+    assert_eq!(config.data_processing.high_frequency_buffer_size, 10000);
 }
 
 #[test]
@@ -32,54 +32,6 @@ fn test_config_validation() {
     config = RuntimeConfig::default();
     config.database.influx_url = String::new();
     assert!(config.validate().is_err());
-
-    // Reset and test zero snapshot interval
-    config = RuntimeConfig::default();
-    config.data_processing.snapshot_interval_ms = 0;
-    assert!(config.validate().is_err());
-}
-
-#[test]
-fn test_retention_policy_validation() {
-    let mut policy = RetentionPolicy {
-        full_resolution_days: 7,
-        downsampled_days: 30,
-        archive_days: 90,
-        auto_cleanup: true,
-        compression_enabled: true,
-    };
-
-    // Valid policy should pass
-    assert!(policy.validate("test").is_ok());
-
-    // Invalid ordering should fail
-    policy.downsampled_days = 5; // Less than full_resolution_days
-    assert!(policy.validate("test").is_err());
-
-    // Zero days should fail
-    policy.full_resolution_days = 0;
-    assert!(policy.validate("test").is_err());
-}
-
-#[test]
-fn test_batch_config_validation() {
-    let mut batch = BatchConfig {
-        size: 100,
-        timeout_ms: 1000,
-        max_memory_mb: 50,
-        compression_threshold: 50,
-    };
-
-    // Valid config should pass
-    assert!(batch.validate("test").is_ok());
-
-    // Zero size should fail
-    batch.size = 0;
-    assert!(batch.validate("test").is_err());
-
-    // Zero timeout should fail
-    batch.timeout_ms = 0;
-    assert!(batch.validate("test").is_err());
 }
 
 #[test]
