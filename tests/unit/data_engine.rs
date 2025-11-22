@@ -1,8 +1,8 @@
 // DataEngine Tests - Project Raven
 
+use raven::current_timestamp_millis;
 use raven::server::data_engine::storage::{OrderBookData, TradeData, TradeSide};
 use raven::server::data_engine::{DataEngine, DataEngineConfig, ValidationRules};
-use raven::current_timestamp_millis;
 use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::server::database::DeadLetterQueue;
 use raven::server::exchanges::types::Exchange;
@@ -17,7 +17,12 @@ fn create_test_data_engine() -> DataEngine {
     let data_engine_config = DataEngineConfig::default();
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
-    DataEngine::new(data_engine_config, influx_client, subscription_manager, dead_letter_queue)
+    DataEngine::new(
+        data_engine_config,
+        influx_client,
+        subscription_manager,
+        dead_letter_queue,
+    )
 }
 
 fn create_test_orderbook_data() -> OrderBookData {
@@ -162,7 +167,10 @@ async fn test_metrics_tracking() {
         .metrics
         .total_written
         .fetch_add(3, Ordering::Relaxed);
-    data_engine.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
+    data_engine
+        .metrics
+        .total_failed
+        .fetch_add(1, Ordering::Relaxed);
 
     let metrics = data_engine.get_metrics();
     assert_eq!(metrics.get("total_ingested").unwrap(), &5);
@@ -173,16 +181,23 @@ async fn test_metrics_tracking() {
 
 #[tokio::test]
 async fn test_data_engine_config_validation_rules_wiring() {
-    let mut config = DataEngineConfig::default();
-    config.max_price = 5000.0;
-    config.max_price_deviation = 20.0;
+    let config = DataEngineConfig {
+        max_price: 5000.0,
+        max_price_deviation: 20.0,
+        ..Default::default()
+    };
 
     let influx_config = InfluxConfig::default();
     let influx_client = Arc::new(InfluxClient::new(influx_config));
     let subscription_manager = Arc::new(SubscriptionManager::new());
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
-    let data_engine = DataEngine::new(config, influx_client, subscription_manager, dead_letter_queue);
+    let data_engine = DataEngine::new(
+        config,
+        influx_client,
+        subscription_manager,
+        dead_letter_queue,
+    );
     let rules = data_engine.get_validation_rules().await;
 
     assert_eq!(rules.max_price, 5000.0);
@@ -201,4 +216,3 @@ async fn test_price_quantity_rounding() {
     let rounded_quantity = data_engine.round_quantity(quantity);
     assert_eq!(rounded_quantity, 1.98765432);
 }
-
