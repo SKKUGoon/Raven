@@ -90,7 +90,7 @@ All subcommands reuse the same connection bootstrap logic, surface errors with d
 ## Key Capabilities
 - **High-frequency ingestion:** `HighFrequencyHandler` writes directly into lock-free `HighFrequencyStorage` for ultra-low latency updates.
 - **Dynamic subscriptions:** `SubscriptionManager` tracks client state, topic routing, heartbeats, and reconnection persistence.
-- **Circuit-protected storage:** `Citadel` validates, sanitizes, and persists data to InfluxDB with dead-letter recovery paths.
+- **Circuit-protected storage:** `DataEngine` validates, sanitizes, and persists data to InfluxDB with dead-letter recovery paths.
 - **gRPC fan-out:** `MarketDataServer` enforces connection limits while streaming snapshots and live updates to clients.
 - **Operational visibility:** Health, metrics, and tracing services expose readiness, active collectors, and performance counters.
 
@@ -98,13 +98,13 @@ All subcommands reuse the same connection bootstrap logic, surface errors with d
 ### Runtime Flow
 1. **Bootstrap:** `app::startup` loads configuration via `ConfigLoader`, applies CLI overrides, validates port availability, and initializes logging.
 2. **Foundation services:** Dead letter queues, circuit breakers, and InfluxDB clients are created before the data plane spins up.
-3. **Data plane:** `Citadel` plus `HighFrequencyStorage` hold validated data; the snapshot service periodically publishes in-memory state and persists batches.
+3. **Data plane:** `DataEngine` plus `HighFrequencyStorage` hold validated data; the snapshot service periodically publishes in-memory state and persists batches.
 4. **Serving layer:** `MarketDataServer::start()` exposes the `MarketDataService` gRPC API, while `ControlService` listens on a loopback port for administrative commands.
 5. **Shutdown:** Coordinated stop signals abort gRPC tasks, drain collectors, flush queues, and dispose monitoring handles gracefully.
 
 ### Component Map
 - `src/app` – CLI parsing, startup wiring, shutdown, and version reporting.
-- `src/citadel` – Validation engine, atomic storage abstractions, and snapshot broadcasting.
+- `src/data_engine` – Validation engine, atomic storage abstractions, and snapshot broadcasting.
 - `src/server` – Connection gating plus gRPC surface backed by subscription routing and historical queries.
 - `src/control` – `CollectorManager` that starts/stops exchange collectors through the control gRPC interface.
 - `src/exchanges/binance` – WebSocket adapters and parsers for Binance spot and futures feeds.
@@ -144,7 +144,7 @@ Use `curl http://localhost:9091/health` and `curl http://localhost:9090/metrics`
 - **Unit tests:** `cargo test --test unit`
 - **Integration tests:** `cargo test --test integration`
 
-The unit suite exercises subscription routing, connection management, and Citadel validation logic, while integration tests spin up higher-level flows for config, exchanges, and server boundaries.
+The unit suite exercises subscription routing, connection management, and DataEngine validation logic, while integration tests spin up higher-level flows for config, exchanges, and server boundaries.
 
 ## Development Workflow
 The repository includes a Makefile with wrappers for common Rust commands (`make fmt`, `make lint`, `make test`). These targets are intended purely for development convenience; the canonical build and execution flow remains the direct Cargo commands shown above.

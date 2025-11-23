@@ -1,20 +1,8 @@
 // Project Raven - Core Library
-// "The ravens are the memory of the realm"
 
-pub mod app;
-pub mod citadel;
-pub mod client_manager;
-pub mod config;
-pub mod control;
-pub mod data_handlers;
-pub mod database;
-pub mod error;
-pub mod exchanges;
-pub mod logging;
-pub mod monitoring;
+pub mod common;
+pub mod controller;
 pub mod server;
-pub mod subscription_manager;
-pub mod time;
 
 // Generated protobuf modules
 pub mod proto {
@@ -22,8 +10,7 @@ pub mod proto {
 }
 
 // Re-export commonly used types
-pub use config::{ConfigLoader, ConfigManager, ConfigUtils, RuntimeConfig, RuntimeConfigBuilder};
-pub use error::{RavenError, RavenResult};
-pub use logging::LoggingConfig;
+pub use common::{
+    current_timestamp_millis, ConfigLoader, ConfigUtils, RavenError, RavenResult, RuntimeConfig,
+};
 pub use proto::*;
-pub use time::current_timestamp_millis;

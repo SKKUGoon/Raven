@@ -1,6 +1,6 @@
-use raven::exchanges::binance::{BinanceFuturesParser, BinanceSpotParser};
-use raven::exchanges::types::{DataType, Exchange, MarketData, SubscriptionRequest, TradeSide};
-use raven::exchanges::websocket::WebSocketParser;
+use raven::server::exchanges::binance::{BinanceFuturesParser, BinanceSpotParser};
+use raven::server::exchanges::types::{DataType, Exchange, MarketData, SubscriptionRequest, TradeSide};
+use raven::server::exchanges::websocket::WebSocketParser;
 
 #[test]
 fn test_binance_subscription_ticker() {

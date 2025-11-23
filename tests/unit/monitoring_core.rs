@@ -1,19 +1,19 @@
 // Monitoring Integration Tests - Project Raven
 // "Testing the crows who watch the watchers"
 
-use raven::citadel::storage::HighFrequencyStorage;
-use raven::config::MonitoringConfig;
-use raven::database::influx_client::{InfluxClient, InfluxConfig};
-use raven::monitoring::{
+use raven::common::config::MonitoringConfig;
+use raven::common::db::{InfluxClient, InfluxConfig};
+use raven::server::data_engine::storage::HighFrequencyStorage;
+use raven::server::monitoring::{
     health::{
         ComponentHealth, HealthResponse, HealthService, HealthStatus, LivenessResponse,
         ReadinessResponse,
     },
     metrics::{MetricsCollector, MetricsService},
     tracing::{PerformanceSpan, TracingService, TracingUtils},
-    CrowService,
+    ObservabilityService,
 };
-use raven::subscription_manager::SubscriptionManager;
+use raven::server::stream_router::StreamRouter;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,7 +30,7 @@ async fn test_monitoring_service_integration() {
 
     // Create dependencies
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     // Create services
@@ -45,7 +45,8 @@ async fn test_monitoring_service_integration() {
     let tracing_service = Arc::new(TracingService::new(config.clone()));
 
     // Create monitoring service
-    let monitoring_service = CrowService::new(health_service, metrics_service, tracing_service);
+    let monitoring_service =
+        ObservabilityService::new(health_service, metrics_service, tracing_service);
 
     match monitoring_service.start().await {
         Ok(handles) => assert_eq!(handles.len(), 1),
@@ -109,7 +110,7 @@ async fn test_health_service_components() {
     };
 
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     let health_service =

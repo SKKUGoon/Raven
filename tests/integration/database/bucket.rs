@@ -1,6 +1,6 @@
 use crate::{start_mock_server, Matcher};
-use raven::database::influx_client::InfluxClient;
-use raven::database::InfluxConfig;
+use raven::common::db::influx_client::InfluxClient;
+use raven::common::db::InfluxConfig;
 use serde_json::json;
 
 #[tokio::test]

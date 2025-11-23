@@ -1,7 +1,8 @@
-use raven::citadel::storage::{OrderBookLevel, OrderBookSnapshot, TradeSide, TradeSnapshot};
-use raven::database::dead_letter_queue::DeadLetterEntry;
-use raven::database::{DatabaseDeadLetterHelper, InfluxClient, InfluxConfig};
-use raven::exchanges::types::Exchange;
+use raven::server::data_engine::storage::{OrderBookLevel, OrderBookSnapshot, TradeSide, TradeSnapshot};
+use raven::common::db::dead_letter_queue::{DeadLetterEntry, DeadLetterQueue, DeadLetterQueueConfig, RetryHandler};
+use raven::common::db::DatabaseDeadLetterHelper;
+use raven::server::exchanges::types::Exchange;
+use raven::common::error::RavenResult;
 
 #[tokio::test]
 async fn test_database_dead_letter_helper_orderbook() {
@@ -60,35 +61,70 @@ async fn test_database_dead_letter_helper_trade() {
 
 #[tokio::test]
 async fn test_dead_letter_queue() {
-    let client = InfluxClient::new(InfluxConfig::default());
+    let config = DeadLetterQueueConfig::default();
+    let queue = DeadLetterQueue::new(config);
 
-    client
-        .add_to_dead_letter_queue("test query".into(), "test error".into())
-        .await;
+    let entry = DeadLetterEntry::new("test", "test data", "test error", 3);
+    queue.add_entry(entry).await.unwrap();
 
-    let status = client.get_pool_status().await;
-    assert_eq!(status.get("dead_letter_queue_size").unwrap(), &1);
+    let stats = queue.get_statistics().await;
+    assert_eq!(stats.total_entries, 1);
+}
+
+struct MockRetryHandler;
+
+#[async_trait::async_trait]
+impl RetryHandler for MockRetryHandler {
+    async fn retry_operation(&self, _entry: &DeadLetterEntry) -> RavenResult<()> {
+        Ok(())
+    }
+
+    fn operation_type(&self) -> &str {
+        "test"
+    }
 }
 
 #[tokio::test]
 async fn test_process_dead_letter_queue() {
-    let client = InfluxClient::new(InfluxConfig::default());
+    let config = DeadLetterQueueConfig {
+        processing_interval_ms: 10, // Faster for test
+        ..Default::default()
+    };
+    let queue = DeadLetterQueue::new(config);
 
-    client
-        .add_to_dead_letter_queue("test query 1".into(), "error 1".into())
-        .await;
-    client
-        .add_to_dead_letter_queue("test query 2".into(), "error 2".into())
-        .await;
+    // Register handler
+    let handler = Box::new(MockRetryHandler);
+    queue.register_retry_handler(handler).await;
 
-    let status = client.get_pool_status().await;
-    assert_eq!(status.get("dead_letter_queue_size").unwrap(), &2);
+    // Add entries
+    let entry1 = DeadLetterEntry::new("test", "data1", "error1", 3);
+    let mut entry2 = DeadLetterEntry::new("test", "data2", "error2", 3);
+    // Make entry2 ready for retry immediately
+    entry2.next_retry_timestamp = 0;
 
-    let processed = client.process_dead_letter_queue().await.unwrap();
-    assert_eq!(processed, 2);
+    // Make entry1 NOT ready for retry
+    let future_time = raven::common::current_timestamp_millis() + 10000;
+    let mut entry1 = entry1;
+    entry1.next_retry_timestamp = future_time;
 
-    let status = client.get_pool_status().await;
-    assert_eq!(status.get("dead_letter_queue_size").unwrap(), &0);
+    queue.add_entry(entry1).await.unwrap();
+    queue.add_entry(entry2).await.unwrap();
+
+    let stats = queue.get_statistics().await;
+    assert_eq!(stats.total_entries, 2);
+
+    // Start processing
+    queue.start_processing().await.unwrap();
+
+    // Wait for processing
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    queue.stop_processing();
+
+    let stats = queue.get_statistics().await;
+    // entry2 should be processed and removed, entry1 should remain
+    assert_eq!(stats.total_entries, 1);
+    assert_eq!(stats.successful_retries, 1);
 }
 
 #[test]

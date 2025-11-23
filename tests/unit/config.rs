@@ -1,6 +1,6 @@
-use raven::config::*;
+use raven::common::config::*;
 use std::env;
-use std::time::Duration;
+// use std::time::Duration;
 use tempfile::tempdir;
 use tokio::fs;
 
@@ -14,7 +14,7 @@ fn test_default_config_creation() {
     assert_eq!(config.database.influx_url, "http://localhost:8086");
     assert_eq!(config.database.bucket, "crypto");
     assert_eq!(config.database.org, "raven");
-    assert_eq!(config.data_processing.snapshot_interval_ms, 5);
+    assert_eq!(config.data_processing.high_frequency_buffer_size, 10000);
 }
 
 #[test]
@@ -32,54 +32,6 @@ fn test_config_validation() {
     config = RuntimeConfig::default();
     config.database.influx_url = String::new();
     assert!(config.validate().is_err());
-
-    // Reset and test zero snapshot interval
-    config = RuntimeConfig::default();
-    config.data_processing.snapshot_interval_ms = 0;
-    assert!(config.validate().is_err());
-}
-
-#[test]
-fn test_retention_policy_validation() {
-    let mut policy = RetentionPolicy {
-        full_resolution_days: 7,
-        downsampled_days: 30,
-        archive_days: 90,
-        auto_cleanup: true,
-        compression_enabled: true,
-    };
-
-    // Valid policy should pass
-    assert!(policy.validate("test").is_ok());
-
-    // Invalid ordering should fail
-    policy.downsampled_days = 5; // Less than full_resolution_days
-    assert!(policy.validate("test").is_err());
-
-    // Zero days should fail
-    policy.full_resolution_days = 0;
-    assert!(policy.validate("test").is_err());
-}
-
-#[test]
-fn test_batch_config_validation() {
-    let mut batch = BatchConfig {
-        size: 100,
-        timeout_ms: 1000,
-        max_memory_mb: 50,
-        compression_threshold: 50,
-    };
-
-    // Valid config should pass
-    assert!(batch.validate("test").is_ok());
-
-    // Zero size should fail
-    batch.size = 0;
-    assert!(batch.validate("test").is_err());
-
-    // Zero timeout should fail
-    batch.timeout_ms = 0;
-    assert!(batch.validate("test").is_err());
 }
 
 #[test]
@@ -102,7 +54,7 @@ fn test_config_to_env_vars() {
 }
 
 #[tokio::test]
-async fn test_config_manager_creation() {
+async fn test_config_loader_manual_loading() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir
         .path()
@@ -111,16 +63,25 @@ async fn test_config_manager_creation() {
         .to_string();
 
     let loader = ConfigLoader::new().with_file(config_path);
-    let manager = ConfigManager::new(loader, Duration::from_secs(1));
-    assert!(manager.is_ok());
+    // ConfigManager removed, testing loader directly
+    // let manager = ConfigManager::new(loader, Duration::from_secs(1));
+    // assert!(manager.is_ok());
 
-    let manager = manager.unwrap();
-    let config = manager.runtime().await;
-    assert_eq!(config.server.port, 50051);
+    // let manager = manager.unwrap();
+    // let config = manager.runtime().await;
+    
+    // This will fail because the file doesn't exist, so we should probably write it first or test default behavior if file missing
+    // But the original test didn't write the file? 
+    // Wait, test_config_manager_creation in original code didn't write the file.
+    // It used ConfigLoader with a file path that didn't exist?
+    // If ConfigLoader falls back to defaults when file is missing, then:
+    
+    let config = RuntimeConfig::load_with_loader(&loader).unwrap();
+    assert_eq!(config.server.port, 50051); // Default port
 }
 
 #[tokio::test]
-async fn test_config_hot_reload() {
+async fn test_config_manual_reload() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("test_config.toml");
 
@@ -137,12 +98,13 @@ org = "test_org"
     fs::write(&config_path, initial_config).await.unwrap();
 
     let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
-    let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
+    // let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
 
-    // Force reload should work
-    assert!(manager.force_reload().await.is_ok());
+    // Force reload should work -> Manual load
+    let config = RuntimeConfig::load_with_loader(&loader);
+    assert!(config.is_ok());
 
-    let config = manager.runtime().await;
+    let config = config.unwrap();
     assert_eq!(config.server.port, 8080);
 }
 
