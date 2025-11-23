@@ -12,12 +12,13 @@ use crate::server::app::shutdown::{
 };
 use crate::server::app::startup;
 use crate::server::client_manager::ClientManager;
-use crate::server::controller_service::{CollectorManager, ControlServiceImpl};
+use crate::server::grpc::controller_service::CollectorManager;
+use crate::server::grpc::controller_service::ControlServiceImpl;
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::data_engine::{DataEngine, DataEngineConfig};
 use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue};
-use crate::server::grpc::MarketDataServer;
+use crate::server::grpc::client_service::MarketDataServer;
 use crate::server::monitoring::ObservabilityService;
 use crate::server::subscription_manager::SubscriptionManager;
 

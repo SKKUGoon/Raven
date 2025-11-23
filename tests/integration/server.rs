@@ -1,7 +1,7 @@
 // Tests for the server module
 
 use raven::proto::{self, DataType};
-use raven::server::grpc::{ConnectionManager, MarketDataServiceImpl};
+use raven::server::grpc::client_service::{ConnectionManager, MarketDataServiceImpl};
 use raven::server::subscription_manager::SubscriptionDataType;
 
 #[tokio::test]

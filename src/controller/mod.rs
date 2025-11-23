@@ -1,12 +1,12 @@
 // Raven Control CLI - Command line interface for managing Raven data collection
 // "The Hand of the King's command interface"
 
-use clap::{Arg, Command};
 use crate::common::config::{ConfigLoader, ConfigUtils, RuntimeConfig};
 use crate::common::current_timestamp_millis;
 use crate::common::error::{RavenError, RavenResult};
 use crate::proto::control_service_client::ControlServiceClient;
 use crate::proto::{ListCollectionsRequest, StartCollectionRequest, StopCollectionRequest};
+use clap::{Arg, Command};
 use std::path::PathBuf;
 use tracing::{error, info};
 
@@ -368,4 +368,3 @@ fn log_and_exit(error: RavenError, context: &str) -> ! {
     eprintln!("{context}: {error}");
     std::process::exit(1);
 }
-

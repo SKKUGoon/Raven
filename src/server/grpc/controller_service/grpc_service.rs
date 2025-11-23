@@ -1,7 +1,7 @@
 // Control Service gRPC Implementation
 // "The Hand of the King's gRPC interface for commanding the realm's data collection"
 
-use crate::server::controller_service::manager::CollectorManager;
+use crate::server::grpc::controller_service::manager::CollectorManager;
 use crate::server::exchanges::types::Exchange;
 use crate::proto::control_service_server::ControlService;
 use crate::proto::{
@@ -43,7 +43,7 @@ impl ControlServiceImpl {
     }
 
     /// Convert CollectionInfo to proto CollectionInfo
-    fn convert_collection_info(info: &crate::server::controller_service::manager::CollectionInfo) -> CollectionInfo {
+    fn convert_collection_info(info: &crate::server::grpc::controller_service::manager::CollectionInfo) -> CollectionInfo {
         CollectionInfo {
             exchange: Self::exchange_to_string(&info.exchange),
             symbol: info.symbol.clone(),

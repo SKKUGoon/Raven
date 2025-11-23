@@ -1,4 +1,4 @@
-use raven::server::controller_service::CollectorManager;
+use raven::server::grpc::controller_service::CollectorManager;
 use raven::server::data_engine::storage::HighFrequencyStorage;
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
