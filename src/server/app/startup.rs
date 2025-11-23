@@ -3,7 +3,6 @@ use crate::{
         ConfigLoader, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig, ServerConfig,
     },
     common::error::RavenResult,
-    common::logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
     raven_bail,
     server::client_manager::{ClientManager, ClientManagerConfig},
     server::data_engine::storage::HighFrequencyStorage,
@@ -19,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::server::app::args::CliArgs;
 
@@ -96,14 +96,15 @@ pub async fn validate_dependencies(
     Ok(())
 }
 
-/// Initialize logging with the provided configuration
+/// Initialize logging with default configuration
 pub fn initialize_logging(_args: &CliArgs) -> RavenResult<()> {
-    let basic_logging = LoggingConfig::default();
-
-    if let Err(e) = init_logging(&basic_logging) {
-        eprintln!("Failed to initialize logging: {e}");
-        return Err(e);
-    }
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 
     Ok(())
 }
@@ -146,7 +147,11 @@ pub fn load_and_validate_config(
 
     // Check configuration health
     let warnings = ConfigUtils::check_configuration_health(&config);
-    log_config_validation("main", warnings.is_empty(), &warnings);
+    if warnings.is_empty() {
+        info!("Configuration validation passed");
+    } else {
+        warn!(warnings = ?warnings, "Configuration validation passed with warnings");
+    }
 
     Ok(config)
 }
@@ -166,12 +171,12 @@ pub async fn initialize_dead_letter_queue() -> RavenResult<Arc<DeadLetterQueue>>
 
     // Load persisted dead letter entries
     if let Err(e) = dead_letter_queue.load_from_disk().await {
-        log_error_with_context(&e, "Failed to load dead letter queue from disk");
+        error!(error = %e, "Failed to load dead letter queue from disk");
     }
 
     // Start dead letter queue processing
     if let Err(e) = dead_letter_queue.start_processing().await {
-        log_error_with_context(&e, "Failed to start dead letter queue processing");
+        error!(error = %e, "Failed to start dead letter queue processing");
         raven_bail!(e);
     }
 
@@ -248,10 +253,7 @@ pub async fn initialize_influx_client(
 
     // Connect to InfluxDB
     if let Err(e) = influx_client.connect().await {
-        log_error_with_context(
-            &crate::raven_error!(database_connection, e.to_string()),
-            "Failed to connect to InfluxDB",
-        );
+        error!(error = %e, "Failed to connect to InfluxDB");
         raven_bail!(crate::raven_error!(database_connection, e.to_string()));
     }
 
@@ -274,13 +276,13 @@ pub async fn initialize_client_manager(server: &ServerConfig) -> RavenResult<Arc
 
     // Start client health monitoring
     if let Err(e) = client_manager.start_health_monitoring().await {
-        log_error_with_context(&e, "Failed to start client health monitoring");
+        error!(error = %e, "Failed to start client health monitoring");
         raven_bail!(e);
     }
 
     // Start disconnection event processing
     if let Err(e) = client_manager.start_disconnection_processing().await {
-        log_error_with_context(&e, "Failed to start disconnection event processing");
+        error!(error = %e, "Failed to start disconnection event processing");
         raven_bail!(e);
     }
 
@@ -300,10 +302,7 @@ pub async fn initialize_monitoring_services(
     // Initialize tracing service
     let tracing_service = Arc::new(TracingService::new(monitoring.clone()));
     if let Err(e) = tracing_service.initialize().await {
-        log_error_with_context(
-            &crate::raven_error!(internal, e.to_string()),
-            "Failed to initialize distributed tracing",
-        );
+        error!(error = %e, "Failed to initialize distributed tracing");
         warn!("Continuing without distributed tracing");
     } else {
         info!("Distributed tracing initialized successfully");

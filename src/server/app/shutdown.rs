@@ -1,6 +1,5 @@
 use crate::{
     common::error::RavenResult,
-    common::logging::log_error_with_context,
     server::client_manager::ClientManager,
     server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
     server::monitoring::TracingService,
@@ -106,13 +105,13 @@ pub async fn perform_graceful_shutdown(
 
     // Stop accepting new connections and disconnect existing clients
     if let Err(e) = client_manager.shutdown_all_clients().await {
-        log_error_with_context(&e, "Error during client shutdown");
+        tracing::error!(error = %e, "Error during client shutdown");
     }
 
     // Stop dead letter queue processing and persist remaining entries
     dead_letter_queue.stop_processing();
     if let Err(e) = dead_letter_queue.persist_to_disk().await {
-        log_error_with_context(&e, "Failed to persist dead letter queue");
+        tracing::error!(error = %e, "Failed to persist dead letter queue");
     }
 
     // TODO: Process any remaining dead letter entries
@@ -127,10 +126,7 @@ pub async fn perform_graceful_shutdown(
 
     // Shutdown tracing and flush spans
     if let Err(e) = tracing_service.shutdown().await {
-        log_error_with_context(
-            &crate::raven_error!(internal, e.to_string()),
-            "Failed to shutdown tracing",
-        );
+        tracing::error!(error = %e, "Failed to shutdown tracing");
     }
 
     // Get final statistics

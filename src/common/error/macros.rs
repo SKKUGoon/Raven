@@ -111,28 +111,3 @@ macro_rules! contextual_error {
         $error.with_context(context)
     }};
 }
-
-/// Macro for error recovery with automatic strategy application
-#[macro_export]
-macro_rules! recover_error {
-    ($error:expr, $metrics:expr) => {
-        {
-            let error = $error;
-            let strategy = error.recovery_strategy();
-
-            // Track the error
-            $metrics.track_error(&error);
-
-            // Log with context
-            tracing::error!(
-                error = %error,
-                strategy = ?strategy,
-                category = error.category(),
-                retryable = error.is_retryable(),
-                "Error occurred with recovery strategy"
-            );
-
-            Err(error)
-        }
-    };
-}
