@@ -3,7 +3,7 @@
 
 use raven::common::config::*;
 use std::env;
-use std::time::Duration;
+// use std::time::Duration;
 use tempfile::tempdir;
 use tokio::fs;
 
@@ -38,10 +38,11 @@ metrics_enabled = true
 
     // Test configuration manager creation
     let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
-    let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
+    // ConfigManager removed in recent refactor
+    // let manager = ConfigManager::new(loader, Duration::from_millis(100)).unwrap();
 
     // Test getting configuration
-    let config = manager.runtime().await;
+    let config = RuntimeConfig::load_with_loader(&loader).unwrap();
     assert_eq!(config.server.host, "127.0.0.1");
     assert_eq!(config.server.port, 8080);
     assert_eq!(config.database.bucket, "test_db");
@@ -64,8 +65,8 @@ metrics_enabled = true
     // Should have some warnings for test config
     assert!(!warnings.is_empty());
 
-    // Test force reload
-    assert!(manager.force_reload().await.is_ok());
+    // Test manual reload
+    let _config = RuntimeConfig::load_with_loader(&loader).unwrap();
 }
 
 #[test]
@@ -228,14 +229,15 @@ log_level = "info"
     fs::write(&config_path, initial_config).await.unwrap();
 
     let loader = ConfigLoader::new().with_file(config_path.to_path_buf());
-    let manager = ConfigManager::new(loader, Duration::from_millis(50)).unwrap();
+    // ConfigManager removed
+    // let manager = ConfigManager::new(loader, Duration::from_millis(50)).unwrap();
 
     // Get initial config
-    let config = manager.runtime().await;
+    let config = RuntimeConfig::load_with_loader(&loader).unwrap();
     assert_eq!(config.database.bucket, "initial_db");
 
-    // Test force reload
-    assert!(manager.force_reload().await.is_ok());
+    // Test manual reload
+    let _config = RuntimeConfig::load_with_loader(&loader).unwrap();
 
     // Update config file
     let updated_config = r#"
@@ -253,8 +255,7 @@ log_level = "debug"
     fs::write(&config_path, updated_config).await.unwrap();
 
     // Force reload to pick up changes
-    assert!(manager.force_reload().await.is_ok());
-    let config = manager.runtime().await;
+    let config = RuntimeConfig::load_with_loader(&loader).unwrap();
     assert_eq!(config.server.port, 9090);
     assert_eq!(config.database.bucket, "updated_db");
     assert_eq!(config.monitoring.log_level, "debug");

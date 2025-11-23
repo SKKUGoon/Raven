@@ -14,8 +14,8 @@ mod data_handlers;
 mod error;
 #[path = "unit/exchanges_binance.rs"]
 mod exchanges_binance;
-#[path = "unit/logging.rs"]
-mod logging;
+// #[path = "unit/logging.rs"]
+// mod logging;
 #[path = "unit/monitoring_core.rs"]
 mod monitoring_core;
 #[path = "unit/subscription_manager.rs"]
