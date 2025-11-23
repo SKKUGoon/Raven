@@ -1,9 +1,8 @@
 use crate::{
     common::config::{
-        ConfigLoader, ConfigManager, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig,
-        ServerConfig,
+        ConfigLoader, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig, ServerConfig,
     },
-    common::error::{EnhancedErrorContext, RavenResult},
+    common::error::RavenResult,
     common::logging::{init_logging, log_config_validation, log_error_with_context, LoggingConfig},
     raven_bail,
     server::client_manager::{ClientManager, ClientManagerConfig},
@@ -21,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use crate::server::app::cli::CliArgs;
+use crate::server::app::args::CliArgs;
 
 /// Validate system dependencies and requirements
 pub async fn validate_dependencies(
@@ -139,7 +138,7 @@ pub fn load_and_validate_config(
     };
 
     // Apply CLI overrides to configuration
-    config = crate::server::app::cli::apply_cli_overrides(config, args);
+    config = crate::server::app::args::apply_cli_overrides(config, args);
 
     // Handle special CLI modes
     // Print configuration summary
@@ -150,27 +149,6 @@ pub fn load_and_validate_config(
     log_config_validation("main", warnings.is_empty(), &warnings);
 
     Ok(config)
-}
-
-/// Initialize configuration manager with hot-reloading
-pub async fn initialize_config_manager(loader: ConfigLoader) -> RavenResult<ConfigManager> {
-    let config_manager = crate::handle_config_error!(
-        ConfigManager::new(loader, Duration::from_secs(5)),
-        "config_manager.init"
-    )?;
-
-    // Start hot-reload monitoring
-    if let Err(e) = config_manager.start_hot_reload().await {
-        log_error_with_context(
-            &crate::raven_error!(configuration, e.to_string()),
-            "Failed to start configuration hot-reload",
-        );
-        warn!("Continuing without hot-reload capability");
-    } else {
-        info!("Configuration hot-reloading enabled");
-    }
-
-    Ok(config_manager)
 }
 
 /// Initialize dead letter queue

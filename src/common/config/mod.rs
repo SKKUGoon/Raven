@@ -1,16 +1,11 @@
-// Configuration Module - Project Raven
-// "The wisdom that guides the realm"
-
-mod builder;
 mod loader;
-mod manager;
+mod runtime_config;
 pub mod sections;
 pub mod utils;
 pub mod validation;
 
-pub use builder::{RuntimeConfig, RuntimeConfigBuilder};
 pub use loader::ConfigLoader;
-pub use manager::ConfigManager;
+pub use runtime_config::RuntimeConfig;
 pub use sections::*;
 pub use utils::*;
 pub use validation::ConfigSection;
