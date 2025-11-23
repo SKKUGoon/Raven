@@ -1,5 +1,5 @@
 use crate::common::error::RavenResult;
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 use crate::server::database::{influx_client::InfluxClient, DeadLetterEntry, DeadLetterQueue};
 use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
 use std::collections::HashMap;

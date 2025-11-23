@@ -1,7 +1,7 @@
 // Collector Manager - Dynamic lifecycle management for data collectors
 
 use crate::common::error::RavenResult;
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 use crate::server::data_engine::ingestion::{spawn_orderbook_ingestor, spawn_trade_ingestor};
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::data_handlers::HighFrequencyHandler;

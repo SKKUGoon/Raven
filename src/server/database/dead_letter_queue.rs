@@ -1,5 +1,5 @@
 use crate::common::error::RavenResult;
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;

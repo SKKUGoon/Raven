@@ -32,7 +32,7 @@ use tracing::{debug, error, info, warn};
 use crate::server::data_engine::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
 use crate::server::database::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
 use crate::common::error::RavenResult;
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 use dead_letter::DeadLetterEntry;
 
 type Result<T> = RavenResult<T>;

@@ -15,7 +15,7 @@ use uuid::Uuid;
 // Re-export protobuf types for convenience
 use crate::common::error::RavenResult;
 pub use crate::proto::{DataType, MarketDataMessage};
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 
 /// Data types that clients can subscribe to
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -3,7 +3,7 @@
 
 use clap::{Arg, Command};
 use crate::common::config::{ConfigLoader, ConfigUtils, RuntimeConfig};
-use crate::common::time::current_timestamp_millis;
+use crate::common::current_timestamp_millis;
 use crate::common::error::{RavenError, RavenResult};
 use crate::proto::control_service_client::ControlServiceClient;
 use crate::proto::{ListCollectionsRequest, StartCollectionRequest, StopCollectionRequest};
