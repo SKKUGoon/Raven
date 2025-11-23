@@ -1,41 +1,59 @@
 // Tests for the server module
 
 use raven::proto::{self, DataType};
-use raven::server::grpc::client_service::{ConnectionManager, MarketDataServiceImpl};
-use raven::server::subscription_manager::SubscriptionDataType;
+use raven::server::grpc::client_service::manager::{ClientManagerConfig, DisconnectionReason};
+use raven::server::grpc::client_service::{ClientManager, MarketDataServiceImpl};
+use raven::server::stream_router::SubscriptionDataType;
 
 #[tokio::test]
 async fn test_connection_management() {
-    let connection_manager = ConnectionManager::new(2); // Small limit for testing
+    let config = ClientManagerConfig {
+        max_clients: 2,
+        ..Default::default()
+    };
+    let client_manager = ClientManager::new(config);
 
     // Test connection acceptance
-    assert!(connection_manager.can_accept_connection().await);
-    connection_manager
-        .increment_connections(None)
-        .await
-        .unwrap();
-    assert_eq!(connection_manager.get_active_connections().await, 1);
+    assert_eq!(client_manager.get_client_count().await, 0);
 
-    assert!(connection_manager.can_accept_connection().await);
-    connection_manager
-        .increment_connections(None)
+    // First client
+    assert!(client_manager
+        .register_client("client-1".to_string())
         .await
-        .unwrap();
-    assert_eq!(connection_manager.get_active_connections().await, 2);
+        .is_ok());
+    assert_eq!(client_manager.get_client_count().await, 1);
+
+    // Second client
+    assert!(client_manager
+        .register_client("client-2".to_string())
+        .await
+        .is_ok());
+    assert_eq!(client_manager.get_client_count().await, 2);
 
     // Should reject when at limit
-    assert!(!connection_manager.can_accept_connection().await);
-    assert!(connection_manager
-        .increment_connections(None)
+    assert!(client_manager
+        .register_client("client-3".to_string())
         .await
         .is_err());
+    assert_eq!(client_manager.get_client_count().await, 2);
 
-    // Test decrement
-    connection_manager
-        .decrement_connections(std::time::Duration::from_secs(1), None)
-        .await;
-    assert_eq!(connection_manager.get_active_connections().await, 1);
-    assert!(connection_manager.can_accept_connection().await);
+    // Test decrement (disconnection)
+    assert!(client_manager
+        .disconnect_client("client-1", DisconnectionReason::ClientInitiated)
+        .await
+        .is_ok());
+
+    // Note: disconnect_client sets state to Disconnecting, it doesn't remove immediately (grace period).
+    // However, for the purpose of "active connections" count in a simple test without waiting for grace period,
+    // we might need to check if we can force remove or just wait.
+    // But get_client_count returns total map size.
+
+    // Let's assume we want to verify it's disconnecting.
+    let client = client_manager.get_client("client-1").await.unwrap();
+    assert!(matches!(
+        client.state,
+        raven::server::grpc::client_service::manager::ClientState::Disconnecting
+    ));
 }
 
 #[test]

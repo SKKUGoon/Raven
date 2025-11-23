@@ -9,9 +9,9 @@ use crate::proto::{
 };
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::database::influx_client::InfluxClient;
-use crate::server::grpc::client_service::connection::ConnectionManager;
+use crate::server::grpc::client_service::manager::{ClientManager, DisconnectionReason};
 use crate::server::monitoring::MetricsCollector;
-use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
+use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -22,28 +22,28 @@ use tracing::{error, info, warn};
 
 /// Implementation of the MarketDataService gRPC interface
 pub struct MarketDataServiceImpl {
-    subscription_manager: Arc<SubscriptionManager>,
+    stream_router: Arc<StreamRouter>,
     _influx_client: Arc<InfluxClient>,
     _hf_storage: Arc<HighFrequencyStorage>,
     metrics: Option<Arc<MetricsCollector>>,
-    connection_manager: ConnectionManager,
+    client_manager: Arc<ClientManager>,
 }
 
 impl MarketDataServiceImpl {
     /// Create a new MarketDataServiceImpl
     pub fn new(
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
         influx_client: Arc<InfluxClient>,
         hf_storage: Arc<HighFrequencyStorage>,
         metrics: Option<Arc<MetricsCollector>>,
-        connection_manager: ConnectionManager,
+        client_manager: Arc<ClientManager>,
     ) -> Self {
         Self {
-            subscription_manager,
+            stream_router,
             _influx_client: influx_client,
             _hf_storage: hf_storage,
             metrics,
-            connection_manager,
+            client_manager,
         }
     }
 
@@ -128,48 +128,71 @@ impl MarketDataService for MarketDataServiceImpl {
 
         info!("New client connected: {}", peer_addr);
 
-        // Check connection limits
-        if !self.connection_manager.can_accept_connection().await {
+        // Check connection limits using ClientManager
+        let can_accept =
+            self.client_manager.get_client_count().await < self.client_manager.get_max_clients();
+
+        if !can_accept {
             warn!("Connection limit reached, rejecting client: {}", peer_addr);
+
+            // Record metric if available
+            if let Some(metrics) = &self.metrics {
+                metrics.record_error("max_connections_reached", "server");
+            }
+
             return Err(Status::resource_exhausted(
                 "Maximum connection limit reached",
             ));
         }
 
-        // Increment connections
-        if let Err(e) = self
-            .connection_manager
-            .increment_connections(self.metrics.as_ref())
-            .await
-        {
-            warn!("Connection limit reached, rejecting client: {}", peer_addr);
-            return Err(Status::resource_exhausted(e.to_string()));
-        }
-
         let mut in_stream = request.into_inner();
         let (_tx, rx) = mpsc::channel(128);
 
-        let _subscription_manager = self.subscription_manager.clone();
-        let connection_manager = self.connection_manager.clone();
+        let _stream_router = self.stream_router.clone();
+        let client_manager = self.client_manager.clone();
         let metrics = self.metrics.clone();
 
         // Spawn a task to handle incoming requests from this client
         tokio::spawn(async move {
             let client_id = uuid::Uuid::new_v4().to_string();
+
+            // Register with ClientManager
+            if let Err(e) = client_manager.register_client(client_id.clone()).await {
+                error!("Failed to register client {}: {}", client_id, e);
+                return; // Should reject connection if registration fails
+            } else {
+                // Add metadata
+                let _ = client_manager
+                    .add_client_metadata(&client_id, "peer_addr", &peer_addr)
+                    .await;
+
+                // Update metrics
+                if let Some(m) = &metrics {
+                    m.record_connection("grpc");
+                    m.active_connections
+                        .set(client_manager.get_client_count().await as f64);
+                }
+            }
+
             info!("Client session started: {} ({})", client_id, peer_addr);
 
             // Handle incoming messages
             while let Some(result) = in_stream.next().await {
+                // Update activity/heartbeat in ClientManager
+                let _ = client_manager.update_activity(&client_id).await;
+
                 match result {
                     Ok(req) => {
+                        let _ = client_manager.increment_messages_received(&client_id).await;
+
                         match req.request {
                             Some(crate::proto::subscription_request::Request::Subscribe(sub)) => {
                                 info!("Client {} subscribing to {:?}", client_id, sub.symbols);
                                 // TODO: Implement subscription logic properly
-                                // subscription_manager.subscribe(&client_id, &sub.symbol).await;
+                                // stream_router.subscribe(&client_id, &sub.symbol).await;
 
                                 // Dummy response for now since we need to return MarketDataMessage
-                                // In a real implementation, this would come from the subscription manager
+                                // In a real implementation, this would come from the stream router
                             }
                             Some(crate::proto::subscription_request::Request::Unsubscribe(
                                 unsub,
@@ -179,10 +202,11 @@ impl MarketDataService for MarketDataServiceImpl {
                                     client_id, unsub.symbols
                                 );
                                 // TODO: Implement unsubscribe logic properly
-                                // subscription_manager.unsubscribe(&client_id, &unsub.symbol).await;
+                                // stream_router.unsubscribe(&client_id, &unsub.symbol).await;
                             }
                             Some(crate::proto::subscription_request::Request::Heartbeat(_)) => {
                                 // Heartbeat logic
+                                let _ = client_manager.update_heartbeat(&client_id).await;
                             }
                             None => {
                                 warn!("Received empty request from client {}", client_id);
@@ -197,13 +221,23 @@ impl MarketDataService for MarketDataServiceImpl {
             }
 
             info!("Client session ended: {}", client_id);
-            // Cleanup subscriptions
-            // subscription_manager.remove_client(&client_id).await;
 
-            // Release connection slot
-            connection_manager
-                .decrement_connections(std::time::Duration::from_secs(0), metrics.as_ref())
+            // Unregister from ClientManager
+            // This will also handle the cleanup and state update
+            let _ = client_manager
+                .disconnect_client(&client_id, DisconnectionReason::ClientInitiated)
                 .await;
+
+            // Force finalize immediately for this manual disconnection flow since we are exiting the task
+            // Note: In a real scenario, we might want to let the grace period handle it, but since the stream ended, we know they are gone.
+            // However, disconnect_client spawns a task to finalize after grace period, which is fine.
+
+            // Update metrics
+            if let Some(m) = &metrics {
+                m.record_disconnection("grpc", std::time::Duration::from_secs(0)); // Duration is tracked in client manager events
+                m.active_connections
+                    .set(client_manager.get_client_count().await as f64);
+            }
         });
 
         let out_stream = ReceiverStream::new(rx);

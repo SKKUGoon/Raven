@@ -6,14 +6,14 @@ use raven::server::data_engine::{DataEngine, DataEngineConfig, ValidationRules};
 use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::server::database::DeadLetterQueue;
 use raven::server::exchanges::types::Exchange;
-use raven::server::subscription_manager::SubscriptionManager;
+use raven::server::stream_router::StreamRouter;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 fn create_test_data_engine() -> DataEngine {
     let influx_config = InfluxConfig::default();
     let influx_client = Arc::new(InfluxClient::new(influx_config));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let data_engine_config = DataEngineConfig::default();
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
@@ -189,7 +189,7 @@ async fn test_data_engine_config_validation_rules_wiring() {
 
     let influx_config = InfluxConfig::default();
     let influx_client = Arc::new(InfluxClient::new(influx_config));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
     let data_engine = DataEngine::new(

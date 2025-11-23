@@ -1,5 +1,5 @@
-// Subscription Manager - The Subscription Registry
-// "The great ledger of all client subscriptions across the Seven Kingdoms"
+// Stream Router - The Data Distribution System
+// "The central switchboard for routing real-time data streams to clients"
 
 // Note: types module not needed for this implementation
 use dashmap::DashMap;
@@ -168,16 +168,16 @@ pub struct PersistedSubscription {
     pub last_seen: i64,
 }
 
-/// Topic-based routing for efficient data distribution
+/// Topic-based index for efficient data distribution
 #[derive(Debug)]
-pub struct TopicRouter {
+pub struct TopicIndex {
     /// Map from topic to set of client IDs
     topic_to_clients: DashMap<String, HashSet<String>>,
     /// Map from client ID to set of topics
     client_to_topics: DashMap<String, HashSet<String>>,
 }
 
-impl TopicRouter {
+impl TopicIndex {
     pub fn new() -> Self {
         Self {
             topic_to_clients: DashMap::new(),
@@ -286,20 +286,20 @@ impl TopicRouter {
     }
 }
 
-impl Default for TopicRouter {
+impl Default for TopicIndex {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// The Subscription Registry - Central subscription management system.
-/// Tracks client subscriptions and routing; connection admission and limits are
+/// The Stream Router - Central data distribution system.
+/// Tracks client subscriptions and routes data streams; connection admission and limits are
 /// enforced separately by `server::connection::ConnectionManager`.
-pub struct SubscriptionManager {
+pub struct StreamRouter {
     /// Active client subscriptions
     subscriptions: DashMap<String, ClientSubscription>,
-    /// Topic-based routing for efficient distribution
-    topic_router: TopicRouter,
+    /// Topic-based routing index for efficient distribution
+    topic_index: TopicIndex,
     /// Persisted subscriptions for reconnection support
     persisted_subscriptions: DashMap<String, PersistedSubscription>,
     /// Heartbeat timeout in milliseconds
@@ -307,23 +307,23 @@ pub struct SubscriptionManager {
     /// Cleanup interval for dead clients
     cleanup_interval: Duration,
 }
-impl SubscriptionManager {
-    /// Create a new subscription manager
+impl StreamRouter {
+    /// Create a new stream router
     pub fn new() -> Self {
         Self {
             subscriptions: DashMap::new(),
-            topic_router: TopicRouter::new(),
+            topic_index: TopicIndex::new(),
             persisted_subscriptions: DashMap::new(),
             heartbeat_timeout_ms: 30_000,              // 30 seconds
             cleanup_interval: Duration::from_secs(60), // 1 minute
         }
     }
 
-    /// Create a new subscription manager with custom settings
+    /// Create a new stream router with custom settings
     pub fn with_settings(heartbeat_timeout_ms: i64, cleanup_interval: Duration) -> Self {
         Self {
             subscriptions: DashMap::new(),
-            topic_router: TopicRouter::new(),
+            topic_index: TopicIndex::new(),
             persisted_subscriptions: DashMap::new(),
             heartbeat_timeout_ms,
             cleanup_interval,
@@ -367,8 +367,8 @@ impl SubscriptionManager {
         // Get topic keys for routing
         let topics = subscription.get_topic_keys();
 
-        // Add to topic router
-        self.topic_router
+        // Add to topic index
+        self.topic_index
             .add_subscription(&client_id, topics.clone());
 
         // Persist subscription for reconnection support
@@ -399,7 +399,7 @@ impl SubscriptionManager {
             let symbols_set: HashSet<String> = symbols.into_iter().collect();
             let data_types_set: HashSet<SubscriptionDataType> = data_types.into_iter().collect();
 
-            // Get topics before modification for removal from router
+            // Get topics before modification for removal from index
             let old_topics = subscription.get_topic_keys();
 
             // Remove specified symbols and data types
@@ -424,8 +424,8 @@ impl SubscriptionManager {
                 .filter(|topic| !new_topics.contains(topic))
                 .collect();
 
-            // Remove from topic router
-            self.topic_router
+            // Remove from topic index
+            self.topic_index
                 .remove_subscription(client_id, topics_to_remove.clone());
             unsubscribed_topics = topics_to_remove;
 
@@ -447,8 +447,8 @@ impl SubscriptionManager {
     /// Unsubscribe a client from all market data streams (keeps persistence for reconnection)
     pub fn unsubscribe_all(&self, client_id: &str) -> RavenResult<()> {
         if let Some((_, subscription)) = self.subscriptions.remove(client_id) {
-            // Remove from topic router
-            self.topic_router.remove_client(client_id);
+            // Remove from topic index
+            self.topic_index.remove_client(client_id);
 
             // Keep persistence for reconnection support
             // self.persisted_subscriptions.remove(client_id); // Don't remove
@@ -468,8 +468,8 @@ impl SubscriptionManager {
     /// Completely remove a client including persistence (for permanent cleanup)
     pub fn remove_client_completely(&self, client_id: &str) -> RavenResult<()> {
         if let Some((_, subscription)) = self.subscriptions.remove(client_id) {
-            // Remove from topic router
-            self.topic_router.remove_client(client_id);
+            // Remove from topic index
+            self.topic_index.remove_client(client_id);
 
             // Remove from persistence
             self.persisted_subscriptions.remove(client_id);
@@ -505,7 +505,7 @@ impl SubscriptionManager {
         message: MarketDataMessage,
     ) -> RavenResult<usize> {
         let topic = format!("{symbol}:{data_type:?}");
-        let client_ids = self.topic_router.get_clients_for_topic(&topic);
+        let client_ids = self.topic_index.get_clients_for_topic(&topic);
         let mut sent_count = 0;
         let mut failed_clients = Vec::new();
 
@@ -555,7 +555,7 @@ impl SubscriptionManager {
     /// Determine whether any active subscribers exist for the given symbol/data type
     pub fn has_subscribers(&self, symbol: &str, data_type: SubscriptionDataType) -> bool {
         let topic = format!("{symbol}:{data_type:?}");
-        !self.topic_router.get_clients_for_topic(&topic).is_empty()
+        !self.topic_index.get_clients_for_topic(&topic).is_empty()
     }
 
     /// Get subscription information for a client
@@ -572,10 +572,10 @@ impl SubscriptionManager {
     }
 
     /// Get subscription statistics
-    pub fn get_stats(&self) -> SubscriptionStats {
+    pub fn get_stats(&self) -> StreamStats {
         let active_clients = self.subscriptions.len();
         let persisted_subscriptions = self.persisted_subscriptions.len();
-        let (topics, client_topics) = self.topic_router.get_stats();
+        let (topics, client_topics) = self.topic_index.get_stats();
 
         // Calculate total subscriptions across all clients
         let total_subscriptions = self
@@ -584,7 +584,7 @@ impl SubscriptionManager {
             .map(|entry| entry.value().symbols.len() * entry.value().data_types.len())
             .sum();
 
-        SubscriptionStats {
+        StreamStats {
             active_clients,
             total_subscriptions,
             persisted_subscriptions,
@@ -627,8 +627,8 @@ impl SubscriptionManager {
     /// Clean up a specific dead client (keeps persistence for potential reconnection)
     fn cleanup_dead_client(&self, client_id: &str) {
         if let Some((_, subscription)) = self.subscriptions.remove(client_id) {
-            // Remove from topic router
-            self.topic_router.remove_client(client_id);
+            // Remove from topic index
+            self.topic_index.remove_client(client_id);
 
             // Keep persistence for potential reconnection
             // Only remove persistence after extended inactivity
@@ -694,15 +694,15 @@ impl SubscriptionManager {
     }
 }
 
-impl Default for SubscriptionManager {
+impl Default for StreamRouter {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Subscription statistics
+/// Stream statistics
 #[derive(Debug, Clone)]
-pub struct SubscriptionStats {
+pub struct StreamStats {
     pub active_clients: usize,
     pub total_subscriptions: usize,
     pub persisted_subscriptions: usize,

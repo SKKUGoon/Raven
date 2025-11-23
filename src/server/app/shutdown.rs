@@ -1,6 +1,6 @@
 use crate::{
     common::error::RavenResult,
-    server::client_manager::ClientManager,
+    server::grpc::client_service::ClientManager,
     server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
     server::monitoring::TracingService,
 };

@@ -2,7 +2,7 @@ use super::DataEngine;
 use crate::server::data_engine::storage::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
 use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::exchanges::types::{Exchange, MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide};
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::stream_router::StreamRouter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -14,7 +14,7 @@ pub fn spawn_orderbook_ingestor(
     mut receiver: UnboundedReceiver<MarketDataMessage>,
     handler: Arc<HighFrequencyHandler>,
     data_engine: Arc<DataEngine>,
-    subscription_manager: Arc<SubscriptionManager>,
+    stream_router: Arc<StreamRouter>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         // Map key: (Exchange, Symbol) -> Sequence Number
@@ -50,7 +50,7 @@ pub fn spawn_orderbook_ingestor(
 
                     // 2. Broadcast to Clients (Real-time)
                     if let Err(err) = data_engine
-                        .broadcast_orderbook_update(&symbol, &orderbook, &subscription_manager)
+                        .broadcast_orderbook_update(&symbol, &orderbook, &stream_router)
                         .await
                     {
                          error!(
@@ -88,7 +88,7 @@ pub fn spawn_trade_ingestor(
     mut receiver: UnboundedReceiver<MarketDataMessage>,
     handler: Arc<HighFrequencyHandler>,
     data_engine: Arc<DataEngine>,
-    subscription_manager: Arc<SubscriptionManager>,
+    stream_router: Arc<StreamRouter>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         while let Some(message) = receiver.recv().await {
@@ -134,9 +134,9 @@ pub fn spawn_trade_ingestor(
                         error!(symbol = %symbol, ?err, "Failed to ingest trade update");
                     }
 
-                     // 2. Broadcast to Clients (Real-time)
+                    // 2. Broadcast to Clients (Real-time)
                     if let Err(err) = data_engine
-                        .broadcast_trade_update(&symbol, &trade, &subscription_manager)
+                        .broadcast_trade_update(&symbol, &trade, &stream_router)
                         .await
                     {
                          error!(

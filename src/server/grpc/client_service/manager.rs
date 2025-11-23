@@ -507,6 +507,11 @@ impl ClientManager {
         clients.len()
     }
 
+    /// Get maximum client count
+    pub fn get_max_clients(&self) -> usize {
+        self.config.max_clients
+    }
+
     /// Get healthy client count
     pub async fn get_healthy_client_count(&self) -> usize {
         let clients = self.clients.read().await;

@@ -18,5 +18,5 @@ mod exchanges_binance;
 // mod logging;
 #[path = "unit/monitoring_core.rs"]
 mod monitoring_core;
-#[path = "unit/subscription_manager.rs"]
-mod subscription_manager;
+#[path = "unit/stream_router.rs"]
+mod stream_router;

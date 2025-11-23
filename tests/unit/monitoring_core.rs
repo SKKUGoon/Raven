@@ -13,7 +13,7 @@ use raven::server::monitoring::{
     tracing::{PerformanceSpan, TracingService, TracingUtils},
     ObservabilityService,
 };
-use raven::server::subscription_manager::SubscriptionManager;
+use raven::server::stream_router::StreamRouter;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,7 +30,7 @@ async fn test_monitoring_service_integration() {
 
     // Create dependencies
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     // Create services
@@ -110,7 +110,7 @@ async fn test_health_service_components() {
     };
 
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let hf_storage = Arc::new(HighFrequencyStorage::new());
 
     let health_service =

@@ -10,7 +10,7 @@ use crate::server::exchanges::binance::app::futures::trade::initialize_binance_f
 use crate::server::exchanges::binance::app::spot::orderbook::initialize_binance_spot_orderbook;
 use crate::server::exchanges::binance::app::spot::trade::initialize_binance_spot_trade;
 use crate::server::exchanges::types::Exchange;
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::stream_router::StreamRouter;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -61,8 +61,8 @@ pub struct CollectorManager {
     hf_handler: Arc<HighFrequencyHandler>,
     /// DataEngine for data processing
     data_engine: Arc<crate::server::data_engine::DataEngine>,
-    /// Subscription manager for broadcasting
-    subscription_manager: Arc<SubscriptionManager>,
+    /// Stream router for broadcasting
+    stream_router: Arc<StreamRouter>,
 }
 
 impl CollectorManager {
@@ -70,14 +70,14 @@ impl CollectorManager {
     pub fn new(
         hf_storage: Arc<HighFrequencyStorage>,
         data_engine: Arc<crate::server::data_engine::DataEngine>,
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
     ) -> Self {
         let hf_handler = Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
         Self {
             active_collections: DashMap::new(),
             hf_handler,
             data_engine,
-            subscription_manager,
+            stream_router,
         }
     }
 
@@ -134,14 +134,14 @@ impl CollectorManager {
             orderbook_receiver,
             Arc::clone(&self.hf_handler),
             Arc::clone(&self.data_engine),
-            Arc::clone(&self.subscription_manager),
+            Arc::clone(&self.stream_router),
         );
 
         let trade_task = spawn_trade_ingestor(
             trade_receiver,
             Arc::clone(&self.hf_handler),
             Arc::clone(&self.data_engine),
-            Arc::clone(&self.subscription_manager),
+            Arc::clone(&self.stream_router),
         );
 
         let handles = CollectorHandles {

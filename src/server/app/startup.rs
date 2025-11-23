@@ -4,7 +4,8 @@ use crate::{
     },
     common::error::RavenResult,
     raven_bail,
-    server::client_manager::{ClientManager, ClientManagerConfig},
+    server::grpc::client_service::ClientManager,
+    server::grpc::client_service::manager::ClientManagerConfig,
     server::data_engine::storage::HighFrequencyStorage,
     server::database::{
         circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
@@ -12,7 +13,7 @@ use crate::{
         InfluxWriteRetryHandler,
     },
     server::monitoring::{HealthService, MetricsService, ObservabilityService, TracingService},
-    server::subscription_manager::SubscriptionManager,
+    server::stream_router::StreamRouter,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -294,7 +295,7 @@ pub async fn initialize_client_manager(server: &ServerConfig) -> RavenResult<Arc
 pub async fn initialize_monitoring_services(
     monitoring: &MonitoringConfig,
     influx_client: Arc<InfluxClient>,
-    subscription_manager: Arc<SubscriptionManager>,
+    stream_router: Arc<StreamRouter>,
     hf_storage: Arc<HighFrequencyStorage>,
 ) -> RavenResult<(ObservabilityService, Vec<tokio::task::JoinHandle<()>>)> {
     info!("Initializing monitoring and observability services...");
@@ -317,7 +318,7 @@ pub async fn initialize_monitoring_services(
     let health_service = Arc::new(HealthService::new(
         monitoring.clone(),
         Arc::clone(&influx_client),
-        Arc::clone(&subscription_manager),
+        Arc::clone(&stream_router),
         Arc::clone(&hf_storage),
     ));
 

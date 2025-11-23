@@ -11,7 +11,7 @@ use crate::server::app::shutdown::{
     perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors,
 };
 use crate::server::app::startup;
-use crate::server::client_manager::ClientManager;
+use crate::server::grpc::client_service::manager::ClientManager;
 use crate::server::grpc::controller_service::CollectorManager;
 use crate::server::grpc::controller_service::ControlServiceImpl;
 use crate::server::data_engine::storage::HighFrequencyStorage;
@@ -20,7 +20,7 @@ use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue};
 use crate::server::grpc::client_service::MarketDataServer;
 use crate::server::monitoring::ObservabilityService;
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::stream_router::StreamRouter;
 
 pub struct Server {
     config: RuntimeConfig,
@@ -143,14 +143,14 @@ impl ServerBuilder {
         let client_manager = startup::initialize_client_manager(&config.server).await?;
 
         info!("Ready: [DataEngine]");
-        let subscription_manager = Arc::new(SubscriptionManager::new());
+        let stream_router = Arc::new(StreamRouter::new());
         let hf_storage = Arc::new(HighFrequencyStorage::new());
         let _high_freq_handler =
             Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
         let data_engine = Arc::new(DataEngine::new(
             DataEngineConfig::default(),
             Arc::clone(&influx_client),
-            Arc::clone(&subscription_manager),
+            Arc::clone(&stream_router),
             Arc::clone(&dead_letter_queue),
         ));
 
@@ -160,7 +160,7 @@ impl ServerBuilder {
         let (observability_service, monitoring_handles) = startup::initialize_monitoring_services(
             &config.monitoring,
             Arc::clone(&influx_client),
-            Arc::clone(&subscription_manager),
+            Arc::clone(&stream_router),
             Arc::clone(&hf_storage),
         )
         .await?;
@@ -171,16 +171,16 @@ impl ServerBuilder {
         let collector_manager = Arc::new(CollectorManager::new(
             Arc::clone(&hf_storage),
             Arc::clone(&data_engine),
-            Arc::clone(&subscription_manager),
+            Arc::clone(&stream_router),
         ));
 
         let control_service = ControlServiceImpl::new(Arc::clone(&collector_manager));
 
         let market_data_server = MarketDataServer::new(
-            Arc::clone(&subscription_manager),
+            Arc::clone(&stream_router),
             Arc::clone(&influx_client),
             Arc::clone(&hf_storage),
-            config.server.max_connections,
+            Arc::clone(&client_manager),
         );
 
         Ok(Server {

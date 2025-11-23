@@ -3,12 +3,12 @@ use raven::server::data_engine::storage::HighFrequencyStorage;
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::server::database::DeadLetterQueue;
-use raven::server::subscription_manager::SubscriptionManager;
+use raven::server::stream_router::StreamRouter;
 use std::sync::Arc;
 
-fn build_test_data_engine() -> (Arc<DataEngine>, Arc<SubscriptionManager>) {
+fn build_test_data_engine() -> (Arc<DataEngine>, Arc<StreamRouter>) {
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(SubscriptionManager::new());
+    let subscription_manager = Arc::new(StreamRouter::new());
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
 
     let data_engine = Arc::new(DataEngine::new(

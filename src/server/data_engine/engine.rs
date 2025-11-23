@@ -1,7 +1,7 @@
 use crate::common::error::RavenResult;
 use crate::common::current_timestamp_millis;
 use crate::server::database::{influx_client::InfluxClient, DeadLetterEntry, DeadLetterQueue};
-use crate::server::subscription_manager::{SubscriptionDataType, SubscriptionManager};
+use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ pub struct DataEngine {
     config: DataEngineConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
     influx_client: Arc<InfluxClient>,
-    subscription_manager: Arc<SubscriptionManager>,
+    stream_router: Arc<StreamRouter>,
     dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: DataEngineMetrics,
 }
@@ -29,7 +29,7 @@ impl DataEngine {
     pub fn new(
         config: DataEngineConfig,
         influx_client: Arc<InfluxClient>,
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
         dead_letter_queue: Arc<DeadLetterQueue>,
     ) -> Self {
         info!("▲ Initializing DataEngine with config: {:?}", config);
@@ -40,7 +40,7 @@ impl DataEngine {
             config,
             validation_rules: Arc::new(RwLock::new(validation_rules)),
             influx_client,
-            subscription_manager,
+            stream_router,
             dead_letter_queue,
             metrics: DataEngineMetrics::default(),
         }
@@ -321,10 +321,10 @@ impl DataEngine {
         &self,
         symbol: &str,
         data: &OrderBookData,
-        _subscription_manager: &SubscriptionManager, // Deprecated argument, using self.subscription_manager
+        _stream_router: &StreamRouter, // Deprecated argument, using self.stream_router
     ) -> RavenResult<()> {
         if !self
-            .subscription_manager
+            .stream_router
             .has_subscribers(symbol, SubscriptionDataType::Orderbook)
         {
             return Ok(());
@@ -333,7 +333,7 @@ impl DataEngine {
         let snapshot = OrderBookSnapshot::from(data);
         let message = self.create_orderbook_message(&snapshot);
 
-        self.subscription_manager.distribute_message(
+        self.stream_router.distribute_message(
             symbol,
             SubscriptionDataType::Orderbook,
             message,
@@ -347,10 +347,10 @@ impl DataEngine {
         &self,
         symbol: &str,
         data: &TradeData,
-        _subscription_manager: &SubscriptionManager, // Deprecated argument
+        _stream_router: &StreamRouter, // Deprecated argument
     ) -> RavenResult<()> {
         if !self
-            .subscription_manager
+            .stream_router
             .has_subscribers(symbol, SubscriptionDataType::Trades)
         {
             return Ok(());
@@ -359,7 +359,7 @@ impl DataEngine {
         let snapshot = TradeSnapshot::from(data);
         let message = self.create_trade_message(&snapshot);
 
-        self.subscription_manager.distribute_message(
+        self.stream_router.distribute_message(
             symbol,
             SubscriptionDataType::Trades,
             message,

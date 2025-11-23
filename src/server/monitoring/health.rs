@@ -15,7 +15,7 @@ use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::common::config::MonitoringConfig;
 use crate::server::database::influx_client::InfluxClient;
 use crate::common::error::RavenResult;
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::stream_router::StreamRouter;
 
 /// Health check status levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,7 +65,7 @@ pub struct LivenessResponse {
 /// Health service state
 pub struct HealthServiceState {
     pub influx_client: Arc<InfluxClient>,
-    pub subscription_manager: Arc<SubscriptionManager>,
+    pub stream_router: Arc<StreamRouter>,
     pub hf_storage: Arc<HighFrequencyStorage>,
     pub start_time: SystemTime,
     pub component_health: Arc<RwLock<HashMap<String, ComponentHealth>>>,
@@ -82,12 +82,12 @@ impl HealthService {
     pub fn new(
         config: MonitoringConfig,
         influx_client: Arc<InfluxClient>,
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
         hf_storage: Arc<HighFrequencyStorage>,
     ) -> Self {
         let state = Arc::new(HealthServiceState {
             influx_client,
-            subscription_manager,
+            stream_router,
             hf_storage,
             start_time: SystemTime::now(),
             component_health: Arc::new(RwLock::new(HashMap::new())),
@@ -147,9 +147,9 @@ impl HealthService {
             // Check InfluxDB health
             let influx_health = Self::check_influx_health(&state.influx_client).await;
 
-            // Check subscription manager health
-            let subscription_health =
-                Self::check_subscription_manager_health(&state.subscription_manager).await;
+            // Check stream router health
+            let router_health =
+                Self::check_stream_router_health(&state.stream_router).await;
 
             // Check high-frequency storage health
             let storage_health = Self::check_storage_health(&state.hf_storage).await;
@@ -157,7 +157,7 @@ impl HealthService {
             // Update component health
             let mut health_map = state.component_health.write().await;
             health_map.insert("influxdb".to_string(), influx_health);
-            health_map.insert("subscription_manager".to_string(), subscription_health);
+            health_map.insert("stream_router".to_string(), router_health);
             health_map.insert("high_frequency_storage".to_string(), storage_health);
         }
     }
@@ -193,11 +193,11 @@ impl HealthService {
         }
     }
 
-    /// Check subscription manager health
-    async fn check_subscription_manager_health(
-        subscription_manager: &SubscriptionManager,
+    /// Check stream router health
+    async fn check_stream_router_health(
+        stream_router: &StreamRouter,
     ) -> ComponentHealth {
-        let stats = subscription_manager.get_stats();
+        let stats = stream_router.get_stats();
         let mut details = HashMap::new();
         details.insert(
             "active_clients".to_string(),
@@ -218,7 +218,7 @@ impl HealthService {
         ComponentHealth {
             status,
             message: format!(
-                "Subscription manager: {} clients, {} subscriptions",
+                "Stream router: {} clients, {} subscriptions",
                 stats.active_clients, stats.total_subscriptions
             ),
             last_check: SystemTime::now()
@@ -280,9 +280,9 @@ impl HealthService {
         HealthResponse {
             status: overall_status,
             timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
             uptime_seconds: uptime,
             version: env!("CARGO_PKG_VERSION").to_string(),
             components: component_health.clone(),

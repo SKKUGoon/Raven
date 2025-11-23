@@ -1,8 +1,8 @@
-pub mod connection;
 pub mod grpc_service;
+pub mod manager;
 
-pub use connection::ConnectionManager;
 pub use grpc_service::MarketDataServiceImpl;
+pub use manager::ClientManager;
 
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -13,59 +13,63 @@ use crate::proto::market_data_service_server::MarketDataServiceServer;
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::database::influx_client::InfluxClient;
 use crate::server::monitoring::MetricsCollector;
-use crate::server::subscription_manager::SubscriptionManager;
+use crate::server::stream_router::StreamRouter;
 
 /// Market Data Server - Main gRPC server implementation
 pub struct MarketDataServer {
-    /// Subscription Registry - manages all client subscriptions
-    subscription_manager: Arc<SubscriptionManager>,
+    /// Stream Router - manages all client subscriptions and data routing
+    stream_router: Arc<StreamRouter>,
     /// InfluxDB client for historical data
     influx_client: Arc<InfluxClient>,
     /// High-frequency atomic storage for real-time data
     hf_storage: Arc<HighFrequencyStorage>,
     /// Metrics collector for monitoring
     metrics: Option<Arc<MetricsCollector>>,
-    /// Connection manager
-    connection_manager: ConnectionManager,
+    /// Client manager
+    client_manager: Arc<ClientManager>,
 }
 
 impl MarketDataServer {
     /// Create a new MarketDataServer instance
     pub fn new(
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
         influx_client: Arc<InfluxClient>,
         hf_storage: Arc<HighFrequencyStorage>,
-        max_connections: usize,
+        client_manager: Arc<ClientManager>,
     ) -> Self {
         info!("▲ Market Data Server is assembling...");
+
+        let max_connections = client_manager.get_max_clients();
         info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
-            subscription_manager,
+            stream_router,
             influx_client,
             hf_storage,
             metrics: None,
-            connection_manager: ConnectionManager::new(max_connections),
+            client_manager,
         }
     }
 
     /// Create a new MarketDataServer instance with metrics
     pub fn with_metrics(
-        subscription_manager: Arc<SubscriptionManager>,
+        stream_router: Arc<StreamRouter>,
         influx_client: Arc<InfluxClient>,
         hf_storage: Arc<HighFrequencyStorage>,
         metrics: Arc<MetricsCollector>,
-        max_connections: usize,
+        client_manager: Arc<ClientManager>,
     ) -> Self {
         info!("▲ Market Data Server is assembling with monitoring...");
+
+        let max_connections = client_manager.get_max_clients();
         info!("⚔ Maximum concurrent connections: {}", max_connections);
 
         Self {
-            subscription_manager,
+            stream_router,
             influx_client,
             hf_storage,
             metrics: Some(metrics),
-            connection_manager: ConnectionManager::new(max_connections),
+            client_manager,
         }
     }
 
@@ -82,11 +86,11 @@ impl MarketDataServer {
         info!("◦ Data streams are ready to carry messages");
 
         let service_impl = MarketDataServiceImpl::new(
-            self.subscription_manager,
+            self.stream_router,
             self.influx_client,
             self.hf_storage,
             self.metrics,
-            self.connection_manager,
+            self.client_manager,
         );
 
         let service = MarketDataServiceServer::new(service_impl)
