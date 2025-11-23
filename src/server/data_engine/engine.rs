@@ -1,6 +1,6 @@
-use crate::common::error::RavenResult;
 use crate::common::current_timestamp_millis;
-use crate::server::database::{influx_client::InfluxClient, DeadLetterEntry, DeadLetterQueue};
+use crate::common::db::{DeadLetterEntry, DeadLetterQueue, EnhancedInfluxClient};
+use crate::common::error::RavenResult;
 use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -18,7 +18,7 @@ use super::{OrderBookData, TradeData};
 pub struct DataEngine {
     config: DataEngineConfig,
     validation_rules: Arc<RwLock<ValidationRules>>,
-    influx_client: Arc<InfluxClient>,
+    database_client: Arc<EnhancedInfluxClient>,
     stream_router: Arc<StreamRouter>,
     dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: DataEngineMetrics,
@@ -28,7 +28,7 @@ impl DataEngine {
     /// Create a new DataEngine instance
     pub fn new(
         config: DataEngineConfig,
-        influx_client: Arc<InfluxClient>,
+        database_client: Arc<EnhancedInfluxClient>,
         stream_router: Arc<StreamRouter>,
         dead_letter_queue: Arc<DeadLetterQueue>,
     ) -> Self {
@@ -39,7 +39,7 @@ impl DataEngine {
         Self {
             config,
             validation_rules: Arc::new(RwLock::new(validation_rules)),
-            influx_client,
+            database_client,
             stream_router,
             dead_letter_queue,
             metrics: DataEngineMetrics::default(),
@@ -107,17 +107,8 @@ impl DataEngine {
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
+                // The EnhancedInfluxClient already handled adding to DLQ if needed
                 error!("✗ Failed to write orderbook data for {}: {}", symbol, e);
-
-                if self.config.enable_dead_letter_queue {
-                    self.add_to_dead_letter_queue(
-                        symbol.to_string(),
-                        serde_json::to_string(&final_data).unwrap_or_default(),
-                        format!("Persistence failed: {e}"),
-                    )
-                    .await;
-                }
-
                 return Err(e);
             }
         }
@@ -164,17 +155,8 @@ impl DataEngine {
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
+                // The EnhancedInfluxClient already handled adding to DLQ if needed
                 error!("✗ Failed to write trade data for {}: {}", symbol, e);
-
-                if self.config.enable_dead_letter_queue {
-                    self.add_to_dead_letter_queue(
-                        symbol.to_string(),
-                        serde_json::to_string(&validated_data).unwrap_or_default(),
-                        format!("Persistence failed: {e}"),
-                    )
-                    .await;
-                }
-
                 return Err(e);
             }
         }
@@ -417,19 +399,17 @@ impl DataEngine {
     /// Write order book data to database
     async fn write_orderbook_data(&self, data: &OrderBookData) -> RavenResult<()> {
         let snapshot = OrderBookSnapshot::from(data);
-        self.influx_client
-            .write_orderbook_snapshot(&snapshot)
+        self.database_client
+            .write_orderbook_snapshot_safe(&snapshot)
             .await
-            .map_err(|e| crate::raven_error!(database_write, e.to_string()))
     }
 
     /// Write trade data to database
     async fn write_trade_data(&self, data: &TradeData) -> RavenResult<()> {
         let snapshot = TradeSnapshot::from(data);
-        self.influx_client
-            .write_trade_snapshot(&snapshot)
+        self.database_client
+            .write_trade_snapshot_safe(&snapshot)
             .await
-            .map_err(|e| crate::raven_error!(database_write, e.to_string()))
     }
 
     /// Round price to 8 decimal places

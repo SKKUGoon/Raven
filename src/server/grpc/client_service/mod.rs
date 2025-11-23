@@ -8,10 +8,10 @@ use std::sync::Arc;
 use tonic::transport::Server;
 use tracing::info;
 
+use crate::common::db::influx_client::InfluxClient;
 use crate::common::error::RavenResult;
 use crate::proto::market_data_service_server::MarketDataServiceServer;
 use crate::server::data_engine::storage::HighFrequencyStorage;
-use crate::server::database::influx_client::InfluxClient;
 use crate::server::monitoring::MetricsCollector;
 use crate::server::stream_router::StreamRouter;
 

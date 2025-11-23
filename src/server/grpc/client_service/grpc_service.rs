@@ -1,6 +1,7 @@
 // Market Data Service Implementation
 // "The Scribe's service for delivering the realm's data"
 
+use crate::common::db::influx_client::InfluxClient;
 use crate::proto::market_data_service_server::MarketDataService;
 use crate::proto::{
     DataType, HistoricalDataRequest, MarketDataMessage, OrderBookSnapshot, PriceLevel,
@@ -8,7 +9,6 @@ use crate::proto::{
     UnsubscribeResponse,
 };
 use crate::server::data_engine::storage::HighFrequencyStorage;
-use crate::server::database::influx_client::InfluxClient;
 use crate::server::grpc::client_service::manager::{ClientManager, DisconnectionReason};
 use crate::server::monitoring::MetricsCollector;
 use crate::server::stream_router::{StreamRouter, SubscriptionDataType};

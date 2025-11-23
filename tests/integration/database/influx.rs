@@ -2,9 +2,9 @@ use raven::current_timestamp_millis;
 use raven::server::data_engine::storage::{
     CandleData, FundingRateData, OrderBookLevel, OrderBookSnapshot, TradeSide, TradeSnapshot,
 };
-use raven::server::database::dead_letter_queue::{DeadLetterQueue, DeadLetterQueueConfig};
-use raven::server::database::influx_client::{create_orderbook_datapoint, InfluxClient, InfluxConfig};
-use raven::server::database::EnhancedInfluxClient;
+use raven::common::db::dead_letter_queue::{DeadLetterQueue, DeadLetterQueueConfig};
+use raven::common::db::influx_client::{create_orderbook_datapoint, InfluxClient, InfluxConfig};
+use raven::common::db::EnhancedInfluxClient;
 use raven::server::exchanges::types::Exchange;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -191,7 +191,6 @@ async fn test_pool_status() {
     assert!(status.contains_key("healthy_connections"));
     assert!(status.contains_key("unhealthy_connections"));
     assert!(status.contains_key("circuit_breaker_state"));
-    assert!(status.contains_key("dead_letter_queue_size"));
     assert!(status.contains_key("health_monitoring_active"));
 
     assert_eq!(status.get("total_connections").unwrap(), &0);

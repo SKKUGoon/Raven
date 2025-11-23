@@ -4,6 +4,7 @@ use tonic::transport::Server as TonicServer;
 use tracing::info;
 
 use crate::common::config::RuntimeConfig;
+use crate::common::db::{CircuitBreakerRegistry, DeadLetterQueue};
 use crate::common::error::RavenResult;
 use crate::proto::control_service_server::ControlServiceServer;
 use crate::server::app::args::{parse_cli_args, print_version_info, CliArgs};
@@ -17,7 +18,6 @@ use crate::server::grpc::controller_service::ControlServiceImpl;
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::data_engine::{DataEngine, DataEngineConfig};
 use crate::server::data_handlers::HighFrequencyHandler;
-use crate::server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue};
 use crate::server::grpc::client_service::MarketDataServer;
 use crate::server::monitoring::ObservabilityService;
 use crate::server::stream_router::StreamRouter;
@@ -137,7 +137,7 @@ impl ServerBuilder {
         let circuit_breaker_registry = startup::initialize_circuit_breakers().await?;
 
         // 4. Init Data Layer
-        let (influx_client, _enhanced_influx_client) =
+        let (influx_client, enhanced_influx_client) =
             startup::initialize_influx_client(&config.database, dead_letter_queue.clone()).await?;
 
         let client_manager = startup::initialize_client_manager(&config.server).await?;
@@ -149,7 +149,7 @@ impl ServerBuilder {
             Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
         let data_engine = Arc::new(DataEngine::new(
             DataEngineConfig::default(),
-            Arc::clone(&influx_client),
+            Arc::clone(&enhanced_influx_client),
             Arc::clone(&stream_router),
             Arc::clone(&dead_letter_queue),
         ));

@@ -2,8 +2,8 @@
 // "Testing the crows who watch the watchers"
 
 use raven::common::config::MonitoringConfig;
+use raven::common::db::{InfluxClient, InfluxConfig};
 use raven::server::data_engine::storage::HighFrequencyStorage;
-use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
 use raven::server::monitoring::{
     health::{
         ComponentHealth, HealthResponse, HealthService, HealthStatus, LivenessResponse,

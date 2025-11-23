@@ -11,10 +11,10 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tracing::{error, info};
 
-use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::common::config::MonitoringConfig;
-use crate::server::database::influx_client::InfluxClient;
+use crate::common::db::influx_client::InfluxClient;
 use crate::common::error::RavenResult;
+use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::stream_router::StreamRouter;
 
 /// Health check status levels
@@ -148,8 +148,7 @@ impl HealthService {
             let influx_health = Self::check_influx_health(&state.influx_client).await;
 
             // Check stream router health
-            let router_health =
-                Self::check_stream_router_health(&state.stream_router).await;
+            let router_health = Self::check_stream_router_health(&state.stream_router).await;
 
             // Check high-frequency storage health
             let storage_health = Self::check_storage_health(&state.hf_storage).await;
@@ -194,9 +193,7 @@ impl HealthService {
     }
 
     /// Check stream router health
-    async fn check_stream_router_health(
-        stream_router: &StreamRouter,
-    ) -> ComponentHealth {
+    async fn check_stream_router_health(stream_router: &StreamRouter) -> ComponentHealth {
         let stats = stream_router.get_stats();
         let mut details = HashMap::new();
         details.insert(
@@ -280,9 +277,9 @@ impl HealthService {
         HealthResponse {
             status: overall_status,
             timestamp: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
             uptime_seconds: uptime,
             version: env!("CARGO_PKG_VERSION").to_string(),
             components: component_health.clone(),

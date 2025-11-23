@@ -2,16 +2,16 @@ use crate::{
     common::config::{
         ConfigLoader, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig, ServerConfig,
     },
-    common::error::RavenResult,
-    raven_bail,
-    server::grpc::client_service::ClientManager,
-    server::grpc::client_service::manager::ClientManagerConfig,
-    server::data_engine::storage::HighFrequencyStorage,
-    server::database::{
-        circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry},
-        DeadLetterQueue, DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
+    common::db::{
+        CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry, DeadLetterQueue,
+        DeadLetterQueueConfig, EnhancedInfluxClient, InfluxClient, InfluxConfig,
         InfluxWriteRetryHandler,
     },
+    common::error::RavenResult,
+    raven_bail,
+    server::data_engine::storage::HighFrequencyStorage,
+    server::grpc::client_service::manager::ClientManagerConfig,
+    server::grpc::client_service::ClientManager,
     server::monitoring::{HealthService, MetricsService, ObservabilityService, TracingService},
     server::stream_router::StreamRouter,
 };
@@ -101,8 +101,7 @@ pub async fn validate_dependencies(
 pub fn initialize_logging(_args: &CliArgs) -> RavenResult<()> {
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

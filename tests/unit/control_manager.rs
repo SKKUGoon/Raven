@@ -1,19 +1,22 @@
-use raven::server::grpc::controller_service::CollectorManager;
+use raven::common::db::{DeadLetterQueue, EnhancedInfluxClient, InfluxClient, InfluxConfig};
 use raven::server::data_engine::storage::HighFrequencyStorage;
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
-use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
-use raven::server::database::DeadLetterQueue;
+use raven::server::grpc::controller_service::CollectorManager;
 use raven::server::stream_router::StreamRouter;
 use std::sync::Arc;
 
 fn build_test_data_engine() -> (Arc<DataEngine>, Arc<StreamRouter>) {
     let influx_client = Arc::new(InfluxClient::new(InfluxConfig::default()));
-    let subscription_manager = Arc::new(StreamRouter::new());
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
+    let enhanced_client = Arc::new(EnhancedInfluxClient::new(
+        influx_client,
+        Arc::clone(&dead_letter_queue),
+    ));
+    let subscription_manager = Arc::new(StreamRouter::new());
 
     let data_engine = Arc::new(DataEngine::new(
         DataEngineConfig::default(),
-        influx_client,
+        enhanced_client,
         Arc::clone(&subscription_manager),
         dead_letter_queue,
     ));

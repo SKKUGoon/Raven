@@ -1,10 +1,9 @@
 // DataEngine Tests - Project Raven
 
+use raven::common::db::{DeadLetterQueue, EnhancedInfluxClient, InfluxClient, InfluxConfig};
 use raven::current_timestamp_millis;
 use raven::server::data_engine::storage::{OrderBookData, TradeData, TradeSide};
 use raven::server::data_engine::{DataEngine, DataEngineConfig, ValidationRules};
-use raven::server::database::influx_client::{InfluxClient, InfluxConfig};
-use raven::server::database::DeadLetterQueue;
 use raven::server::exchanges::types::Exchange;
 use raven::server::stream_router::StreamRouter;
 use std::sync::atomic::Ordering;
@@ -16,10 +15,14 @@ fn create_test_data_engine() -> DataEngine {
     let subscription_manager = Arc::new(StreamRouter::new());
     let data_engine_config = DataEngineConfig::default();
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
+    let enhanced_client = Arc::new(EnhancedInfluxClient::new(
+        influx_client,
+        Arc::clone(&dead_letter_queue),
+    ));
 
     DataEngine::new(
         data_engine_config,
-        influx_client,
+        enhanced_client,
         subscription_manager,
         dead_letter_queue,
     )
@@ -191,10 +194,14 @@ async fn test_data_engine_config_validation_rules_wiring() {
     let influx_client = Arc::new(InfluxClient::new(influx_config));
     let subscription_manager = Arc::new(StreamRouter::new());
     let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
+    let enhanced_client = Arc::new(EnhancedInfluxClient::new(
+        influx_client,
+        Arc::clone(&dead_letter_queue),
+    ));
 
     let data_engine = DataEngine::new(
         config,
-        influx_client,
+        enhanced_client,
         subscription_manager,
         dead_letter_queue,
     );

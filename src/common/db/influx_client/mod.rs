@@ -2,7 +2,6 @@
 // "The Iron Bank - managing the vaults of time-series data"
 
 mod datapoints;
-mod dead_letter;
 mod schemas;
 
 pub use datapoints::{
@@ -29,11 +28,13 @@ use tokio::time::{interval, sleep};
 
 use tracing::{debug, error, info, warn};
 
-use crate::server::data_engine::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
-use crate::server::database::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState};
 use crate::common::error::RavenResult;
-use crate::common::current_timestamp_millis;
-use dead_letter::DeadLetterEntry;
+use crate::server::data_engine::storage::{
+    CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot,
+};
+use crate::common::db::circuit_breaker::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitBreakerState,
+};
 
 type Result<T> = RavenResult<T>;
 
@@ -74,7 +75,6 @@ pub struct InfluxClient {
     pub config: InfluxConfig,
     connection_pool: Arc<Mutex<Vec<Client>>>,
     circuit_breaker: CircuitBreaker,
-    dead_letter_queue: Arc<Mutex<Vec<DeadLetterEntry>>>,
     pub health_check_running: AtomicBool,
     connection_health: Arc<RwLock<HashMap<usize, bool>>>,
 }
@@ -93,7 +93,6 @@ impl InfluxClient {
             config,
             connection_pool: Arc::new(Mutex::new(Vec::new())),
             circuit_breaker,
-            dead_letter_queue: Arc::new(Mutex::new(Vec::new())),
             health_check_running: AtomicBool::new(false),
             connection_health: Arc::new(RwLock::new(HashMap::new())),
         }
@@ -445,14 +444,8 @@ impl InfluxClient {
                     if attempt == self.config.retry_attempts {
                         self.circuit_breaker.record_failure().await;
 
-                        // Add failed data points to dead letter queue
-                        for data_point in &data_points {
-                            self.add_to_dead_letter_queue(
-                                format!("{data_point:?}"),
-                                "Batch write failed".to_string(),
-                            )
-                            .await;
-                        }
+                        // Dead letter queue handling is now done by EnhancedInfluxClient
+                        // We just propagate the error here
 
                         crate::raven_bail!(crate::raven_error!(
                             database_write,
@@ -521,8 +514,7 @@ impl InfluxClient {
 
                     if attempt == self.config.retry_attempts {
                         self.circuit_breaker.record_failure().await;
-                        self.add_to_dead_letter_queue(format!("{data_point:?}"), e.to_string())
-                            .await;
+                        // Dead letter queue handling is now done by EnhancedInfluxClient
                         crate::raven_bail!(crate::raven_error!(
                             database_write,
                             format!("Write failed after {attempt} attempts: {e}")
@@ -537,23 +529,8 @@ impl InfluxClient {
         unreachable!()
     }
 
-    // Add failed write to dead letter queue
-    pub async fn add_to_dead_letter_queue(&self, data: String, error_message: String) {
-        let entry = DeadLetterEntry {
-            data,
-            timestamp: current_timestamp_millis(),
-            retry_count: 0,
-            error_message,
-        };
-
-        let mut queue = self.dead_letter_queue.lock().await;
-        queue.push(entry);
-
-        warn!(
-            "⚬ Added failed write to dead letter queue. Queue size: {}",
-            queue.len()
-        );
-    }
+    // Add failed write to dead letter queue - REMOVED (Moved to shared DeadLetterQueue)
+    // pub async fn add_to_dead_letter_queue(&self, data: String, error_message: String) { ... }
 
     // Get connection pool status
     pub async fn get_pool_status(&self) -> HashMap<String, u64> {
@@ -577,10 +554,10 @@ impl InfluxClient {
             total_count - healthy_count,
         );
         status.insert("circuit_breaker_state".to_string(), circuit_state);
-        status.insert(
-            "dead_letter_queue_size".to_string(),
-            self.dead_letter_queue.lock().await.len() as u64,
-        );
+        // status.insert(
+        //     "dead_letter_queue_size".to_string(),
+        //     self.dead_letter_queue.lock().await.len() as u64,
+        // );
         status.insert(
             "health_monitoring_active".to_string(),
             if self.health_check_running.load(Ordering::Relaxed) {
@@ -723,36 +700,10 @@ impl InfluxClient {
     }
 
     // Process dead letter queue
-    pub async fn process_dead_letter_queue(&self) -> Result<usize> {
-        let mut queue = self.dead_letter_queue.lock().await;
-        let mut processed = 0;
-        let mut failed_entries = Vec::new();
-
-        for entry in queue.drain(..) {
-            if entry.retry_count < 3 {
-                // Try to reprocess the entry
-                debug!("⟲ Retrying dead letter entry: {}", entry.data);
-                // For now, just mark as processed - in a real implementation,
-                // you would parse and re-execute the query
-                processed += 1;
-            } else {
-                // Too many retries, keep in queue
-                failed_entries.push(DeadLetterEntry {
-                    retry_count: entry.retry_count + 1,
-                    ..entry
-                });
-            }
-        }
-
-        // Put back failed entries
-        queue.extend(failed_entries);
-
-        if processed > 0 {
-            info!("⚬ Processed {} entries from dead letter queue", processed);
-        }
-
-        Ok(processed)
-    }
+    // pub async fn process_dead_letter_queue(&self) -> Result<usize> {
+    //    // This functionality has been moved to the shared DeadLetterQueue
+    //    Ok(0)
+    // }
 
     // Create bucket and setup v2 configuration
     pub async fn setup_database(&self) -> Result<()> {
@@ -831,7 +782,6 @@ impl Clone for InfluxClient {
             config: self.config.clone(),
             connection_pool: Arc::clone(&self.connection_pool),
             circuit_breaker,
-            dead_letter_queue: Arc::clone(&self.dead_letter_queue),
             health_check_running: AtomicBool::new(false),
             connection_health: Arc::clone(&self.connection_health),
         }

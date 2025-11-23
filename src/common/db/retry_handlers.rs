@@ -2,7 +2,8 @@
 // "Even failed ravens deserve another chance to fly"
 
 use crate::server::data_engine::storage::{CandleData, FundingRateData, OrderBookSnapshot, TradeSnapshot};
-use crate::server::database::dead_letter_queue::{DeadLetterEntry, RetryHandler};
+use crate::common::db::dead_letter_queue::{DeadLetterEntry, RetryHandler};
+use crate::common::db::DeadLetterQueue;
 use crate::common::error::{EnhancedErrorContext, RavenResult};
 use influxdb2::models::DataPoint;
 use serde_json;
@@ -140,7 +141,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(snapshot)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -161,7 +162,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(snapshot)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -182,7 +183,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(candle)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -204,7 +205,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(funding)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -240,7 +241,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(&wallet_data)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -267,7 +268,7 @@ impl DatabaseDeadLetterHelper {
         let data = serde_json::to_string(&data_point_info)
             .map_err(|e| crate::raven_error!(data_serialization, e.to_string()))?;
 
-        let entry = crate::server::database::dead_letter_queue::DeadLetterEntry::new(
+        let entry = DeadLetterEntry::new(
             "influx_write".to_string(),
             data,
             error_message,
@@ -283,14 +284,14 @@ impl DatabaseDeadLetterHelper {
 /// Enhanced InfluxDB client with dead letter queue integration
 pub struct EnhancedInfluxClient {
     client: Arc<InfluxClient>,
-    dead_letter_queue: Arc<crate::server::database::dead_letter_queue::DeadLetterQueue>,
+    dead_letter_queue: Arc<DeadLetterQueue>,
 }
 
 impl EnhancedInfluxClient {
     /// Create a new enhanced InfluxDB client
     pub fn new(
         client: Arc<InfluxClient>,
-        dead_letter_queue: Arc<crate::server::database::dead_letter_queue::DeadLetterQueue>,
+        dead_letter_queue: Arc<DeadLetterQueue>,
     ) -> Self {
         Self {
             client,
@@ -427,7 +428,7 @@ impl EnhancedInfluxClient {
     }
 
     /// Get the dead letter queue
-    pub fn dead_letter_queue(&self) -> &Arc<crate::server::database::dead_letter_queue::DeadLetterQueue> {
+    pub fn dead_letter_queue(&self) -> &Arc<DeadLetterQueue> {
         &self.dead_letter_queue
     }
 }

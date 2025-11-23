@@ -1,7 +1,7 @@
 use crate::{
+    common::db::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
     common::error::RavenResult,
     server::grpc::client_service::ClientManager,
-    server::database::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
     server::monitoring::TracingService,
 };
 use std::sync::Arc;

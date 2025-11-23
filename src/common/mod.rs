@@ -1,9 +1,14 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod config;
+pub mod db;
 pub mod error;
 
 pub use config::{ConfigLoader, ConfigUtils, RuntimeConfig};
+pub use db::{
+    CircuitBreaker, CircuitBreakerConfig, DeadLetterEntry, DeadLetterQueue, EnhancedInfluxClient,
+    InfluxClient,
+};
 pub use error::{RavenError, RavenResult};
 
 /// Return the current UTC timestamp in milliseconds since the Unix epoch.

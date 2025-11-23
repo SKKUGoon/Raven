@@ -4,7 +4,6 @@
 pub mod app;
 pub mod data_engine;
 pub mod data_handlers;
-pub mod database;
 pub mod exchanges;
 pub mod grpc;
 pub mod monitoring;
