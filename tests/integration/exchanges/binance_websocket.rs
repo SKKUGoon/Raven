@@ -1,5 +1,5 @@
-use raven::server::exchanges::binance::app::futures::orderbook::BinanceFuturesOrderbook;
-use raven::server::exchanges::binance::app::BinanceFuturesTrade;
+use raven::server::exchanges::binance::futures::orderbook::BinanceFuturesOrderbook;
+use raven::server::exchanges::binance::futures::trade::BinanceFuturesTrade;
 use raven::server::exchanges::types::{Exchange, MarketData};
 use std::env;
 use std::time::Duration;
