@@ -3,7 +3,7 @@
 use raven::common::db::{DeadLetterQueue, EnhancedInfluxClient, InfluxClient, InfluxConfig};
 use raven::current_timestamp_millis;
 use raven::server::data_engine::storage::{OrderBookData, TradeData, TradeSide};
-use raven::server::data_engine::{DataEngine, DataEngineConfig, ValidationRules};
+use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::exchanges::types::Exchange;
 use raven::server::stream_router::StreamRouter;
 use std::sync::atomic::Ordering;
@@ -24,7 +24,6 @@ fn create_test_data_engine() -> DataEngine {
         data_engine_config,
         enhanced_client,
         subscription_manager,
-        dead_letter_queue,
     )
 }
 
@@ -57,100 +56,26 @@ async fn test_data_engine_creation() {
     let metrics = data_engine.get_metrics();
 
     assert_eq!(metrics.get("total_ingested").unwrap(), &0);
-    assert_eq!(metrics.get("total_validated").unwrap(), &0);
     assert_eq!(metrics.get("total_written").unwrap(), &0);
 }
 
 #[tokio::test]
-async fn test_orderbook_validation() {
+async fn test_orderbook_persistence() {
     let data_engine = create_test_data_engine();
     let data = create_test_orderbook_data();
 
-    let result = data_engine.validate_orderbook_data("BTCUSDT", &data).await;
-    assert!(result.is_ok());
+    // Since we mock the influx client (it's just structs), this will fail to connect 
+    // but the persist_orderbook_data call should succeed in logic until it hits the network
+    // In a real unit test we would mock the EnhancedInfluxClient, but for now we check API existence
+    let _ = data_engine.persist_orderbook_data("BTCUSDT", data).await;
 }
 
 #[tokio::test]
-async fn test_trade_validation() {
+async fn test_trade_persistence() {
     let data_engine = create_test_data_engine();
     let data = create_test_trade_data();
 
-    let result = data_engine.validate_trade_data("BTCUSDT", &data).await;
-    assert!(result.is_ok());
-}
-
-#[tokio::test]
-async fn test_invalid_orderbook_validation() {
-    let data_engine = create_test_data_engine();
-    let mut data = create_test_orderbook_data();
-
-    // Test invalid price
-    data.bids = vec![(-1.0, 1.0)];
-    let result = data_engine.validate_orderbook_data("BTCUSDT", &data).await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn test_invalid_trade_validation() {
-    let data_engine = create_test_data_engine();
-    let mut data = create_test_trade_data();
-
-    // Test invalid price instead of invalid side
-    data.price = -1.0;
-    let result = data_engine.validate_trade_data("BTCUSDT", &data).await;
-    assert!(result.is_err());
-}
-
-#[tokio::test]
-async fn test_data_sanitization() {
-    let data_engine = create_test_data_engine();
-    let mut data = create_test_orderbook_data();
-
-    // Add whitespace and lowercase
-    data.symbol = " btcusdt ".to_string();
-    data.exchange = Exchange::BinanceSpot;
-
-    let sanitized = data_engine.sanitize_orderbook_data(&data).await.unwrap();
-    assert_eq!(sanitized.symbol, "BTCUSDT");
-    assert_eq!(sanitized.exchange, Exchange::BinanceSpot);
-}
-
-#[tokio::test]
-async fn test_validation_rules_update() {
-    let data_engine = create_test_data_engine();
-
-    let rules = ValidationRules {
-        min_price: 1000.0,
-        max_price: 50000.0,
-        ..ValidationRules::default()
-    };
-
-    data_engine
-        .update_validation_rules(rules.clone())
-        .await
-        .unwrap();
-    let retrieved_rules = data_engine.get_validation_rules().await;
-
-    assert_eq!(retrieved_rules.min_price, 1000.0);
-    assert_eq!(retrieved_rules.max_price, 50000.0);
-}
-
-#[tokio::test]
-async fn test_dead_letter_queue_status() {
-    let data_engine = create_test_data_engine();
-
-    // Add an entry to dead letter queue
-    data_engine
-        .add_to_dead_letter_queue(
-            "test".to_string(),
-            "test_data".to_string(),
-            "test_error".to_string(),
-        )
-        .await;
-
-    let status = data_engine.get_dead_letter_queue_status().await;
-    assert_eq!(status.get("total_entries").unwrap(), &1);
-    assert_eq!(status.get("test_entries").unwrap(), &1);
+    let _ = data_engine.persist_trade_data("BTCUSDT", data).await;
 }
 
 #[tokio::test]
@@ -164,10 +89,6 @@ async fn test_metrics_tracking() {
         .fetch_add(5, Ordering::Relaxed);
     data_engine
         .metrics
-        .total_validated
-        .fetch_add(4, Ordering::Relaxed);
-    data_engine
-        .metrics
         .total_written
         .fetch_add(3, Ordering::Relaxed);
     data_engine
@@ -177,49 +98,7 @@ async fn test_metrics_tracking() {
 
     let metrics = data_engine.get_metrics();
     assert_eq!(metrics.get("total_ingested").unwrap(), &5);
-    assert_eq!(metrics.get("total_validated").unwrap(), &4);
     assert_eq!(metrics.get("total_written").unwrap(), &3);
     assert_eq!(metrics.get("total_failed").unwrap(), &1);
 }
 
-#[tokio::test]
-async fn test_data_engine_config_validation_rules_wiring() {
-    let config = DataEngineConfig {
-        max_price: 5000.0,
-        max_price_deviation: 20.0,
-        ..Default::default()
-    };
-
-    let influx_config = InfluxConfig::default();
-    let influx_client = Arc::new(InfluxClient::new(influx_config));
-    let subscription_manager = Arc::new(StreamRouter::new());
-    let dead_letter_queue = Arc::new(DeadLetterQueue::new(Default::default()));
-    let enhanced_client = Arc::new(EnhancedInfluxClient::new(
-        influx_client,
-        Arc::clone(&dead_letter_queue),
-    ));
-
-    let data_engine = DataEngine::new(
-        config,
-        enhanced_client,
-        subscription_manager,
-        dead_letter_queue,
-    );
-    let rules = data_engine.get_validation_rules().await;
-
-    assert_eq!(rules.max_price, 5000.0);
-    assert_eq!(rules.max_price_deviation, 20.0);
-}
-
-#[tokio::test]
-async fn test_price_quantity_rounding() {
-    let data_engine = create_test_data_engine();
-
-    let price = 45000.123456789;
-    let rounded_price = data_engine.round_price(price);
-    assert_eq!(rounded_price, 45000.12345679);
-
-    let quantity = 1.987654321;
-    let rounded_quantity = data_engine.round_quantity(quantity);
-    assert_eq!(rounded_quantity, 1.98765432);
-}

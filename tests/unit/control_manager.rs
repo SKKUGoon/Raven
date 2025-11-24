@@ -18,7 +18,6 @@ fn build_test_data_engine() -> (Arc<DataEngine>, Arc<StreamRouter>) {
         DataEngineConfig::default(),
         enhanced_client,
         Arc::clone(&subscription_manager),
-        dead_letter_queue,
     ));
 
     (data_engine, subscription_manager)
