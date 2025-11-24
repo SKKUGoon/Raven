@@ -11,8 +11,10 @@ use crate::{
     common::error::RavenResult,
     raven_bail,
     server::data_engine::storage::HighFrequencyStorage,
+    server::data_engine::{DataEngine, DataEngineConfig},
     server::grpc::client_service::manager::ClientManagerConfig,
-    server::grpc::client_service::ClientManager,
+    server::grpc::client_service::{ClientManager, MarketDataServer},
+    server::grpc::controller_service::{CollectorManager, ControlServiceImpl},
     server::prometheus::{HealthService, MetricsService, ObservabilityService, TracingService},
     server::stream_router::StreamRouter,
 };
@@ -281,4 +283,55 @@ pub async fn initialize_monitoring_services(
     );
 
     Ok((monitoring_service, monitoring_handles))
+}
+
+/// Initialize data layer components
+pub fn initialize_data_layer(
+    enhanced_influx_client: Arc<EnhancedInfluxClient>,
+) -> (
+    Arc<StreamRouter>,
+    Arc<HighFrequencyStorage>,
+    Arc<DataEngine>,
+) {
+    info!("Initializing data layer...");
+    let stream_router = Arc::new(StreamRouter::new());
+    let hf_storage = Arc::new(HighFrequencyStorage::new());
+
+    let data_engine = Arc::new(DataEngine::new(
+        DataEngineConfig::default(),
+        Arc::clone(&enhanced_influx_client),
+        Arc::clone(&stream_router),
+    ));
+
+    info!("[Server] On guard");
+    info!("[DataEngine] Ready for dynamic collection");
+
+    (stream_router, hf_storage, data_engine)
+}
+
+/// Initialize service layer components
+pub fn initialize_services(
+    hf_storage: Arc<HighFrequencyStorage>,
+    data_engine: Arc<DataEngine>,
+    stream_router: Arc<StreamRouter>,
+    influx_client: Arc<InfluxClient>,
+    client_manager: Arc<ClientManager>,
+) -> (Arc<CollectorManager>, ControlServiceImpl, MarketDataServer) {
+    info!("Initializing gRPC services...");
+    let collector_manager = Arc::new(CollectorManager::new(
+        Arc::clone(&hf_storage),
+        Arc::clone(&data_engine),
+        Arc::clone(&stream_router),
+    ));
+
+    let control_service = ControlServiceImpl::new(Arc::clone(&collector_manager));
+
+    let market_data_server = MarketDataServer::new(
+        Arc::clone(&stream_router),
+        Arc::clone(&influx_client),
+        Arc::clone(&hf_storage),
+        Arc::clone(&client_manager),
+    );
+
+    (collector_manager, control_service, market_data_server)
 }

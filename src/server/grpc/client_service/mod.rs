@@ -16,6 +16,7 @@ use crate::server::prometheus::MetricsCollector;
 use crate::server::stream_router::StreamRouter;
 
 /// Market Data Server - Main gRPC server implementation
+#[derive(Clone)]
 pub struct MarketDataServer {
     /// Stream Router - manages all client subscriptions and data routing
     stream_router: Arc<StreamRouter>,

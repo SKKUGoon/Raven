@@ -1,26 +1,19 @@
-use std::sync::Arc;
-use tokio::task::JoinHandle;
-use tonic::transport::Server as TonicServer;
-use tracing::info;
-
 use crate::common::config::RuntimeConfig;
 use crate::common::db::{CircuitBreakerRegistry, DeadLetterQueue};
 use crate::common::error::RavenResult;
 use crate::proto::control_service_server::ControlServiceServer;
 use crate::server::app::args::{parse_cli_args, print_version_info, CliArgs};
-use crate::server::app::shutdown::{
-    perform_graceful_shutdown, wait_for_shutdown_signal, DataCollectors,
-};
+use crate::server::app::shutdown::wait_for_shutdown_signal;
 use crate::server::app::startup;
 use crate::server::grpc::client_service::manager::ClientManager;
+use crate::server::grpc::client_service::MarketDataServer;
 use crate::server::grpc::controller_service::CollectorManager;
 use crate::server::grpc::controller_service::ControlServiceImpl;
-use crate::server::data_engine::storage::HighFrequencyStorage;
-use crate::server::data_engine::{DataEngine, DataEngineConfig};
-use crate::server::data_handlers::HighFrequencyHandler;
-use crate::server::grpc::client_service::MarketDataServer;
 use crate::server::prometheus::ObservabilityService;
-use crate::server::stream_router::StreamRouter;
+use std::sync::Arc;
+use tokio::task::JoinHandle;
+use tonic::transport::Server as TonicServer;
+use tracing::info;
 
 pub struct Server {
     config: RuntimeConfig,
@@ -49,40 +42,10 @@ impl Server {
         info!("Health check :{}", self.config.monitoring.health_check_port);
 
         // Start the gRPC servers
-        let market_data_server = self.market_data_server;
-        let market_data_server_handle = {
-            let host = "0.0.0.0".to_string();
-            let port = self.config.server.port;
-
-            tokio::spawn(async move {
-                info!("▶ Starting Market Data gRPC server on {}:{}", host, port);
-                if let Err(e) = market_data_server.start(&host, port).await {
-                    tracing::error!("✗ Market Data gRPC server failed: {}", e);
-                } else {
-                    info!("✓ Market Data gRPC server started successfully");
-                }
-            })
-        };
-
-        let control_service = self.control_service;
-        let control_server_handle = {
-            let host = "127.0.0.1".to_string();
-            let port = self.config.server.port + 1;
-            tokio::spawn(async move {
-                let addr = format!("{host}:{port}").parse().unwrap();
-                info!("▶ Starting Control gRPC server on {}", addr);
-                let service = ControlServiceServer::new(control_service);
-                if let Err(e) = TonicServer::builder()
-                    .add_service(service)
-                    .serve(addr)
-                    .await
-                {
-                    tracing::error!("✗ Control gRPC server failed: {}", e);
-                } else {
-                    info!("✓ Control gRPC server started successfully");
-                }
-            })
-        };
+        let market_data_server_handle =
+            Self::spawn_market_data_server(self.market_data_server.clone(), &self.config);
+        let control_server_handle =
+            Self::spawn_control_server(self.control_service.clone(), &self.config);
 
         // Wait for shutdown signals
         wait_for_shutdown_signal().await?;
@@ -95,15 +58,85 @@ impl Server {
         self.collector_manager.stop_all_collections().await;
 
         // Perform graceful shutdown
-        perform_graceful_shutdown(
-            self.client_manager,
-            self.dead_letter_queue,
-            self.observability_service.tracing().clone(),
-            self.circuit_breaker_registry,
-            self.monitoring_handles,
-            DataCollectors::new(),
-        )
-        .await
+        self.shutdown().await
+    }
+
+    fn spawn_market_data_server(
+        server: MarketDataServer,
+        config: &RuntimeConfig,
+    ) -> JoinHandle<()> {
+        let host = "0.0.0.0".to_string();
+        let port = config.server.port;
+
+        tokio::spawn(async move {
+            info!("▶ Starting Market Data gRPC server on {}:{}", host, port);
+            if let Err(e) = server.start(&host, port).await {
+                tracing::error!("✗ Market Data gRPC server failed: {}", e);
+            } else {
+                info!("✓ Market Data gRPC server started successfully");
+            }
+        })
+    }
+
+    fn spawn_control_server(service: ControlServiceImpl, config: &RuntimeConfig) -> JoinHandle<()> {
+        let host = "127.0.0.1".to_string();
+        let port = config.server.port + 1;
+
+        tokio::spawn(async move {
+            let addr = format!("{host}:{port}").parse().unwrap();
+            info!("▶ Starting Control gRPC server on {}", addr);
+            let service = ControlServiceServer::new(service);
+            if let Err(e) = TonicServer::builder()
+                .add_service(service)
+                .serve(addr)
+                .await
+            {
+                tracing::error!("✗ Control gRPC server failed: {}", e);
+            } else {
+                info!("✓ Control gRPC server started successfully");
+            }
+        })
+    }
+
+    /// Perform graceful shutdown sequence
+    async fn shutdown(&self) -> RavenResult<()> {
+        info!("Shutting down Raven gracefully...");
+
+        // Stop accepting new connections and disconnect existing clients
+        if let Err(e) = self.client_manager.shutdown_all_clients().await {
+            tracing::error!(error = %e, "Error during client shutdown");
+        }
+
+        // Stop dead letter queue processing and persist remaining entries
+        self.dead_letter_queue.stop_processing();
+        if let Err(e) = self.dead_letter_queue.persist_to_disk().await {
+            tracing::error!(error = %e, "Failed to persist dead letter queue");
+        }
+
+        // Shutdown monitoring services
+        info!("Shutting down monitoring services...");
+        for handle in &self.monitoring_handles {
+            handle.abort();
+        }
+
+        // Shutdown tracing and flush spans
+        if let Err(e) = self.observability_service.tracing().shutdown().await {
+            tracing::error!(error = %e, "Failed to shutdown tracing");
+        }
+
+        // Get final statistics
+        let client_stats = self.client_manager.get_client_stats().await;
+        let dlq_stats = self.dead_letter_queue.get_statistics().await;
+        let cb_stats = self.circuit_breaker_registry.get_all_stats().await;
+
+        info!("Final statistics:");
+        info!("  * Clients: {:?}", client_stats);
+        info!("  * Dead Letter Queue: {:?}", dlq_stats);
+        info!("  * Circuit Breakers: {:?}", cb_stats);
+
+        info!("Raven shutdown complete");
+
+        Ok(())
     }
 }
 
@@ -143,17 +176,10 @@ impl ServerBuilder {
         let client_manager = startup::initialize_client_manager(&config.server).await?;
 
         info!("Ready: [DataEngine]");
-        let stream_router = Arc::new(StreamRouter::new());
-        let hf_storage = Arc::new(HighFrequencyStorage::new());
-        let _high_freq_handler =
-            Arc::new(HighFrequencyHandler::with_storage(Arc::clone(&hf_storage)));
-        let data_engine = Arc::new(DataEngine::new(
-            DataEngineConfig::default(),
-            Arc::clone(&enhanced_influx_client),
-            Arc::clone(&stream_router),
-        ));
 
-        info!("[Server] On guard");
+        // 4. Init Data Layer
+        let (stream_router, hf_storage, data_engine) =
+            startup::initialize_data_layer(Arc::clone(&enhanced_influx_client));
 
         // 5. Init Monitoring
         let (observability_service, monitoring_handles) = startup::initialize_monitoring_services(
@@ -164,21 +190,12 @@ impl ServerBuilder {
         )
         .await?;
 
-        info!("[DataEngine] Ready for dynamic collection");
-
         // 6. Init Services
-        let collector_manager = Arc::new(CollectorManager::new(
+        let (collector_manager, control_service, market_data_server) = startup::initialize_services(
             Arc::clone(&hf_storage),
             Arc::clone(&data_engine),
             Arc::clone(&stream_router),
-        ));
-
-        let control_service = ControlServiceImpl::new(Arc::clone(&collector_manager));
-
-        let market_data_server = MarketDataServer::new(
-            Arc::clone(&stream_router),
             Arc::clone(&influx_client),
-            Arc::clone(&hf_storage),
             Arc::clone(&client_manager),
         );
 

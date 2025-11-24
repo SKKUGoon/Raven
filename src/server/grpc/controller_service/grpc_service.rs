@@ -13,6 +13,7 @@ use tonic::{Request, Response, Status};
 use tracing::{error, info, warn};
 
 /// Implementation of the ControlService gRPC interface
+#[derive(Clone)]
 pub struct ControlServiceImpl {
     collector_manager: Arc<CollectorManager>,
 }
