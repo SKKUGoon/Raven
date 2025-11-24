@@ -15,6 +15,10 @@ path = "src/bin/raven.rs"
 name = "ravenctl"
 path = "src/bin/ravenctl.rs"
 
+[[bin]]
+name = "raven_client_bars"
+path = "src/bin/raven_client_bars.rs"
+
 [dependencies]
 # gRPC and Protocol Buffers
 tonic = "0.14.2"
