@@ -1,26 +1,21 @@
-use crate::common::current_timestamp_millis;
-use crate::common::db::{DeadLetterEntry, DeadLetterQueue, EnhancedInfluxClient};
+use crate::common::db::EnhancedInfluxClient;
 use crate::common::error::RavenResult;
 use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use super::config::DataEngineConfig;
 use super::metrics::DataEngineMetrics;
 use super::storage::{OrderBookSnapshot, TradeSnapshot};
-use super::validation::ValidationRules;
 use super::{OrderBookData, TradeData};
 
-/// The Data Engine - Main data validation and processing engine
+/// The Data Engine - Main data processing engine
 pub struct DataEngine {
     config: DataEngineConfig,
-    validation_rules: Arc<RwLock<ValidationRules>>,
-    database_client: Arc<EnhancedInfluxClient>,
+    pub database_client: Arc<EnhancedInfluxClient>,
     stream_router: Arc<StreamRouter>,
-    dead_letter_queue: Arc<DeadLetterQueue>,
     pub metrics: DataEngineMetrics,
 }
 
@@ -30,84 +25,36 @@ impl DataEngine {
         config: DataEngineConfig,
         database_client: Arc<EnhancedInfluxClient>,
         stream_router: Arc<StreamRouter>,
-        dead_letter_queue: Arc<DeadLetterQueue>,
     ) -> Self {
         info!("▲ Initializing DataEngine with config: {:?}", config);
 
-        let validation_rules = ValidationRules::from(&config);
-
         Self {
             config,
-            validation_rules: Arc::new(RwLock::new(validation_rules)),
             database_client,
             stream_router,
-            dead_letter_queue,
             metrics: DataEngineMetrics::default(),
         }
     }
 
-    /// Process incoming order book data
-    pub async fn process_orderbook_data(
+
+    /// Persist order book data to database
+    pub async fn persist_orderbook_data(
         &self,
         symbol: &str,
         data: OrderBookData,
     ) -> RavenResult<()> {
         self.metrics.total_ingested.fetch_add(1, Ordering::Relaxed);
 
-        debug!("▲ Processing orderbook data for symbol: {}", symbol);
-
-        // Validate the data
-        let validated_data = match self.validate_orderbook_data(symbol, &data).await {
-            Ok(data) => {
-                self.metrics.total_validated.fetch_add(1, Ordering::Relaxed);
-                data
-            }
-            Err(e) => {
-                self.metrics
-                    .validation_errors
-                    .fetch_add(1, Ordering::Relaxed);
-                self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-
-                if self.config.enable_dead_letter_queue {
-                    self.add_to_dead_letter_queue(
-                        symbol.to_string(),
-                        serde_json::to_string(&data).unwrap_or_default(),
-                        e.to_string(),
-                    )
-                    .await;
-                }
-
-                return Err(e);
-            }
-        };
-
-        // Sanitize if enabled
-        let final_data = if self.config.enable_sanitization {
-            match self.sanitize_orderbook_data(&validated_data).await {
-                Ok(data) => {
-                    self.metrics
-                        .sanitization_fixes
-                        .fetch_add(1, Ordering::Relaxed);
-                    data
-                }
-                Err(e) => {
-                    warn!("▲ Sanitization failed for {}: {}", symbol, e);
-                    validated_data
-                }
-            }
-        } else {
-            validated_data
-        };
+        debug!("▲ Persisting orderbook data for symbol: {}", symbol);
 
         // Write to database
-        match self.write_orderbook_data(&final_data).await {
+        match self.write_orderbook_data(&data).await {
             Ok(_) => {
                 self.metrics.total_written.fetch_add(1, Ordering::Relaxed);
-                debug!("✓ Successfully processed orderbook data for {}", symbol);
+                debug!("✓ Successfully persisted orderbook data for {}", symbol);
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-                // The EnhancedInfluxClient already handled adding to DLQ if needed
                 error!("✗ Failed to write orderbook data for {}: {}", symbol, e);
                 return Err(e);
             }
@@ -116,186 +63,26 @@ impl DataEngine {
         Ok(())
     }
 
-    /// Process incoming trade data
-    pub async fn process_trade_data(&self, symbol: &str, data: TradeData) -> RavenResult<()> {
+    /// Persist trade data to database
+    pub async fn persist_trade_data(&self, symbol: &str, data: TradeData) -> RavenResult<()> {
         self.metrics.total_ingested.fetch_add(1, Ordering::Relaxed);
 
-        debug!("▲ Processing trade data for symbol: {}", symbol);
-
-        // Validate the data
-        let validated_data = match self.validate_trade_data(symbol, &data).await {
-            Ok(data) => {
-                self.metrics.total_validated.fetch_add(1, Ordering::Relaxed);
-                data
-            }
-            Err(e) => {
-                self.metrics
-                    .validation_errors
-                    .fetch_add(1, Ordering::Relaxed);
-                self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-
-                if self.config.enable_dead_letter_queue {
-                    self.add_to_dead_letter_queue(
-                        symbol.to_string(),
-                        serde_json::to_string(&data).unwrap_or_default(),
-                        e.to_string(),
-                    )
-                    .await;
-                }
-
-                return Err(e);
-            }
-        };
+        debug!("▲ Persisting trade data for symbol: {}", symbol);
 
         // Write to database
-        match self.write_trade_data(&validated_data).await {
+        match self.write_trade_data(&data).await {
             Ok(_) => {
                 self.metrics.total_written.fetch_add(1, Ordering::Relaxed);
-                debug!("✓ Successfully processed trade data for {}", symbol);
+                debug!("✓ Successfully persisted trade data for {}", symbol);
             }
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
-                // The EnhancedInfluxClient already handled adding to DLQ if needed
                 error!("✗ Failed to write trade data for {}: {}", symbol, e);
                 return Err(e);
             }
         }
 
         Ok(())
-    }
-
-    /// Validate order book data
-    pub async fn validate_orderbook_data(
-        &self,
-        symbol: &str,
-        data: &OrderBookData,
-    ) -> RavenResult<OrderBookData> {
-        let rules = self.validation_rules.read().await;
-
-        // Validate timestamp
-        let current_time = current_timestamp_millis();
-
-        if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Data too old".to_string()
-            ));
-        }
-
-        // Validate bids and asks
-        for (price, quantity) in &data.bids {
-            if *price < rules.min_price || *price > rules.max_price {
-                crate::raven_bail!(crate::raven_error!(
-                    data_validation,
-                    format!("Bid price {price} out of range")
-                ));
-            }
-            if *quantity < rules.min_quantity || *quantity > rules.max_quantity {
-                crate::raven_bail!(crate::raven_error!(
-                    data_validation,
-                    format!("Bid quantity {quantity} out of range")
-                ));
-            }
-        }
-
-        for (price, quantity) in &data.asks {
-            if *price < rules.min_price || *price > rules.max_price {
-                crate::raven_bail!(crate::raven_error!(
-                    data_validation,
-                    format!("Ask price {price} out of range")
-                ));
-            }
-            if *quantity < rules.min_quantity || *quantity > rules.max_quantity {
-                crate::raven_bail!(crate::raven_error!(
-                    data_validation,
-                    format!("Ask quantity {quantity} out of range")
-                ));
-            }
-        }
-
-        // Check spread
-        if let (Some(best_bid), Some(best_ask)) = (
-            data.bids.first().map(|(p, _)| *p),
-            data.asks.first().map(|(p, _)| *p),
-        ) {
-            let spread_percentage = ((best_ask - best_bid) / best_bid) * 100.0;
-            if spread_percentage > rules.max_spread_percentage {
-                crate::raven_bail!(crate::raven_error!(
-                    data_validation,
-                    format!("Spread too wide: {spread_percentage:.2}%")
-                ));
-            }
-        }
-
-        debug!("✓ Orderbook data validation passed for {}", symbol);
-        Ok(data.clone())
-    }
-
-    /// Validate trade data
-    pub async fn validate_trade_data(
-        &self,
-        symbol: &str,
-        data: &TradeData,
-    ) -> RavenResult<TradeData> {
-        let rules = self.validation_rules.read().await;
-
-        // Validate timestamp
-        let current_time = current_timestamp_millis();
-
-        if (current_time - data.timestamp) > (self.config.max_data_age_seconds * 1000) as i64 {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Data too old".to_string()
-            ));
-        }
-
-        // Validate price
-        if data.price < rules.min_price || data.price > rules.max_price {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Price {} out of range", data.price)
-            ));
-        }
-
-        // Validate quantity
-        if data.quantity < rules.min_quantity || data.quantity > rules.max_quantity {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                format!("Quantity {} out of range", data.quantity)
-            ));
-        }
-
-        // TradeSide enum already validates the side, no need for additional validation
-
-        debug!("✓ Trade data validation passed for {}", symbol);
-        Ok(data.clone())
-    }
-
-    /// Sanitize order book data
-    pub async fn sanitize_orderbook_data(
-        &self,
-        data: &OrderBookData,
-    ) -> RavenResult<OrderBookData> {
-        let mut sanitized = data.clone();
-
-        // Normalize symbol (exchange is already an enum, no need to normalize)
-        sanitized.symbol = sanitized.symbol.trim().to_uppercase();
-
-        // Round prices and quantities to reasonable precision
-        sanitized.bids = sanitized
-            .bids
-            .into_iter()
-            .map(|(p, q)| (self.round_price(p), self.round_quantity(q)))
-            .collect();
-
-        sanitized.asks = sanitized
-            .asks
-            .into_iter()
-            .map(|(p, q)| (self.round_price(p), self.round_quantity(q)))
-            .collect();
-
-        debug!("⚬ Sanitized orderbook data for {}", sanitized.symbol);
-        Ok(sanitized)
     }
 
     /// Broadcast order book update to subscribers
@@ -410,58 +197,6 @@ impl DataEngine {
         self.database_client
             .write_trade_snapshot_safe(&snapshot)
             .await
-    }
-
-    /// Round price to 8 decimal places
-    pub fn round_price(&self, price: f64) -> f64 {
-        (price * 100_000_000.0).round() / 100_000_000.0
-    }
-
-    /// Round quantity to 8 decimal places
-    pub fn round_quantity(&self, quantity: f64) -> f64 {
-        (quantity * 100_000_000.0).round() / 100_000_000.0
-    }
-
-    /// Update validation rules
-    pub async fn update_validation_rules(&self, rules: ValidationRules) -> RavenResult<()> {
-        let mut current_rules = self.validation_rules.write().await;
-        *current_rules = rules;
-        info!("Updated validation rules");
-        Ok(())
-    }
-
-    /// Get current validation rules
-    pub async fn get_validation_rules(&self) -> ValidationRules {
-        self.validation_rules.read().await.clone()
-    }
-
-    /// Add entry to dead letter queue
-    pub async fn add_to_dead_letter_queue(&self, symbol: String, data: String, error: String) {
-        debug!("Adding to dead letter queue: {} - {}", symbol, error);
-
-        let entry = DeadLetterEntry::new(
-            "data_ingestion",
-            &data,
-            &error,
-            self.config.enable_dead_letter_queue as u32 * 3, // Logic slightly weird but effectively 3 if enabled
-        )
-        .with_metadata("symbol", &symbol);
-
-        if let Err(e) = self.dead_letter_queue.add_entry(entry).await {
-            error!("Critical: Failed to add to dead letter queue: {}", e);
-        }
-
-        self.metrics
-            .dead_letter_entries
-            .fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Get dead letter queue status
-    pub async fn get_dead_letter_queue_status(&self) -> HashMap<String, u64> {
-        let mut status = HashMap::new();
-        status.insert("total_entries".to_string(), 1u64);
-        status.insert("test_entries".to_string(), 1u64);
-        status
     }
 
     /// Get DataEngine metrics

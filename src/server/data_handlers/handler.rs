@@ -1,10 +1,7 @@
-// High Frequency Handler
-// "The fastest ravens in the realm - delivering messages with sub-microsecond speed"
-
+use crate::common::error::RavenResult;
 use crate::server::data_engine::storage::{
     HighFrequencyStorage, OrderBookData, OrderBookSnapshot, TradeData, TradeSnapshot,
 };
-use crate::common::error::RavenResult;
 use crate::server::exchanges::types::Exchange;
 use std::sync::Arc;
 use std::time::Instant;
@@ -51,34 +48,6 @@ impl HighFrequencyHandler {
     pub fn ingest_orderbook_atomic(&self, symbol: &str, data: &OrderBookData) -> RavenResult<()> {
         let start = Instant::now();
 
-        // Validate input data
-        if symbol.is_empty() {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Symbol cannot be empty"
-            ));
-        }
-
-        if data.symbol != symbol {
-            warn!("Symbol mismatch: expected {}, got {}", symbol, data.symbol);
-        }
-
-        // Validate orderbook data integrity
-        if data.bids.is_empty() && data.asks.is_empty() {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Orderbook data cannot be empty",
-            ));
-        }
-
-        // Validate price levels are sorted correctly
-        if !self.validate_price_levels(&data.bids, &data.asks)? {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Invalid price level ordering"
-            ));
-        }
-
         // Perform lock-free atomic update - storage handles exchange scoping
         self.storage.update_orderbook(data);
 
@@ -110,42 +79,6 @@ impl HighFrequencyHandler {
     /// Supports multiple exchanges by using exchange-qualified symbol keys
     pub fn ingest_trade_atomic(&self, symbol: &str, data: &TradeData) -> RavenResult<()> {
         let start = Instant::now();
-
-        // Validate input data
-        if symbol.is_empty() {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Symbol cannot be empty"
-            ));
-        }
-
-        if data.symbol != symbol {
-            warn!("Symbol mismatch: expected {}, got {}", symbol, data.symbol);
-        }
-
-        // Validate trade data
-        if data.price <= 0.0 {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Trade price must be positive"
-            ));
-        }
-
-        if data.quantity <= 0.0 {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Trade quantity must be positive",
-            ));
-        }
-
-        // TradeSide enum already validates the side, no need for string matching
-
-        if data.trade_id.is_empty() {
-            crate::raven_bail!(crate::raven_error!(
-                data_validation,
-                "Trade ID cannot be empty"
-            ));
-        }
 
         // Perform lock-free atomic update - storage handles exchange scoping
         self.storage.update_trade(data);
@@ -225,39 +158,7 @@ impl HighFrequencyHandler {
         Ok(snapshot)
     }
 
-    /// Validate orderbook price levels
-    /// Ensures bids are sorted descending, asks ascending, and that spread is non-negative
-    pub fn validate_price_levels(
-        &self,
-        bids: &[(f64, f64)],
-        asks: &[(f64, f64)],
-    ) -> RavenResult<bool> {
-        // Validate bid prices are in descending order
-        for window in bids.windows(2) {
-            if window[0].0 < window[1].0 {
-                warn!("Invalid bid ordering: {} < {}", window[0].0, window[1].0);
-                return Ok(false);
-            }
-        }
-
-        // Validate ask prices are in ascending order
-        for window in asks.windows(2) {
-            if window[0].0 > window[1].0 {
-                warn!("Invalid ask ordering: {} > {}", window[0].0, window[1].0);
-                return Ok(false);
-            }
-        }
-
-        // Validate spread (best ask - best bid) is non-negative
-        if let (Some((best_bid, _)), Some((best_ask, _))) = (bids.first(), asks.first()) {
-            if best_ask <= best_bid {
-                warn!("Invalid spread: ask {} <= bid {}", best_ask, best_bid);
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
-    }
+    // Validate price levels removed as per user instruction to trust exchange
 
     /// Get symbols with active orderbooks
     pub fn get_orderbook_symbols(&self) -> Vec<String> {

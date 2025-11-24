@@ -151,7 +151,6 @@ impl ServerBuilder {
             DataEngineConfig::default(),
             Arc::clone(&enhanced_influx_client),
             Arc::clone(&stream_router),
-            Arc::clone(&dead_letter_queue),
         ));
 
         info!("[Server] On guard");

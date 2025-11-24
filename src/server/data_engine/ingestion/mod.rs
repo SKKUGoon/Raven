@@ -1,7 +1,11 @@
 use super::DataEngine;
-use crate::server::data_engine::storage::{OrderBookData, TradeData, TradeSide as StorageTradeSide};
+use crate::server::data_engine::storage::{
+    OrderBookData, TradeData, TradeSide as StorageTradeSide,
+};
 use crate::server::data_handlers::HighFrequencyHandler;
-use crate::server::exchanges::types::{Exchange, MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide};
+use crate::server::exchanges::types::{
+    Exchange, MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide,
+};
 use crate::server::stream_router::StreamRouter;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -53,7 +57,7 @@ pub fn spawn_orderbook_ingestor(
                         .broadcast_orderbook_update(&symbol, &orderbook, &stream_router)
                         .await
                     {
-                         error!(
+                        error!(
                             symbol = %symbol,
                             ?err,
                             "Failed to broadcast order book update"
@@ -62,13 +66,13 @@ pub fn spawn_orderbook_ingestor(
 
                     // 3. Persistence (Database)
                     if let Err(err) = data_engine
-                        .process_orderbook_data(&symbol, orderbook.clone())
+                        .persist_orderbook_data(&symbol, orderbook.clone())
                         .await
                     {
                         error!(
                             symbol = %symbol,
                             ?err,
-                            "Failed to process order book data in DataEngine"
+                            "Failed to persist order book data in DataEngine"
                         );
                     }
                 }
@@ -139,7 +143,7 @@ pub fn spawn_trade_ingestor(
                         .broadcast_trade_update(&symbol, &trade, &stream_router)
                         .await
                     {
-                         error!(
+                        error!(
                             symbol = %symbol,
                             ?err,
                             "Failed to broadcast trade update"
@@ -147,11 +151,11 @@ pub fn spawn_trade_ingestor(
                     }
 
                     // 3. Persistence (Database)
-                    if let Err(err) = data_engine.process_trade_data(&symbol, trade.clone()).await {
+                    if let Err(err) = data_engine.persist_trade_data(&symbol, trade.clone()).await {
                         error!(
                             symbol = %symbol,
                             ?err,
-                            "Failed to process trade data in DataEngine"
+                            "Failed to persist trade data in DataEngine"
                         );
                     }
                 }

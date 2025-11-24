@@ -1,5 +1,6 @@
 // Project Raven - Core Library
 
+pub mod clients;
 pub mod common;
 pub mod controller;
 pub mod server;
