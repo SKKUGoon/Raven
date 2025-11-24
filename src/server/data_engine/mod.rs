@@ -12,5 +12,5 @@ pub use metrics::DataEngineMetrics;
 pub use storage::{
     atomic::{AtomicOrderBook, AtomicTrade, HighFrequencyStorage},
     snapshots::{OrderBookSnapshot, TradeSnapshot},
-    {CandleData, OrderBookData, TickerData, TradeData, TradeSide},
+    {CandleData, FundingRateData, OrderBookData, TickerData, TradeData, TradeSide},
 };

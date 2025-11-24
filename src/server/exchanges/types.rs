@@ -94,6 +94,10 @@ pub enum MarketData {
         timestamp: i64,
         interval: String,
     },
+    FundingRate {
+        rate: f64,
+        next_funding_time: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

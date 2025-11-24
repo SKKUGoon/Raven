@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use super::config::DataEngineConfig;
 use super::metrics::DataEngineMetrics;
 use super::storage::{OrderBookSnapshot, TradeSnapshot};
-use super::{OrderBookData, TradeData};
+use super::{FundingRateData, OrderBookData, TradeData};
 
 /// The Data Engine - Main data processing engine
 pub struct DataEngine {
@@ -78,6 +78,32 @@ impl DataEngine {
             Err(e) => {
                 self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
                 error!("✗ Failed to write trade data for {}: {}", symbol, e);
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Persist funding rate data to database
+    pub async fn persist_funding_rate_data(
+        &self,
+        symbol: &str,
+        data: FundingRateData,
+    ) -> RavenResult<()> {
+        self.metrics.total_ingested.fetch_add(1, Ordering::Relaxed);
+
+        debug!("▲ Persisting funding rate data for symbol: {}", symbol);
+
+        // Write to database
+        match self.write_funding_rate_data(&data).await {
+            Ok(_) => {
+                self.metrics.total_written.fetch_add(1, Ordering::Relaxed);
+                debug!("✓ Successfully persisted funding rate data for {}", symbol);
+            }
+            Err(e) => {
+                self.metrics.total_failed.fetch_add(1, Ordering::Relaxed);
+                error!("✗ Failed to write funding rate data for {}: {}", symbol, e);
                 return Err(e);
             }
         }
@@ -197,6 +223,11 @@ impl DataEngine {
         self.database_client
             .write_trade_snapshot_safe(&snapshot)
             .await
+    }
+
+    /// Write funding rate data to database
+    async fn write_funding_rate_data(&self, data: &FundingRateData) -> RavenResult<()> {
+        self.database_client.write_funding_rate_safe(data).await
     }
 
     /// Get DataEngine metrics

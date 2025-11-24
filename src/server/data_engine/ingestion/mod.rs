@@ -1,6 +1,6 @@
 use super::DataEngine;
 use crate::server::data_engine::storage::{
-    OrderBookData, TradeData, TradeSide as StorageTradeSide,
+    FundingRateData, OrderBookData, TradeData, TradeSide as StorageTradeSide,
 };
 use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::exchanges::types::{
@@ -156,6 +156,31 @@ pub fn spawn_trade_ingestor(
                             symbol = %symbol,
                             ?err,
                             "Failed to persist trade data in DataEngine"
+                        );
+                    }
+                }
+                MarketData::FundingRate {
+                    rate,
+                    next_funding_time,
+                    ..
+                } => {
+                    let funding = FundingRateData {
+                        symbol: symbol.clone(),
+                        timestamp,
+                        rate,
+                        next_funding_time,
+                        exchange: exchange.clone(),
+                    };
+
+                    // 1. Persistence (Database) - Funding rates are less frequent, skip atomic storage for now
+                    if let Err(err) = data_engine
+                        .persist_funding_rate_data(&symbol, funding.clone())
+                        .await
+                    {
+                        error!(
+                            symbol = %symbol,
+                            ?err,
+                            "Failed to persist funding rate data in DataEngine"
                         );
                     }
                 }
