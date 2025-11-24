@@ -4,7 +4,11 @@ use crate::server::exchanges::websocket::WebSocketParser;
 use async_trait::async_trait;
 use serde_json::Value;
 
-pub mod app;
+pub mod futures;
+pub mod spot;
+
+pub use futures::{BinanceFuturesOrderbook, BinanceFuturesTrade};
+pub use spot::{BinanceSpotOrderbook, BinanceSpotTrade};
 
 pub struct BinanceSpotParser;
 pub struct BinanceFuturesParser;
