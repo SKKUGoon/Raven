@@ -1,4 +1,5 @@
 use crate::{
+    common::check_port_availability,
     common::config::{
         ConfigLoader, ConfigUtils, DatabaseConfig, MonitoringConfig, RuntimeConfig, ServerConfig,
     },
@@ -30,68 +31,10 @@ pub async fn validate_dependencies(
 ) -> RavenResult<()> {
     info!("Validating system dependencies...");
 
-    // Check if we can bind to the specified port
-    let bind_addr = format!("{}:{}", server.host, server.port);
-    match tokio::net::TcpListener::bind(&bind_addr).await {
-        Ok(listener) => {
-            drop(listener);
-            info!("  * Port {} is available for binding", server.port);
-        }
-        Err(e) => {
-            error!("  * Cannot bind to {}: {}", bind_addr, e);
-            crate::raven_bail!(crate::raven_error!(
-                configuration,
-                format!("  * Port {} is not available: {e}", server.port)
-            ));
-        }
-    }
-
-    // Check if metrics port is available
-    let metrics_bind_addr = format!("{}:{}", server.host, monitoring.metrics_port);
-    match tokio::net::TcpListener::bind(&metrics_bind_addr).await {
-        Ok(listener) => {
-            drop(listener);
-            info!("  * Metrics port {} is available", monitoring.metrics_port);
-        }
-        Err(e) => {
-            error!(
-                "  * Cannot bind to metrics port {}: {e}",
-                monitoring.metrics_port,
-            );
-            crate::raven_bail!(crate::raven_error!(
-                configuration,
-                format!(
-                    "  * Metrics port {} is not available: {e}",
-                    monitoring.metrics_port,
-                )
-            ));
-        }
-    }
-
-    // Check if health check port is available
-    let health_bind_addr = format!("{}:{}", server.host, monitoring.health_check_port);
-    match tokio::net::TcpListener::bind(&health_bind_addr).await {
-        Ok(listener) => {
-            drop(listener);
-            info!(
-                "  * Health check port {} is available",
-                monitoring.health_check_port
-            );
-        }
-        Err(e) => {
-            error!(
-                "  * Cannot bind to health check port {}: {}",
-                monitoring.health_check_port, e
-            );
-            crate::raven_bail!(crate::raven_error!(
-                configuration,
-                format!(
-                    "  * Health check port {} is not available: {}",
-                    monitoring.health_check_port, e
-                )
-            ));
-        }
-    }
+    // Check port availability
+    check_port_availability(&server.host, server.port, "Server").await?;
+    check_port_availability(&server.host, monitoring.metrics_port, "Metrics").await?;
+    check_port_availability(&server.host, monitoring.health_check_port, "Health check").await?;
 
     info!("All system dependencies validated successfully");
     Ok(())
@@ -132,8 +75,7 @@ pub fn load_and_validate_config(
             config
         }
         Err(e) => {
-            error!("Failed to load configuration: {}", e);
-            error!("Try running with --validate to check configuration");
+            warn!("Try running with --validate to check configuration");
             raven_bail!(crate::raven_error!(configuration, e.to_string()));
         }
     };
@@ -176,7 +118,6 @@ pub async fn initialize_dead_letter_queue() -> RavenResult<Arc<DeadLetterQueue>>
 
     // Start dead letter queue processing
     if let Err(e) = dead_letter_queue.start_processing().await {
-        error!(error = %e, "Failed to start dead letter queue processing");
         raven_bail!(e);
     }
 
@@ -253,7 +194,6 @@ pub async fn initialize_influx_client(
 
     // Connect to InfluxDB
     if let Err(e) = influx_client.connect().await {
-        error!(error = %e, "Failed to connect to InfluxDB");
         raven_bail!(crate::raven_error!(database_connection, e.to_string()));
     }
 
@@ -276,13 +216,11 @@ pub async fn initialize_client_manager(server: &ServerConfig) -> RavenResult<Arc
 
     // Start client health monitoring
     if let Err(e) = client_manager.start_health_monitoring().await {
-        error!(error = %e, "Failed to start client health monitoring");
         raven_bail!(e);
     }
 
     // Start disconnection event processing
     if let Err(e) = client_manager.start_disconnection_processing().await {
-        error!(error = %e, "Failed to start disconnection event processing");
         raven_bail!(e);
     }
 

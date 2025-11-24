@@ -1,7 +1,7 @@
 // Collector Manager - Dynamic lifecycle management for data collectors
 
-use crate::common::error::RavenResult;
 use crate::common::current_timestamp_millis;
+use crate::common::error::RavenResult;
 use crate::server::data_engine::ingestion::{spawn_orderbook_ingestor, spawn_trade_ingestor};
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::data_handlers::HighFrequencyHandler;
@@ -14,7 +14,7 @@ use crate::server::stream_router::StreamRouter;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::info;
 use uuid::Uuid;
 
 /// Handles for a single collection (orderbook + trade collectors)
@@ -183,11 +183,6 @@ impl CollectorManager {
             );
             Ok(())
         } else {
-            warn!(
-                exchange = ?exchange,
-                symbol = %symbol,
-                "Attempted to stop non-existent collection"
-            );
             crate::raven_bail!(crate::raven_error!(
                 client_not_found,
                 format!("No active collection found for {exchange:?}:{symbol}")

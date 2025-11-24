@@ -317,7 +317,6 @@ impl InfluxClient {
             Err(e) => {
                 self.circuit_breaker.record_failure().await;
                 self.mark_connection_healthy(connection_index, false).await;
-                error!("✗ Iron Bank ping failed: {}", e);
                 crate::raven_bail!(crate::raven_error!(
                     database_connection,
                     format!("Ping failed: {e}")
