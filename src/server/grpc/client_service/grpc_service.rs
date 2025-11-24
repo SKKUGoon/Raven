@@ -10,7 +10,7 @@ use crate::proto::{
 };
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::grpc::client_service::manager::{ClientManager, DisconnectionReason};
-use crate::server::monitoring::MetricsCollector;
+use crate::server::prometheus::MetricsCollector;
 use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
 use std::pin::Pin;
 use std::sync::Arc;

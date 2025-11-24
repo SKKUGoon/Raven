@@ -4,7 +4,7 @@
 use raven::common::config::MonitoringConfig;
 use raven::common::db::{InfluxClient, InfluxConfig};
 use raven::server::data_engine::storage::HighFrequencyStorage;
-use raven::server::monitoring::{
+use raven::server::prometheus::{
     health::{
         ComponentHealth, HealthResponse, HealthService, HealthStatus, LivenessResponse,
         ReadinessResponse,

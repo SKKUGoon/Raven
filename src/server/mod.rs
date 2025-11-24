@@ -6,7 +6,7 @@ pub mod data_engine;
 pub mod data_handlers;
 pub mod exchanges;
 pub mod grpc;
-pub mod monitoring;
+pub mod prometheus;
 pub mod stream_router;
 
 // Re-export the main run function

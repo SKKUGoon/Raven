@@ -19,7 +19,7 @@ use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::data_engine::{DataEngine, DataEngineConfig};
 use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::grpc::client_service::MarketDataServer;
-use crate::server::monitoring::ObservabilityService;
+use crate::server::prometheus::ObservabilityService;
 use crate::server::stream_router::StreamRouter;
 
 pub struct Server {

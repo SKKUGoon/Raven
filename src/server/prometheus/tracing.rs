@@ -160,7 +160,7 @@ impl PerformanceSpan {
 #[macro_export]
 macro_rules! instrument_async {
     ($func:expr, $operation:expr) => {{
-        let span = $crate::server::monitoring::TracingService::create_performance_span($operation);
+        let span = $crate::server::prometheus::TracingService::create_performance_span($operation);
         let result = $func.await;
         match &result {
             Ok(_) => span.complete(true),
@@ -174,7 +174,7 @@ macro_rules! instrument_async {
 #[macro_export]
 macro_rules! instrument_sync {
     ($func:expr, $operation:expr) => {{
-        let span = $crate::server::monitoring::TracingService::create_performance_span($operation);
+        let span = $crate::server::prometheus::TracingService::create_performance_span($operation);
         let result = $func;
         match &result {
             Ok(_) => span.complete(true),

@@ -12,7 +12,7 @@ use crate::{
     server::data_engine::storage::HighFrequencyStorage,
     server::grpc::client_service::manager::ClientManagerConfig,
     server::grpc::client_service::ClientManager,
-    server::monitoring::{HealthService, MetricsService, ObservabilityService, TracingService},
+    server::prometheus::{HealthService, MetricsService, ObservabilityService, TracingService},
     server::stream_router::StreamRouter,
 };
 use std::path::PathBuf;

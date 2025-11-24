@@ -2,7 +2,7 @@ use crate::{
     common::db::{circuit_breaker::CircuitBreakerRegistry, DeadLetterQueue},
     common::error::RavenResult,
     server::grpc::client_service::ClientManager,
-    server::monitoring::TracingService,
+    server::prometheus::TracingService,
 };
 use std::sync::Arc;
 use tracing::info;
