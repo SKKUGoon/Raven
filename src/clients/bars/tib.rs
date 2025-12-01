@@ -1,6 +1,5 @@
-use chrono::{DateTime, Utc};
-
 use crate::clients::bars::{BarStateMachine, TickDirection, UpdateBar};
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
 pub struct TickImbalanceBar {

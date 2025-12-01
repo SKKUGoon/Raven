@@ -13,7 +13,7 @@ use raven::server::prometheus::{
     tracing::{PerformanceSpan, TracingService, TracingUtils},
     ObservabilityService,
 };
-use raven::server::stream_router::StreamRouter;
+use raven::server::stream_router::router::StreamRouter;
 use std::sync::Arc;
 use std::time::Duration;
 

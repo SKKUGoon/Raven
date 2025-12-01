@@ -15,7 +15,7 @@ use crate::common::config::MonitoringConfig;
 use crate::common::db::influx_client::InfluxClient;
 use crate::common::error::RavenResult;
 use crate::server::data_engine::storage::HighFrequencyStorage;
-use crate::server::stream_router::StreamRouter;
+use crate::server::stream_router::router::StreamRouter;
 
 /// Health check status levels
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

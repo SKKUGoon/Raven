@@ -1,5 +1,5 @@
+pub mod router;
 pub mod tib;
-
 use chrono::{DateTime, Utc};
 
 /// Direction of tick imbalance
@@ -27,6 +27,9 @@ pub trait UpdateBar {
 /// Trait implemented by all bar state machine
 pub trait BarStateMachine {
     /// The bar type. e.g., TickImbalanceBar, TickRunsBar, etc.
+    /// Non-generic because
+    /// - It produces exactly one bar type defined by type Bar
+    /// - Job is algorithmic, and has no external dependencies
     type Bar;
 
     /// Update the bar with a new tick
@@ -44,5 +47,3 @@ pub trait BarStateMachine {
     fn size_ewma(&self) -> f64;
     fn imbl_ewma(&self) -> f64;
 }
-
-pub struct BarManager {}

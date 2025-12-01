@@ -24,12 +24,14 @@ message SubscribeRequest {
     repeated string symbols = 2;
     repeated DataType data_types = 3;
     map<string, string> filters = 4;
+    repeated string exchanges = 5;
 }
 
 message UnsubscribeRequest {
     string client_id = 1;
     repeated string symbols = 2;
     repeated DataType data_types = 3;
+    repeated string exchanges = 4;
 }
 
 message SubscribeResponse {
