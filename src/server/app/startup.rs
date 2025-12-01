@@ -16,7 +16,7 @@ use crate::{
     server::grpc::client_service::{ClientManager, MarketDataServer},
     server::grpc::controller_service::{CollectorManager, ControlServiceImpl},
     server::prometheus::{HealthService, MetricsService, ObservabilityService, TracingService},
-    server::stream_router::StreamRouter,
+    server::stream_router::router::StreamRouter,
 };
 use std::path::PathBuf;
 use std::sync::Arc;

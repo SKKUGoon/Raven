@@ -6,7 +6,7 @@ use crate::server::data_handlers::HighFrequencyHandler;
 use crate::server::exchanges::types::{
     Exchange, MarketData, MarketDataMessage, TradeSide as ExchangeTradeSide,
 };
-use crate::server::stream_router::StreamRouter;
+use crate::server::stream_router::router::StreamRouter;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;

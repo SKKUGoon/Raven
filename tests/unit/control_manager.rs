@@ -2,7 +2,7 @@ use raven::common::db::{DeadLetterQueue, EnhancedInfluxClient, InfluxClient, Inf
 use raven::server::data_engine::storage::HighFrequencyStorage;
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::grpc::controller_service::CollectorManager;
-use raven::server::stream_router::StreamRouter;
+use raven::server::stream_router::router::StreamRouter;
 use std::sync::Arc;
 
 fn build_test_data_engine() -> (Arc<DataEngine>, Arc<StreamRouter>) {

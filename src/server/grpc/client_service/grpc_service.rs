@@ -11,7 +11,7 @@ use crate::proto::{
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::grpc::client_service::manager::{ClientManager, DisconnectionReason};
 use crate::server::prometheus::MetricsCollector;
-use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
+use crate::server::stream_router::{router::StreamRouter, SubscriptionDataType};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -71,6 +71,7 @@ impl MarketDataServiceImpl {
         timestamp: i64,
     ) -> MarketDataMessage {
         MarketDataMessage {
+            exchange: "SIMULATED".to_string(),
             data: Some(crate::proto::market_data_message::Data::Orderbook(
                 OrderBookSnapshot {
                     symbol: symbol.to_string(),
@@ -99,6 +100,7 @@ impl MarketDataServiceImpl {
         timestamp: i64,
     ) -> MarketDataMessage {
         MarketDataMessage {
+            exchange: "SIMULATED".to_string(),
             data: Some(crate::proto::market_data_message::Data::Trade(Trade {
                 symbol: symbol.to_string(),
                 timestamp,

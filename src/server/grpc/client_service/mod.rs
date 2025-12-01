@@ -13,7 +13,7 @@ use crate::common::error::RavenResult;
 use crate::proto::market_data_service_server::MarketDataServiceServer;
 use crate::server::data_engine::storage::HighFrequencyStorage;
 use crate::server::prometheus::MetricsCollector;
-use crate::server::stream_router::StreamRouter;
+use crate::server::stream_router::router::StreamRouter;
 
 /// Market Data Server - Main gRPC server implementation
 #[derive(Clone)]

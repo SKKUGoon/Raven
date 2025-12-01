@@ -3,7 +3,7 @@
 
 use raven::proto::DataType;
 use raven::server::stream_router::{
-    ClientSubscription, StreamRouter, SubscriptionDataType, TopicIndex,
+    router::StreamRouter, topic::TopicIndex, ClientSubscription, SubscriptionDataType,
 };
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc;
@@ -17,6 +17,7 @@ async fn test_subscription_creation() {
         .subscribe(
             "client1".to_string(),
             vec!["BTCUSDT".to_string()],
+            vec!["Binance".to_string()],
             vec![SubscriptionDataType::Orderbook],
             HashMap::new(),
             sender,
@@ -38,6 +39,7 @@ async fn test_subscription_unsubscribe() {
         .subscribe(
             "client1".to_string(),
             vec!["BTCUSDT".to_string(), "ETHUSDT".to_string()],
+            vec!["Binance".to_string()],
             vec![
                 SubscriptionDataType::Orderbook,
                 SubscriptionDataType::Trades,
@@ -52,6 +54,7 @@ async fn test_subscription_unsubscribe() {
         .unsubscribe(
             "client1",
             vec!["BTCUSDT".to_string()],
+            vec!["Binance".to_string()],
             vec![SubscriptionDataType::Orderbook],
         )
         .unwrap();

@@ -1,6 +1,6 @@
 use crate::common::db::EnhancedInfluxClient;
 use crate::common::error::RavenResult;
-use crate::server::stream_router::{StreamRouter, SubscriptionDataType};
+use crate::server::stream_router::{router::StreamRouter, SubscriptionDataType};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -35,7 +35,6 @@ impl DataEngine {
             metrics: DataEngineMetrics::default(),
         }
     }
-
 
     /// Persist order book data to database
     pub async fn persist_orderbook_data(
@@ -128,11 +127,8 @@ impl DataEngine {
         let snapshot = OrderBookSnapshot::from(data);
         let message = self.create_orderbook_message(&snapshot);
 
-        self.stream_router.distribute_message(
-            symbol,
-            SubscriptionDataType::Orderbook,
-            message,
-        )?;
+        self.stream_router
+            .distribute_message(symbol, SubscriptionDataType::Orderbook, message)?;
 
         Ok(())
     }
@@ -154,11 +150,8 @@ impl DataEngine {
         let snapshot = TradeSnapshot::from(data);
         let message = self.create_trade_message(&snapshot);
 
-        self.stream_router.distribute_message(
-            symbol,
-            SubscriptionDataType::Trades,
-            message,
-        )?;
+        self.stream_router
+            .distribute_message(symbol, SubscriptionDataType::Trades, message)?;
 
         Ok(())
     }
@@ -185,6 +178,7 @@ impl DataEngine {
         };
 
         MarketDataMessage {
+            exchange: snapshot.exchange.to_string(),
             data: Some(crate::proto::market_data_message::Data::Orderbook(
                 proto_snapshot,
             )),
@@ -205,6 +199,7 @@ impl DataEngine {
         };
 
         MarketDataMessage {
+            exchange: snapshot.exchange.to_string(),
             data: Some(crate::proto::market_data_message::Data::Trade(proto_trade)),
         }
     }

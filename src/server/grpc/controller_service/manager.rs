@@ -10,7 +10,7 @@ use crate::server::exchanges::binance::futures::trade::initialize_binance_future
 use crate::server::exchanges::binance::spot::orderbook::initialize_binance_spot_orderbook;
 use crate::server::exchanges::binance::spot::trade::initialize_binance_spot_trade;
 use crate::server::exchanges::types::Exchange;
-use crate::server::stream_router::StreamRouter;
+use crate::server::stream_router::router::StreamRouter;
 use dashmap::DashMap;
 use std::sync::Arc;
 use tokio::task::JoinHandle;

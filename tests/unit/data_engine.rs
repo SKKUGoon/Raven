@@ -5,7 +5,7 @@ use raven::current_timestamp_millis;
 use raven::server::data_engine::storage::{OrderBookData, TradeData, TradeSide};
 use raven::server::data_engine::{DataEngine, DataEngineConfig};
 use raven::server::exchanges::types::Exchange;
-use raven::server::stream_router::StreamRouter;
+use raven::server::stream_router::router::StreamRouter;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -20,11 +20,7 @@ fn create_test_data_engine() -> DataEngine {
         Arc::clone(&dead_letter_queue),
     ));
 
-    DataEngine::new(
-        data_engine_config,
-        enhanced_client,
-        subscription_manager,
-    )
+    DataEngine::new(data_engine_config, enhanced_client, subscription_manager)
 }
 
 fn create_test_orderbook_data() -> OrderBookData {
@@ -64,7 +60,7 @@ async fn test_orderbook_persistence() {
     let data_engine = create_test_data_engine();
     let data = create_test_orderbook_data();
 
-    // Since we mock the influx client (it's just structs), this will fail to connect 
+    // Since we mock the influx client (it's just structs), this will fail to connect
     // but the persist_orderbook_data call should succeed in logic until it hits the network
     // In a real unit test we would mock the EnhancedInfluxClient, but for now we check API existence
     let _ = data_engine.persist_orderbook_data("BTCUSDT", data).await;
@@ -101,4 +97,3 @@ async fn test_metrics_tracking() {
     assert_eq!(metrics.get("total_written").unwrap(), &3);
     assert_eq!(metrics.get("total_failed").unwrap(), &1);
 }
-

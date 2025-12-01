@@ -15,6 +15,10 @@ path = "src/bin/raven.rs"
 name = "ravenctl"
 path = "src/bin/ravenctl.rs"
 
+[[bin]]
+name = "raven_client_bars"
+path = "src/bin/raven_client_bars.rs"
+
 [dependencies]
 # gRPC and Protocol Buffers
 tonic = "0.14.2"
@@ -71,6 +75,7 @@ opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
 tracing-opentelemetry = "0.32"
 hyper = { version = "1.7", features = ["full"] }
 http-body-util = "0.1"
+sqlx = { version = "0.8.3", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "macros"] }
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }
