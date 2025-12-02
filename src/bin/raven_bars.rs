@@ -1,16 +1,26 @@
-use raven::features::bars::BarService;
+use raven::features::bars;
 use raven::service::RavenService;
+use raven::config::Settings;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let settings = Settings::new()?;
 
-    // Bars runs on 50053 by default
-    let addr = "0.0.0.0:50053".parse()?;
-    let upstream =
-        std::env::var("UPSTREAM_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
+    let log_level = match settings.logging.level.to_lowercase().as_str() {
+        "debug" => tracing::Level::DEBUG,
+        "error" => tracing::Level::ERROR,
+        "warn" => tracing::Level::WARN,
+        _ => tracing::Level::INFO,
+    };
 
-    let service_impl = BarService::new(upstream);
+    tracing_subscriber::fmt()
+        .with_max_level(log_level)
+        .init();
+
+    let addr = format!("{}:{}", settings.server.host, settings.server.port_bars).parse()?;
+    let upstream = format!("http://{}:{}", settings.server.host, settings.server.port_spot);
+
+    let service_impl = bars::new(upstream);
     let raven = RavenService::new("RavenBars", service_impl.clone());
 
     raven.serve_with_market_data(addr, service_impl).await?;

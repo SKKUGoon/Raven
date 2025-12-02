@@ -1,22 +1,15 @@
 use chrono::{DateTime, TimeZone, Utc};
-use dashmap::DashMap;
-use futures_util::StreamExt;
+use crate::config::TibsConfig;
+use crate::proto::market_data_client::MarketDataClient;
+use crate::proto::market_data_message;
+use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
+use crate::service::StreamManager;
 use lazy_static::lazy_static;
 use prometheus::{register_int_counter_vec, register_int_gauge, IntCounterVec, IntGauge};
-use crate::proto::control_server::Control;
-use crate::proto::market_data_client::MarketDataClient;
-use crate::proto::market_data_server::MarketData;
-use crate::proto::{
-    market_data_message, Candle, ControlRequest, ControlResponse, DataType, ListRequest,
-    ListResponse, MarketDataMessage, MarketDataRequest, StopAllRequest, StopAllResponse,
-};
+use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use tokio::sync::broadcast;
-use tokio::task::JoinHandle;
-use tokio_stream::wrappers::BroadcastStream;
-use tokio_stream::Stream;
-use tonic::{Request, Response, Status};
+use tonic::{Request, Status};
 use tracing::{error, info};
 
 lazy_static! {
@@ -204,50 +197,30 @@ impl TickImbalanceState {
     }
 }
 
-#[derive(Clone)]
-pub struct TibsService {
-    upstream_url: String,
-    channels: Arc<DashMap<String, broadcast::Sender<Result<MarketDataMessage, Status>>>>,
-    tasks: Arc<DashMap<String, JoinHandle<()>>>,
-}
+pub type TibsService = StreamManager<
+    Box<
+        dyn Fn(
+                String,
+                broadcast::Sender<Result<MarketDataMessage, Status>>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send>>
+            + Send
+            + Sync,
+    >,
+>;
 
-impl TibsService {
-    pub fn new(upstream_url: String) -> Self {
-        Self {
-            upstream_url,
-            channels: Arc::new(DashMap::new()),
-            tasks: Arc::new(DashMap::new()),
-        }
-    }
-
-    async fn ensure_stream(
-        &self,
-        symbol: &str,
-    ) -> broadcast::Sender<Result<MarketDataMessage, Status>> {
-        if let Some(entry) = self.channels.get(symbol) {
-            return entry.value().clone();
-        }
-
-        let (tx, _) = broadcast::channel(100);
-        self.channels.insert(symbol.to_string(), tx.clone());
-
-        if !self.tasks.contains_key(symbol) {
-            let symbol_clone = symbol.to_string();
-            let tx_clone = tx.clone();
-            let upstream = self.upstream_url.clone();
-
-            let handle = tokio::spawn(async move {
-                run_tib_aggregation(upstream, symbol_clone, tx_clone).await;
-            });
-            self.tasks.insert(symbol.to_string(), handle);
-        }
-
-        tx
-    }
+pub fn new(upstream_url: String, config: TibsConfig) -> TibsService {
+    StreamManager::new(Box::new(move |symbol, tx| {
+        let upstream_url = upstream_url.clone();
+        let config = config.clone();
+        Box::pin(async move {
+            run_tib_aggregation(upstream_url, config, symbol, tx).await;
+        })
+    }))
 }
 
 async fn run_tib_aggregation(
     upstream_url: String,
+    config: TibsConfig,
     symbol: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
@@ -277,14 +250,13 @@ async fn run_tib_aggregation(
         }
     };
 
-    // Initialize State with defaults
-    // In production, these should come from config or historical data analysis
+    // Initialize State with config
     let mut state = TickImbalanceState::new(
-        100.0,          // Initial size
-        0.7,            // Initial p_buy (strong signal)
-        0.1,            // Alpha size
-        0.1,            // Alpha imbl
-        (50.0, 1000.0), // Size boundaries
+        config.initial_size,
+        config.initial_p_buy,
+        config.alpha_size,
+        config.alpha_imbl,
+        (config.size_min, config.size_max),
     );
 
     while let Ok(Some(msg)) = stream.message().await {
@@ -313,108 +285,3 @@ async fn run_tib_aggregation(
     info!("TIB aggregation task ended for {}", symbol);
     ACTIVE_TIB_AGGREGATIONS.dec();
 }
-
-#[tonic::async_trait]
-impl Control for TibsService {
-    async fn start_collection(
-        &self,
-        request: Request<ControlRequest>,
-    ) -> Result<Response<ControlResponse>, Status> {
-        let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
-
-        info!("Control: Start TIBs for {}", symbol);
-        self.ensure_stream(&symbol).await;
-
-        Ok(Response::new(ControlResponse {
-            success: true,
-            message: format!("Started TIBs for {symbol}"),
-        }))
-    }
-
-    async fn stop_collection(
-        &self,
-        request: Request<ControlRequest>,
-    ) -> Result<Response<ControlResponse>, Status> {
-        let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
-
-        if let Some((_, handle)) = self.tasks.remove(&symbol) {
-            handle.abort();
-            self.channels.remove(&symbol);
-            info!("Control: Stopped TIBs for {}", symbol);
-            Ok(Response::new(ControlResponse {
-                success: true,
-                message: format!("Stopped TIBs for {symbol}"),
-            }))
-        } else {
-            Ok(Response::new(ControlResponse {
-                success: false,
-                message: format!("No TIBs task found for {symbol}"),
-            }))
-        }
-    }
-
-    async fn list_collections(
-        &self,
-        _request: Request<ListRequest>,
-    ) -> Result<Response<ListResponse>, Status> {
-        use crate::proto::CollectionInfo;
-        let collections = self
-            .tasks
-            .iter()
-            .map(|entry| CollectionInfo {
-                symbol: entry.key().clone(),
-                status: "active".to_string(),
-                subscriber_count: if let Some(ch) = self.channels.get(entry.key()) {
-                    ch.value().receiver_count() as i32
-                } else {
-                    0
-                },
-            })
-            .collect();
-
-        Ok(Response::new(ListResponse { collections }))
-    }
-
-    async fn stop_all_collections(
-        &self,
-        _request: Request<StopAllRequest>,
-    ) -> Result<Response<StopAllResponse>, Status> {
-        for entry in self.tasks.iter() {
-            entry.value().abort();
-        }
-        self.tasks.clear();
-        self.channels.clear();
-        info!("Control: Stopped all TIBs");
-        Ok(Response::new(StopAllResponse {
-            success: true,
-            message: "All TIBs stopped".to_string(),
-        }))
-    }
-}
-
-#[tonic::async_trait]
-impl MarketData for TibsService {
-    type SubscribeStream = Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
-
-    async fn subscribe(
-        &self,
-        request: Request<MarketDataRequest>,
-    ) -> Result<Response<Self::SubscribeStream>, Status> {
-        let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
-
-        info!("Client subscribed to TIBs {}", symbol);
-        let tx = self.ensure_stream(&symbol).await;
-        let rx = tx.subscribe();
-
-        let stream = BroadcastStream::new(rx).map(|item| match item {
-            Ok(msg) => msg,
-            Err(_) => Err(Status::internal("Stream lagged")),
-        });
-
-        Ok(Response::new(Box::pin(stream)))
-    }
-}
-

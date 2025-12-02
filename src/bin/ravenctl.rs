@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use raven::config::Settings;
 use raven::proto::control_client::ControlClient;
 use raven::proto::{ControlRequest, ListRequest, StopAllRequest};
 
@@ -38,14 +39,23 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    let settings = Settings::new().unwrap_or_else(|e| {
+        eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+        // Return a dummy settings object or handle gracefully?
+        // For simplicity, let's just panic or exit if config is critical.
+        // But since this is a CLI, maybe we can proceed if the user provided explicit host?
+        // However, the logic below depends on settings for service shortcuts.
+        std::process::exit(1);
+    });
 
     let host = if let Some(s) = cli.service {
+        let host_ip = &settings.server.host;
         match s.as_str() {
-            "spot" => "http://localhost:50051".to_string(),
-            "futures" => "http://localhost:50054".to_string(),
-            "persistence" => "http://localhost:50052".to_string(),
-            "bars" => "http://localhost:50053".to_string(),
-            "tibs" => "http://localhost:50055".to_string(),
+            "spot" => format!("http://{}:{}", host_ip, settings.server.port_spot),
+            "futures" => format!("http://{}:{}", host_ip, settings.server.port_futures),
+            "persistence" => format!("http://{}:{}", host_ip, settings.server.port_persistence),
+            "bars" => format!("http://{}:{}", host_ip, settings.server.port_bars),
+            "tibs" => format!("http://{}:{}", host_ip, settings.server.port_tibs),
             _ => {
                 eprintln!("Unknown service: {s}. Using default host.");
                 cli.host

@@ -1,16 +1,26 @@
-use raven::features::tibs::TibsService;
+use raven::features::tibs;
 use raven::service::RavenService;
+use raven::config::Settings;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let settings = Settings::new()?;
 
-    // Tibs runs on 50055 by default
-    let addr = "0.0.0.0:50055".parse()?;
-    let upstream =
-        std::env::var("UPSTREAM_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
+    let log_level = match settings.logging.level.to_lowercase().as_str() {
+        "debug" => tracing::Level::DEBUG,
+        "error" => tracing::Level::ERROR,
+        "warn" => tracing::Level::WARN,
+        _ => tracing::Level::INFO,
+    };
 
-    let service_impl = TibsService::new(upstream);
+    tracing_subscriber::fmt()
+        .with_max_level(log_level)
+        .init();
+
+    let addr = format!("{}:{}", settings.server.host, settings.server.port_tibs).parse()?;
+    let upstream = format!("http://{}:{}", settings.server.host, settings.server.port_spot);
+
+    let service_impl = tibs::new(upstream, settings.tibs.clone());
     let raven = RavenService::new("RavenTibs", service_impl.clone());
 
     raven.serve_with_market_data(addr, service_impl).await?;

@@ -1,12 +1,24 @@
-use raven::exchange::binance_futures::BinanceFuturesService;
 use raven::service::RavenService;
+use raven::source::binance::future;
+use raven::config::Settings;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let settings = Settings::new()?;
 
-    let addr = "0.0.0.0:50054".parse()?;
-    let service_impl = BinanceFuturesService::new();
+    let log_level = match settings.logging.level.to_lowercase().as_str() {
+        "debug" => tracing::Level::DEBUG,
+        "error" => tracing::Level::ERROR,
+        "warn" => tracing::Level::WARN,
+        _ => tracing::Level::INFO,
+    };
+
+    tracing_subscriber::fmt()
+        .with_max_level(log_level)
+        .init();
+
+    let addr = format!("{}:{}", settings.server.host, settings.server.port_futures).parse()?;
+    let service_impl = future::new();
     let raven = RavenService::new("BinanceFutures", service_impl.clone());
 
     raven.serve_with_market_data(addr, service_impl).await?;

@@ -2,8 +2,9 @@ pub mod proto {
     tonic::include_proto!("raven");
 }
 
+pub mod config;
 pub mod db;
-pub mod exchange;
+pub mod source;
 pub mod features;
 pub mod service;
 // pub mod config; // To be implemented

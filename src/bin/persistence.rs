@@ -1,16 +1,26 @@
-use raven::db::influx::PersistenceService;
+use raven::db::influx;
 use raven::service::RavenService;
+use raven::config::Settings;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    let settings = Settings::new()?;
 
-    // Persistence runs on 50052 by default, upstream on 50051
-    let addr = "0.0.0.0:50052".parse()?;
-    let upstream =
-        std::env::var("UPSTREAM_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
+    let log_level = match settings.logging.level.to_lowercase().as_str() {
+        "debug" => tracing::Level::DEBUG,
+        "error" => tracing::Level::ERROR,
+        "warn" => tracing::Level::WARN,
+        _ => tracing::Level::INFO,
+    };
 
-    let service_impl = PersistenceService::new(upstream);
+    tracing_subscriber::fmt()
+        .with_max_level(log_level)
+        .init();
+
+    let addr = format!("{}:{}", settings.server.host, settings.server.port_persistence).parse()?;
+    let upstream = format!("http://{}:{}", settings.server.host, settings.server.port_spot);
+
+    let service_impl = influx::new(upstream, settings.influx.clone());
     let raven = RavenService::new("Persistence", service_impl.clone());
 
     raven.serve(addr).await?;

@@ -8,6 +8,9 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server as HttpServer};
 use prometheus::{Encoder, TextEncoder};
 
+pub mod stream_manager;
+pub use stream_manager::StreamManager;
+
 pub struct RavenService<C> {
     control: C,
     name: String,

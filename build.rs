@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // tonic_prost_build requires the vendored protoc binary
     let protoc_path =
         protoc_bin_vendored::protoc_bin_path().expect("Failed to find vendored protoc");
-    std::env::set_var("PROTOC", &protoc_path);
+    unsafe { std::env::set_var("PROTOC", &protoc_path) };
 
     // Compile protobuf files together so imports work correctly
     tonic_prost_build::configure()
@@ -16,10 +16,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_client(true)
         .out_dir(&out_dir)
         .compile_protos(
-            &[
-                "proto/market_data.proto",
-                "proto/control.proto",
-            ],
+            &["proto/market_data.proto", "proto/control.proto"],
             &["proto"],
         )?;
 
