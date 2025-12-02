@@ -18,7 +18,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_protos(
             &[
                 "proto/market_data.proto",
-                "proto/subscription.proto",
                 "proto/control.proto",
             ],
             &["proto"],
@@ -26,7 +25,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Tell cargo to recompile if proto files change
     println!("cargo:rerun-if-changed=proto/market_data.proto");
-    println!("cargo:rerun-if-changed=proto/subscription.proto");
     println!("cargo:rerun-if-changed=proto/control.proto");
     println!("cargo:rerun-if-changed=build.rs");
 
