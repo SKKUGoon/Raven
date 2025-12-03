@@ -1,28 +1,12 @@
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
-use crate::service::StreamManager;
-use lazy_static::lazy_static;
-use prometheus::{register_int_counter_vec, register_int_gauge, IntCounterVec, IntGauge};
-use std::future::Future;
-use std::pin::Pin;
+use crate::service::{StreamManager, StreamWorker};
+use crate::telemetry::{BARS_ACTIVE_AGGREGATIONS, BARS_GENERATED};
 use tokio::sync::broadcast;
 use tonic::{Request, Status};
 use tracing::{error, info};
-
-lazy_static! {
-    static ref BARS_GENERATED: IntCounterVec = register_int_counter_vec!(
-        "raven_bars_generated_total",
-        "Total number of bars generated",
-        &["symbol"]
-    )
-    .unwrap();
-    static ref ACTIVE_AGGREGATIONS: IntGauge = register_int_gauge!(
-        "raven_bars_active_aggregations",
-        "Number of active bar aggregation tasks"
-    )
-    .unwrap();
-}
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 struct Bar {
@@ -88,24 +72,23 @@ impl Bar {
     }
 }
 
-pub type BarService = StreamManager<
-    Box<
-        dyn Fn(
-                String,
-                broadcast::Sender<Result<MarketDataMessage, Status>>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send>>
-            + Send
-            + Sync,
-    >,
->;
+#[derive(Clone)]
+pub struct BarsWorker {
+    upstream_url: String,
+}
+
+#[tonic::async_trait]
+impl StreamWorker for BarsWorker {
+    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        run_aggregation(self.upstream_url.clone(), symbol, tx).await;
+    }
+}
+
+pub type BarService = StreamManager<BarsWorker>;
 
 pub fn new(upstream_url: String) -> BarService {
-    StreamManager::new(Box::new(move |symbol, tx| {
-        let upstream_url = upstream_url.clone();
-        Box::pin(async move {
-            run_aggregation(upstream_url, symbol, tx).await;
-        })
-    }))
+    let worker = BarsWorker { upstream_url };
+    StreamManager::new(Arc::new(worker), 100, true)
 }
 
 async fn run_aggregation(
@@ -114,13 +97,13 @@ async fn run_aggregation(
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
     info!("Starting bar aggregation for {}", symbol);
-    ACTIVE_AGGREGATIONS.inc();
+    BARS_ACTIVE_AGGREGATIONS.inc();
 
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to connect to upstream: {}", e);
-            ACTIVE_AGGREGATIONS.dec();
+            BARS_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
@@ -134,7 +117,7 @@ async fn run_aggregation(
         Ok(res) => res.into_inner(),
         Err(e) => {
             error!("Failed to subscribe to trades: {}", e);
-            ACTIVE_AGGREGATIONS.dec();
+            BARS_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
@@ -166,5 +149,5 @@ async fn run_aggregation(
         }
     }
     info!("Aggregation task ended for {}", symbol);
-    ACTIVE_AGGREGATIONS.dec();
+    BARS_ACTIVE_AGGREGATIONS.dec();
 }

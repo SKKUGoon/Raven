@@ -3,28 +3,12 @@ use crate::config::TibsConfig;
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
-use crate::service::StreamManager;
-use lazy_static::lazy_static;
-use prometheus::{register_int_counter_vec, register_int_gauge, IntCounterVec, IntGauge};
-use std::future::Future;
-use std::pin::Pin;
+use crate::service::{StreamManager, StreamWorker};
+use crate::telemetry::{TIBS_ACTIVE_AGGREGATIONS, TIBS_GENERATED};
 use tokio::sync::broadcast;
 use tonic::{Request, Status};
 use tracing::{error, info};
-
-lazy_static! {
-    static ref TIBS_GENERATED: IntCounterVec = register_int_counter_vec!(
-        "raven_tibs_generated_total",
-        "Total number of TIBs generated",
-        &["symbol"]
-    )
-    .unwrap();
-    static ref ACTIVE_TIB_AGGREGATIONS: IntGauge = register_int_gauge!(
-        "raven_tibs_active_aggregations",
-        "Number of active TIB aggregation tasks"
-    )
-    .unwrap();
-}
+use std::sync::Arc;
 
 /// Direction of tick imbalance
 #[derive(Clone, Copy, Debug)]
@@ -197,25 +181,24 @@ impl TickImbalanceState {
     }
 }
 
-pub type TibsService = StreamManager<
-    Box<
-        dyn Fn(
-                String,
-                broadcast::Sender<Result<MarketDataMessage, Status>>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send>>
-            + Send
-            + Sync,
-    >,
->;
+#[derive(Clone)]
+pub struct TibsWorker {
+    upstream_url: String,
+    config: TibsConfig,
+}
+
+#[tonic::async_trait]
+impl StreamWorker for TibsWorker {
+    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        run_tib_aggregation(self.upstream_url.clone(), self.config.clone(), symbol, tx).await;
+    }
+}
+
+pub type TibsService = StreamManager<TibsWorker>;
 
 pub fn new(upstream_url: String, config: TibsConfig) -> TibsService {
-    StreamManager::new(Box::new(move |symbol, tx| {
-        let upstream_url = upstream_url.clone();
-        let config = config.clone();
-        Box::pin(async move {
-            run_tib_aggregation(upstream_url, config, symbol, tx).await;
-        })
-    }))
+    let worker = TibsWorker { upstream_url, config };
+    StreamManager::new(Arc::new(worker), 100, true)
 }
 
 async fn run_tib_aggregation(
@@ -225,13 +208,13 @@ async fn run_tib_aggregation(
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
     info!("Starting TIB aggregation for {}", symbol);
-    ACTIVE_TIB_AGGREGATIONS.inc();
+    TIBS_ACTIVE_AGGREGATIONS.inc();
 
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to connect to upstream: {}", e);
-            ACTIVE_TIB_AGGREGATIONS.dec();
+            TIBS_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
@@ -245,7 +228,7 @@ async fn run_tib_aggregation(
         Ok(res) => res.into_inner(),
         Err(e) => {
             error!("Failed to subscribe to trades: {}", e);
-            ACTIVE_TIB_AGGREGATIONS.dec();
+            TIBS_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
@@ -283,5 +266,5 @@ async fn run_tib_aggregation(
         }
     }
     info!("TIB aggregation task ended for {}", symbol);
-    ACTIVE_TIB_AGGREGATIONS.dec();
+    TIBS_ACTIVE_AGGREGATIONS.dec();
 }

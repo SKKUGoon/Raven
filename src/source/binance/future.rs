@@ -1,38 +1,32 @@
-use crate::proto::{MarketDataMessage, Trade};
-use crate::service::StreamManager;
 use super::BinanceWsClient;
-use lazy_static::lazy_static;
-use prometheus::{register_int_counter_vec, register_int_gauge, IntCounterVec, IntGauge};
+use crate::proto::{MarketDataMessage, Trade};
+use crate::service::{StreamManager, StreamWorker};
+use crate::telemetry::{BINANCE_FUTURES_CONNECTIONS, BINANCE_FUTURES_TRADES};
 use serde_json::Value;
-use std::future::Future;
-use std::pin::Pin;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::Status;
 
-lazy_static! {
-    static ref TRADES_PROCESSED: IntCounterVec = register_int_counter_vec!(
-        "raven_binance_futures_trades_processed_total",
-        "Total number of trades processed",
-        &["symbol"]
-    )
-    .unwrap();
-    static ref ACTIVE_CONNECTIONS: IntGauge = register_int_gauge!(
-        "raven_binance_futures_active_connections",
-        "Number of active WebSocket connections"
-    )
-    .unwrap();
+#[derive(Clone)]
+pub struct BinanceFuturesWorker {
+    client: BinanceWsClient,
 }
 
-pub type BinanceFuturesService = StreamManager<
-    Box<
-        dyn Fn(
-                String,
-                broadcast::Sender<Result<MarketDataMessage, Status>>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send>>
-            + Send
-            + Sync,
-    >,
->;
+#[tonic::async_trait]
+impl StreamWorker for BinanceFuturesWorker {
+    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        self.client
+            .run(
+                symbol,
+                tx,
+                &BINANCE_FUTURES_TRADES,
+                &BINANCE_FUTURES_CONNECTIONS,
+            )
+            .await;
+    }
+}
+
+pub type BinanceFuturesService = StreamManager<BinanceFuturesWorker>;
 
 pub fn new() -> BinanceFuturesService {
     let client = BinanceWsClient::new(
@@ -42,12 +36,8 @@ pub fn new() -> BinanceFuturesService {
         parse_binance_futures_trade,
     );
 
-    StreamManager::new(Box::new(move |symbol, tx| {
-        let client = client.clone();
-        Box::pin(async move {
-            client.run(symbol, tx, &TRADES_PROCESSED, &ACTIVE_CONNECTIONS).await;
-        })
-    }))
+    let worker = BinanceFuturesWorker { client };
+    StreamManager::new(Arc::new(worker), 100, true)
 }
 
 fn parse_binance_futures_trade(json: &str, symbol: &str) -> Option<Trade> {
@@ -79,4 +69,3 @@ fn parse_binance_futures_trade(json: &str, symbol: &str) -> Option<Trade> {
         trade_id,
     })
 }
-

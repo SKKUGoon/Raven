@@ -36,6 +36,18 @@ pub struct InfluxConfig {
     pub token: String,
     pub org: String,
     pub bucket: String,
+    #[serde(default = "default_batch_size")]
+    pub batch_size: usize,
+    #[serde(default = "default_batch_interval")]
+    pub batch_interval_ms: u64,
+}
+
+fn default_batch_size() -> usize {
+    1000
+}
+
+fn default_batch_interval() -> u64 {
+    1000
 }
 
 #[derive(Debug, Deserialize, Clone)]

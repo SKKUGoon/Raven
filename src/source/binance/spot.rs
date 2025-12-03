@@ -1,38 +1,27 @@
 use crate::proto::{MarketDataMessage, Trade};
-use crate::service::StreamManager;
+use crate::service::{StreamManager, StreamWorker};
 use super::BinanceWsClient;
-use lazy_static::lazy_static;
-use prometheus::{register_int_counter_vec, register_int_gauge, IntCounterVec, IntGauge};
+use crate::telemetry::{BINANCE_SPOT_CONNECTIONS, BINANCE_SPOT_TRADES};
 use serde_json::Value;
-use std::future::Future;
-use std::pin::Pin;
 use tokio::sync::broadcast;
 use tonic::Status;
+use std::sync::Arc;
 
-lazy_static! {
-    static ref TRADES_PROCESSED: IntCounterVec = register_int_counter_vec!(
-        "raven_binance_spot_trades_processed_total",
-        "Total number of trades processed",
-        &["symbol"]
-    )
-    .unwrap();
-    static ref ACTIVE_CONNECTIONS: IntGauge = register_int_gauge!(
-        "raven_binance_spot_active_connections",
-        "Number of active WebSocket connections"
-    )
-    .unwrap();
+#[derive(Clone)]
+pub struct BinanceSpotWorker {
+    client: BinanceWsClient,
 }
 
-pub type BinanceSpotService = StreamManager<
-    Box<
-        dyn Fn(
-                String,
-                broadcast::Sender<Result<MarketDataMessage, Status>>,
-            ) -> Pin<Box<dyn Future<Output = ()> + Send>>
-            + Send
-            + Sync,
-    >,
->;
+#[tonic::async_trait]
+impl StreamWorker for BinanceSpotWorker {
+    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        self.client
+            .run(symbol, tx, &BINANCE_SPOT_TRADES, &BINANCE_SPOT_CONNECTIONS)
+            .await;
+    }
+}
+
+pub type BinanceSpotService = StreamManager<BinanceSpotWorker>;
 
 pub fn new() -> BinanceSpotService {
     let client = BinanceWsClient::new(
@@ -42,12 +31,8 @@ pub fn new() -> BinanceSpotService {
         parse_binance_trade,
     );
 
-    StreamManager::new(Box::new(move |symbol, tx| {
-        let client = client.clone();
-        Box::pin(async move {
-            client.run(symbol, tx, &TRADES_PROCESSED, &ACTIVE_CONNECTIONS).await;
-        })
-    }))
+    let worker = BinanceSpotWorker { client };
+    StreamManager::new(Arc::new(worker), 100, true)
 }
 
 fn parse_binance_trade(json: &str, symbol: &str) -> Option<Trade> {
@@ -79,4 +64,3 @@ fn parse_binance_trade(json: &str, symbol: &str) -> Option<Trade> {
         trade_id,
     })
 }
-

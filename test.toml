@@ -19,6 +19,8 @@ url = "http://localhost:8086"
 token = "my-token"
 org = "my-org"
 bucket = "raven"
+batch_size = 1000
+batch_interval_ms = 1000
 
 [logging]
 level = "info"

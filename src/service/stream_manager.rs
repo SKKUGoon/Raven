@@ -1,14 +1,13 @@
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::proto::control_server::Control;
 use crate::proto::market_data_server::MarketData;
@@ -17,35 +16,46 @@ use crate::proto::{
     MarketDataRequest, StopAllRequest, StopAllResponse,
 };
 
-pub struct StreamManager<F> {
-    channels: Arc<DashMap<String, broadcast::Sender<Result<MarketDataMessage, Status>>>>,
-    tasks: Arc<DashMap<String, JoinHandle<()>>>,
-    factory: Arc<F>,
+/// Trait for stream workers that handle the actual data collection.
+#[tonic::async_trait]
+pub trait StreamWorker: Send + Sync + 'static {
+    /// Run the worker for a specific symbol.
+    /// This method should run indefinitely unless an error occurs or it is cancelled.
+    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>);
 }
 
-impl<F> Clone for StreamManager<F> {
+pub struct StreamManager<W: StreamWorker + ?Sized> {
+    channels: Arc<DashMap<String, broadcast::Sender<Result<MarketDataMessage, Status>>>>,
+    tasks: Arc<DashMap<String, JoinHandle<()>>>,
+    worker: Arc<W>,
+    channel_capacity: usize,
+    prune_on_no_subscribers: bool,
+}
+
+impl<W: StreamWorker + ?Sized> Clone for StreamManager<W> {
     fn clone(&self) -> Self {
         Self {
             channels: self.channels.clone(),
             tasks: self.tasks.clone(),
-            factory: self.factory.clone(),
+            worker: self.worker.clone(),
+            channel_capacity: self.channel_capacity,
+            prune_on_no_subscribers: self.prune_on_no_subscribers,
         }
     }
 }
 
-impl<F, Fut> StreamManager<F>
-where
-    F: Fn(String, broadcast::Sender<Result<MarketDataMessage, Status>>) -> Fut
-        + Send
-        + Sync
-        + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    pub fn new(factory: F) -> Self {
+impl<W: StreamWorker + ?Sized> StreamManager<W> {
+    pub fn new(
+        worker: Arc<W>,
+        channel_capacity: usize,
+        prune_on_no_subscribers: bool,
+    ) -> Self {
         Self {
             channels: Arc::new(DashMap::new()),
             tasks: Arc::new(DashMap::new()),
-            factory: Arc::new(factory),
+            worker,
+            channel_capacity,
+            prune_on_no_subscribers,
         }
     }
 
@@ -57,17 +67,43 @@ where
             return entry.value().clone();
         }
 
-        let (tx, _) = broadcast::channel(100);
+        let (tx, _) = broadcast::channel(self.channel_capacity);
         self.channels.insert(symbol.to_string(), tx.clone());
 
-        // Spawn WS task
+        // Spawn supervisor task
         let symbol_clone = symbol.to_string();
         let tx_clone = tx.clone();
-        let factory = self.factory.clone();
+        let worker = self.worker.clone();
+        let channels = self.channels.clone();
+        let tasks = self.tasks.clone();
+        let prune = self.prune_on_no_subscribers;
 
         let handle = tokio::spawn(async move {
-            (factory)(symbol_clone, tx_clone).await;
+            loop {
+                // Run the worker
+                worker.run(symbol_clone.clone(), tx_clone.clone()).await;
+
+                // Worker exited. Check if we should restart or clean up.
+                // If prune is enabled and no subscribers left, we stop.
+                if prune && tx_clone.receiver_count() == 0 {
+                    info!(
+                        "Stream for {} ended (no subscribers). Cleaning up.",
+                        symbol_clone
+                    );
+                    channels.remove(&symbol_clone);
+                    tasks.remove(&symbol_clone);
+                    break;
+                }
+
+                // Otherwise (subscribers exist OR prune is disabled), restart with backoff.
+                warn!(
+                    "Stream worker for {} exited unexpectedly. Restarting in 5s...",
+                    symbol_clone
+                );
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
         });
+
         self.tasks.insert(symbol.to_string(), handle);
 
         tx
@@ -75,14 +111,7 @@ where
 }
 
 #[tonic::async_trait]
-impl<F, Fut> Control for StreamManager<F>
-where
-    F: Fn(String, broadcast::Sender<Result<MarketDataMessage, Status>>) -> Fut
-        + Send
-        + Sync
-        + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
+impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
     async fn start_collection(
         &self,
         request: Request<ControlRequest>,
@@ -157,15 +186,8 @@ where
 }
 
 #[tonic::async_trait]
-impl<F, Fut> MarketData for StreamManager<F>
-where
-    F: Fn(String, broadcast::Sender<Result<MarketDataMessage, Status>>) -> Fut
-        + Send
-        + Sync
-        + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    type SubscribeStream = Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
+impl<W: StreamWorker + ?Sized> MarketData for StreamManager<W> {
+    type SubscribeStream = std::pin::Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
 
     async fn subscribe(
         &self,

@@ -40,7 +40,7 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let settings = Settings::new().unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to load config: {}. Using defaults.", e);
+        eprintln!("Warning: Failed to load config: {e}. Using defaults.");
         // Return a dummy settings object or handle gracefully?
         // For simplicity, let's just panic or exit if config is critical.
         // But since this is a CLI, maybe we can proceed if the user provided explicit host?

@@ -7,5 +7,6 @@ pub mod db;
 pub mod source;
 pub mod features;
 pub mod service;
+pub mod telemetry;
 // pub mod config; // To be implemented
 // pub mod utils; // To be implemented
