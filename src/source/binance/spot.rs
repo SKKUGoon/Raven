@@ -32,7 +32,7 @@ pub fn new() -> BinanceSpotService {
     );
 
     let worker = BinanceSpotWorker { client };
-    StreamManager::new(Arc::new(worker), 100, true)
+    StreamManager::new(Arc::new(worker), 10000, true)
 }
 
 fn parse_binance_trade(json: &str, symbol: &str) -> Option<Trade> {

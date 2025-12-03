@@ -3,10 +3,10 @@ use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
 use crate::service::{StreamManager, StreamWorker};
 use crate::telemetry::{BARS_ACTIVE_AGGREGATIONS, BARS_GENERATED};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::{Request, Status};
 use tracing::{error, info};
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 struct Bar {
@@ -99,6 +99,9 @@ async fn run_aggregation(
     info!("Starting bar aggregation for {}", symbol);
     BARS_ACTIVE_AGGREGATIONS.inc();
 
+    // Strip exchange suffix if present for subscription (e.g. "BTCUSDT:SPOT" -> "BTCUSDT")
+    let subscription_symbol = symbol.split(':').next().unwrap_or(&symbol).to_string();
+
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
         Err(e) => {
@@ -109,7 +112,7 @@ async fn run_aggregation(
     };
 
     let request = Request::new(MarketDataRequest {
-        symbol: symbol.clone(),
+        symbol: subscription_symbol,
         data_type: DataType::Trade as i32,
     });
 

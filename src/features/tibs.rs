@@ -210,6 +210,9 @@ async fn run_tib_aggregation(
     info!("Starting TIB aggregation for {}", symbol);
     TIBS_ACTIVE_AGGREGATIONS.inc();
 
+    // Strip exchange suffix if present for subscription
+    let subscription_symbol = symbol.split(':').next().unwrap_or(&symbol).to_string();
+
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
         Err(e) => {
@@ -220,7 +223,7 @@ async fn run_tib_aggregation(
     };
 
     let request = Request::new(MarketDataRequest {
-        symbol: symbol.clone(),
+        symbol: subscription_symbol,
         data_type: DataType::Trade as i32,
     });
 

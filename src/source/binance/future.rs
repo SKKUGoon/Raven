@@ -37,7 +37,7 @@ pub fn new() -> BinanceFuturesService {
     );
 
     let worker = BinanceFuturesWorker { client };
-    StreamManager::new(Arc::new(worker), 100, true)
+    StreamManager::new(Arc::new(worker), 10000, true)
 }
 
 fn parse_binance_futures_trade(json: &str, symbol: &str) -> Option<Trade> {

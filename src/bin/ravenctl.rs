@@ -24,11 +24,15 @@ enum Commands {
     Start {
         #[arg(short, long)]
         symbol: String,
+        #[arg(short, long)]
+        exchange: Option<String>,
     },
     /// Stop data collection for a symbol
     Stop {
         #[arg(short, long)]
         symbol: String,
+        #[arg(short, long)]
+        exchange: Option<String>,
     },
     /// Stop all data collections
     StopAll,
@@ -69,19 +73,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ControlClient::connect(host).await?;
 
     match cli.command {
-        Commands::Start { symbol } => {
+        Commands::Start { symbol, exchange } => {
             let request = ControlRequest {
                 symbol,
-                exchange: String::new(),
+                exchange: exchange.unwrap_or_default(),
             };
             let response = client.start_collection(request).await?.into_inner();
             println!("Success: {}", response.success);
             println!("Message: {}", response.message);
         }
-        Commands::Stop { symbol } => {
+        Commands::Stop { symbol, exchange } => {
             let request = ControlRequest {
                 symbol,
-                exchange: String::new(),
+                exchange: exchange.unwrap_or_default(),
             };
             let response = client.stop_collection(request).await?.into_inner();
             println!("Success: {}", response.success);

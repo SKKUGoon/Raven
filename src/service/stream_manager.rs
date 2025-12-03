@@ -45,11 +45,7 @@ impl<W: StreamWorker + ?Sized> Clone for StreamManager<W> {
 }
 
 impl<W: StreamWorker + ?Sized> StreamManager<W> {
-    pub fn new(
-        worker: Arc<W>,
-        channel_capacity: usize,
-        prune_on_no_subscribers: bool,
-    ) -> Self {
+    pub fn new(worker: Arc<W>, channel_capacity: usize, prune_on_no_subscribers: bool) -> Self {
         Self {
             channels: Arc::new(DashMap::new()),
             tasks: Arc::new(DashMap::new()),
@@ -118,13 +114,20 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
     ) -> Result<Response<ControlResponse>, Status> {
         let req = request.into_inner();
         let symbol = req.symbol.to_uppercase();
+        let exchange = req.exchange.to_uppercase();
 
-        info!("Control: Start collection for {symbol}");
-        self.ensure_stream(&symbol).await;
+        let key = if exchange.is_empty() {
+            symbol.clone()
+        } else {
+            format!("{symbol}:{exchange}")
+        };
+
+        info!("Control: Start collection for {key}");
+        self.ensure_stream(&key).await;
 
         Ok(Response::new(ControlResponse {
             success: true,
-            message: format!("Started collection for {symbol}"),
+            message: format!("Started collection for {key}"),
         }))
     }
 
@@ -134,19 +137,26 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
     ) -> Result<Response<ControlResponse>, Status> {
         let req = request.into_inner();
         let symbol = req.symbol.to_uppercase();
+        let exchange = req.exchange.to_uppercase();
 
-        if let Some((_, handle)) = self.tasks.remove(&symbol) {
+        let key = if exchange.is_empty() {
+            symbol.clone()
+        } else {
+            format!("{symbol}:{exchange}")
+        };
+
+        if let Some((_, handle)) = self.tasks.remove(&key) {
             handle.abort();
-            self.channels.remove(&symbol);
-            info!("Control: Stopped collection for {symbol}");
+            self.channels.remove(&key);
+            info!("Control: Stopped collection for {key}");
             Ok(Response::new(ControlResponse {
                 success: true,
-                message: format!("Stopped collection for {symbol}"),
+                message: format!("Stopped collection for {key}"),
             }))
         } else {
             Ok(Response::new(ControlResponse {
                 success: false,
-                message: format!("No collection found for {symbol}"),
+                message: format!("No collection found for {key}"),
             }))
         }
     }
@@ -187,7 +197,8 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
 
 #[tonic::async_trait]
 impl<W: StreamWorker + ?Sized> MarketData for StreamManager<W> {
-    type SubscribeStream = std::pin::Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
+    type SubscribeStream =
+        std::pin::Pin<Box<dyn Stream<Item = Result<MarketDataMessage, Status>> + Send>>;
 
     async fn subscribe(
         &self,
