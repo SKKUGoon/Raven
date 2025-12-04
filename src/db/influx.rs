@@ -229,10 +229,7 @@ async fn flush_buffer(client: &Client, bucket: &str, buffer: &mut Vec<DataPoint>
                 buffer.clear();
                 return;
             }
-            warn!(
-                "Failed to write to InfluxDB (retry {}/{}): {}. Retrying in {:?}...",
-                retries, MAX_RETRIES, e, backoff
-            );
+            warn!("Failed to write to InfluxDB (retry {retries}/{MAX_RETRIES}): {e}. Retrying in {backoff:?}...");
             time::sleep(backoff).await;
             backoff *= 2;
         } else {
