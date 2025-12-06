@@ -23,7 +23,9 @@ You must initialize the database schemas before starting the persistence service
 *   **TimescaleDB**: Run the initialization script to create the necessary hypertables.
     ```bash
     # Run this against your Postgres database
-    psql -d raven -f sql/create_bars_table.sql
+    psql -d raven -f sql/create_table_bar__tick_imbalance.sql
+
+    psql -d raven -f sql/create_table_bar__time.sql
     ```
 
 ### 3. System Libraries
