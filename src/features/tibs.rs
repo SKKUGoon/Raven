@@ -1,14 +1,15 @@
-use chrono::{DateTime, TimeZone, Utc};
 use crate::config::TibsConfig;
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
 use crate::service::{StreamManager, StreamWorker};
 use crate::telemetry::{TIBS_ACTIVE_AGGREGATIONS, TIBS_GENERATED};
+use chrono::{DateTime, TimeZone, Utc};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::{Request, Status};
-use tracing::{error, info};
-use std::sync::Arc;
+use tracing::{error, info, warn};
 
 /// Direction of tick imbalance
 #[derive(Clone, Copy, Debug)]
@@ -183,35 +184,67 @@ impl TickImbalanceState {
 
 #[derive(Clone)]
 pub struct TibsWorker {
-    upstream_url: String,
+    upstreams: HashMap<String, String>,
     config: TibsConfig,
 }
 
 #[tonic::async_trait]
 impl StreamWorker for TibsWorker {
-    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
-        run_tib_aggregation(self.upstream_url.clone(), self.config.clone(), symbol, tx).await;
+    async fn run(
+        &self,
+        symbol_key: String,
+        tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
+    ) {
+        let parts: Vec<&str> = symbol_key.split(':').collect();
+        let (symbol, exchange) = if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            (parts[0], "BINANCE_SPOT")
+        };
+
+        // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
+        let upstream_url = if let Some(url) = self.upstreams.get(exchange) {
+            url.clone()
+        } else {
+            warn!("No upstream configured for exchange '{}'. Defaulting to BINANCE_SPOT if available.", exchange);
+            if let Some(url) = self.upstreams.get("BINANCE_SPOT") {
+                url.clone()
+            } else {
+                error!("No upstream configuration found for BINANCE_SPOT. Cannot start aggregation for {}", symbol_key);
+                return;
+            }
+        };
+
+        run_tib_aggregation(
+            upstream_url,
+            self.config.clone(),
+            symbol.to_string(),
+            symbol_key,
+            tx,
+        )
+        .await;
     }
 }
 
 pub type TibsService = StreamManager<TibsWorker>;
 
-pub fn new(upstream_url: String, config: TibsConfig) -> TibsService {
-    let worker = TibsWorker { upstream_url, config };
+pub fn new(upstreams: HashMap<String, String>, config: TibsConfig) -> TibsService {
+    let worker = TibsWorker { upstreams, config };
     StreamManager::new(Arc::new(worker), 100, true)
 }
 
 async fn run_tib_aggregation(
     upstream_url: String,
     config: TibsConfig,
-    symbol: String,
+    subscription_symbol: String,
+    output_symbol: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
-    info!("Starting TIB aggregation for {}", symbol);
+    info!(
+        "Starting TIB aggregation for {} using upstream {}",
+        output_symbol, upstream_url
+    );
     TIBS_ACTIVE_AGGREGATIONS.inc();
-
-    // Strip exchange suffix if present for subscription
-    let subscription_symbol = symbol.split(':').next().unwrap_or(&symbol).to_string();
 
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
@@ -223,7 +256,7 @@ async fn run_tib_aggregation(
     };
 
     let request = Request::new(MarketDataRequest {
-        symbol: subscription_symbol,
+        symbol: subscription_symbol.clone(),
         data_type: DataType::Trade as i32,
     });
 
@@ -254,10 +287,14 @@ async fn run_tib_aggregation(
 
             let ts = Utc.timestamp_millis_opt(trade.timestamp).unwrap();
 
-            if let Some(closed_bar) =
-                state.on_tick(symbol.clone(), trade.price, trade.quantity, direction, ts)
-            {
-                TIBS_GENERATED.with_label_values(&[&symbol]).inc();
+            if let Some(closed_bar) = state.on_tick(
+                subscription_symbol.clone(),
+                trade.price,
+                trade.quantity,
+                direction,
+                ts,
+            ) {
+                TIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                 let msg = MarketDataMessage {
                     exchange: "raven_tibs".to_string(),
                     data: Some(market_data_message::Data::Candle(closed_bar.to_proto())),
@@ -268,6 +305,6 @@ async fn run_tib_aggregation(
             }
         }
     }
-    info!("TIB aggregation task ended for {}", symbol);
+    info!("TIB aggregation task ended for {}", output_symbol);
     TIBS_ACTIVE_AGGREGATIONS.dec();
 }

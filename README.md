@@ -33,7 +33,7 @@ The system is composed of specialized binaries that communicate via **gRPC**. Th
 graph TD
     ctl[ravenctl] -- gRPC Control --> spot[binance_spot]
     ctl -- gRPC Control --> fut[binance_futures]
-    ctl -- gRPC Control --> bars[raven_bars]
+    ctl -- gRPC Control --> bars[raven_timebar_minutes]
     ctl -- gRPC Control --> tibs[raven_tibs]
     ctl -- gRPC Control --> persist[persistence]
 
@@ -58,7 +58,7 @@ graph TD
 | **`binance_spot`** | **Source** | `50051` | `51051` | Connects to Binance Spot WS. Streams raw trades/orderbooks. |
 | **`binance_futures`**| **Source** | `50054` | `51054` | Connects to Binance Futures WS. Streams raw trades. |
 | **`persistence`** | **Consumer** | `50052` | `51052` | Subscribes to an upstream source and writes data to **InfluxDB**. |
-| **`raven_bars`** | **Aggregator**| `50053` | `51053` | Subscribes to trades, aggregates them into **1m Candles**, and streams them out. |
+| **`raven_timebar_minutes`** | **Aggregator**| `50053` | `51053` | Subscribes to trades, aggregates them into **1m Candles**, and streams them out. |
 | **`raven_tibs`** | **Aggregator**| `50055` | `51055` | Subscribes to trades, runs **Tick Imbalance** logic, and streams TIBs out. |
 | **`ravenctl`** | **Control** | N/A | N/A | CLI tool to start/stop collections and check status on any service. |
 

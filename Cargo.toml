@@ -20,8 +20,8 @@ name = "persistence"
 path = "src/bin/persistence.rs"
 
 [[bin]]
-name = "raven_bars"
-path = "src/bin/raven_bars.rs"
+name = "raven_timebar_minutes"
+path = "src/bin/raven_timebar_minutes.rs"
 
 [[bin]]
 name = "raven_tibs"

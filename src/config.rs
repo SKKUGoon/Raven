@@ -16,7 +16,7 @@ pub struct ServerConfig {
     pub port_spot: u16,
     pub port_futures: u16,
     pub port_persistence: u16,
-    pub port_bars: u16,
+    pub port_timebar_minutes: u16,
     pub port_tibs: u16,
 }
 

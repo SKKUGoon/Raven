@@ -54,16 +54,16 @@ lazy_static! {
     )
     .unwrap();
 
-    // Bars Feature Metrics
-    pub static ref BARS_GENERATED: IntCounterVec = register_int_counter_vec!(
-        "raven_bars_generated_total",
-        "Total number of bars generated",
+    // TimeBar Minutes Feature Metrics
+    pub static ref TIMEBAR_MINUTES_GENERATED: IntCounterVec = register_int_counter_vec!(
+        "raven_timebar_minutes_generated_total",
+        "Total number of timebar minutes generated",
         &["symbol"]
     )
     .unwrap();
-    pub static ref BARS_ACTIVE_AGGREGATIONS: IntGauge = register_int_gauge!(
-        "raven_bars_active_aggregations",
-        "Number of active bar aggregation tasks"
+    pub static ref TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS: IntGauge = register_int_gauge!(
+        "raven_timebar_minutes_active_aggregations",
+        "Number of active timebar minutes aggregation tasks"
     )
     .unwrap();
 }

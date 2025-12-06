@@ -10,7 +10,7 @@ struct Cli {
     #[arg(long, default_value = "http://localhost:50051")]
     host: String,
 
-    /// Target service: spot, futures, persistence, bars, tibs
+    /// Target service: binance_spot, binance_futures, persistence, timebar_minutes, tibs
     #[arg(short, long)]
     service: Option<String>,
 
@@ -55,10 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = if let Some(s) = cli.service {
         let host_ip = &settings.server.host;
         match s.as_str() {
-            "spot" => format!("http://{}:{}", host_ip, settings.server.port_spot),
-            "futures" => format!("http://{}:{}", host_ip, settings.server.port_futures),
+            "binance_spot" => format!("http://{}:{}", host_ip, settings.server.port_spot),
+            "binance_futures" => format!("http://{}:{}", host_ip, settings.server.port_futures),
             "persistence" => format!("http://{}:{}", host_ip, settings.server.port_persistence),
-            "bars" => format!("http://{}:{}", host_ip, settings.server.port_bars),
+            "timebar_minutes" => format!(
+                "http://{}:{}",
+                host_ip, settings.server.port_timebar_minutes
+            ),
             "tibs" => format!("http://{}:{}", host_ip, settings.server.port_tibs),
             _ => {
                 eprintln!("Unknown service: {s}. Using default host.");

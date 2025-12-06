@@ -1,5 +1,5 @@
 use raven::config::Settings;
-use raven::features::tibs;
+use raven::features::timebar_minutes;
 use raven::service::RavenService;
 use std::collections::HashMap;
 
@@ -16,7 +16,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::fmt().with_max_level(log_level).init();
 
-    let addr = format!("{}:{}", settings.server.host, settings.server.port_tibs).parse()?;
+    let addr = format!(
+        "{}:{}",
+        settings.server.host, settings.server.port_timebar_minutes
+    )
+    .parse()?;
 
     let mut upstreams = HashMap::new();
     // Standard names
@@ -35,8 +39,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     );
 
-    let service_impl = tibs::new(upstreams, settings.tibs.clone());
-    let raven = RavenService::new("RavenTibs", service_impl.clone());
+    let service_impl = timebar_minutes::new(upstreams);
+    let raven = RavenService::new("RavenTimeBarMinutes", service_impl.clone());
 
     raven.serve_with_market_data(addr, service_impl).await?;
 

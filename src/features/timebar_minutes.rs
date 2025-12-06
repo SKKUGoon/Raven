@@ -2,14 +2,15 @@ use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
 use crate::service::{StreamManager, StreamWorker};
-use crate::telemetry::{BARS_ACTIVE_AGGREGATIONS, BARS_GENERATED};
+use crate::telemetry::{TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS, TIMEBAR_MINUTES_GENERATED};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::{Request, Status};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[derive(Clone, Debug)]
-struct Bar {
+struct TimeBarMinute {
     symbol: String,
     open: f64,
     high: f64,
@@ -19,7 +20,7 @@ struct Bar {
     start_time: i64,
 }
 
-impl Bar {
+impl TimeBarMinute {
     fn new(symbol: String, price: f64, quantity: f64, timestamp: i64) -> Self {
         Self {
             symbol,
@@ -32,7 +33,7 @@ impl Bar {
         }
     }
 
-    fn update(&mut self, price: f64, quantity: f64, timestamp: i64) -> Option<Bar> {
+    fn update(&mut self, price: f64, quantity: f64, timestamp: i64) -> Option<TimeBarMinute> {
         let period_start = timestamp - (timestamp % 60000);
 
         if period_start > self.start_time {
@@ -73,46 +74,77 @@ impl Bar {
 }
 
 #[derive(Clone)]
-pub struct BarsWorker {
-    upstream_url: String,
+pub struct TimeBarMinutesWorker {
+    upstreams: HashMap<String, String>,
 }
 
 #[tonic::async_trait]
-impl StreamWorker for BarsWorker {
-    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
-        run_aggregation(self.upstream_url.clone(), symbol, tx).await;
+impl StreamWorker for TimeBarMinutesWorker {
+    async fn run(
+        &self,
+        symbol_key: String,
+        tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
+    ) {
+        let parts: Vec<&str> = symbol_key.split(':').collect();
+        let (symbol, exchange) = if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            (parts[0], "BINANCE_SPOT")
+        };
+
+        // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
+        let upstream_url = if let Some(url) = self.upstreams.get(exchange) {
+            url.clone()
+        } else {
+            warn!(
+                "No upstream configured for exchange '{}'. Defaulting to BINANCE_SPOT if available.",
+                exchange
+            );
+            if let Some(url) = self.upstreams.get("BINANCE_SPOT") {
+                url.clone()
+            } else {
+                error!(
+                    "No upstream configuration found for BINANCE_SPOT. Cannot start aggregation for {}",
+                    symbol_key
+                );
+                return;
+            }
+        };
+
+        run_aggregation(upstream_url, symbol.to_string(), symbol_key, tx).await;
     }
 }
 
-pub type BarService = StreamManager<BarsWorker>;
+pub type TimeBarMinutesService = StreamManager<TimeBarMinutesWorker>;
 
-pub fn new(upstream_url: String) -> BarService {
-    let worker = BarsWorker { upstream_url };
+pub fn new(upstreams: HashMap<String, String>) -> TimeBarMinutesService {
+    let worker = TimeBarMinutesWorker { upstreams };
     StreamManager::new(Arc::new(worker), 100, true)
 }
 
 async fn run_aggregation(
     upstream_url: String,
-    symbol: String,
+    subscription_symbol: String,
+    output_symbol: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
-    info!("Starting bar aggregation for {}", symbol);
-    BARS_ACTIVE_AGGREGATIONS.inc();
-
-    // Strip exchange suffix if present for subscription (e.g. "BTCUSDT:SPOT" -> "BTCUSDT")
-    let subscription_symbol = symbol.split(':').next().unwrap_or(&symbol).to_string();
+    info!(
+        "Starting timebar aggregation for {} using upstream {}",
+        output_symbol, upstream_url
+    );
+    TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS.inc();
 
     let mut client = match MarketDataClient::connect(upstream_url).await {
         Ok(c) => c,
         Err(e) => {
             error!("Failed to connect to upstream: {}", e);
-            BARS_ACTIVE_AGGREGATIONS.dec();
+            TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
 
     let request = Request::new(MarketDataRequest {
-        symbol: subscription_symbol,
+        symbol: subscription_symbol.clone(),
         data_type: DataType::Trade as i32,
     });
 
@@ -120,21 +152,23 @@ async fn run_aggregation(
         Ok(res) => res.into_inner(),
         Err(e) => {
             error!("Failed to subscribe to trades: {}", e);
-            BARS_ACTIVE_AGGREGATIONS.dec();
+            TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS.dec();
             return;
         }
     };
 
-    let mut current_bar: Option<Bar> = None;
+    let mut current_bar: Option<TimeBarMinute> = None;
 
     while let Ok(Some(msg)) = stream.message().await {
         if let Some(market_data_message::Data::Trade(trade)) = msg.data {
             if let Some(bar) = &mut current_bar {
                 if let Some(completed) = bar.update(trade.price, trade.quantity, trade.timestamp) {
                     // Emit completed bar
-                    BARS_GENERATED.with_label_values(&[&symbol]).inc();
+                    TIMEBAR_MINUTES_GENERATED
+                        .with_label_values(&[&output_symbol])
+                        .inc();
                     let candle_msg = MarketDataMessage {
-                        exchange: "raven_bars".to_string(),
+                        exchange: "raven_timebar_minutes".to_string(),
                         data: Some(market_data_message::Data::Candle(completed.to_proto())),
                     };
                     if tx.send(Ok(candle_msg)).is_err() {
@@ -142,8 +176,8 @@ async fn run_aggregation(
                     }
                 }
             } else {
-                current_bar = Some(Bar::new(
-                    symbol.clone(),
+                current_bar = Some(TimeBarMinute::new(
+                    subscription_symbol.clone(),
                     trade.price,
                     trade.quantity,
                     trade.timestamp,
@@ -151,6 +185,6 @@ async fn run_aggregation(
             }
         }
     }
-    info!("Aggregation task ended for {}", symbol);
-    BARS_ACTIVE_AGGREGATIONS.dec();
+    info!("Aggregation task ended for {}", output_symbol);
+    TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS.dec();
 }

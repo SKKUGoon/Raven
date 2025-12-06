@@ -3,7 +3,7 @@ host = "0.0.0.0"
 port_spot = 50051
 port_futures = 50054
 port_persistence = 50052
-port_bars = 50053
+port_timebar_minutes = 50053
 port_tibs = 50055
 
 [tibs]
