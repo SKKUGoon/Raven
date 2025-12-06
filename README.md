@@ -1,105 +1,163 @@
 # Raven
 
-Raven is a Rust-powered market data platform built around two CLIs:
-- `raven` runs the streaming server that exposes market data over gRPC and manages collector lifecycles.
-- `ravenctl` is the control-plane client used to start, stop, and inspect collectors from an operator shell.
+Raven is a high-performance, modular market data platform written in Rust. It is designed to collect, process, and persist financial market data using a microservices architecture.
 
-## Using Raven and Ravenctl
+## Prerequisites
 
-### Install the binaries
-Option A: use a published release.
+Before running the Raven binaries, ensure your environment meets the following requirements.
+
+### 1. External Services (Databases)
+
+Raven requires two database services to be running and accessible.
+
+| Service | Role | Requirement | Auth |
+| :--- | :--- | :--- | :--- |
+| **InfluxDB v2.x** | Tick Persistence | Create an **Organization** and a **Bucket** (e.g., `raven-prod`). | API Token with write access. |
+| **PostgreSQL + TimescaleDB** | Bar Persistence | PostgreSQL server with the `timescaledb` extension installed. | Standard Postgres credentials. |
+
+### 2. Database Initialization
+
+You must initialize the database schemas before starting the persistence services.
+
+*   **InfluxDB**: Schema-on-write. No initialization required beyond bucket creation.
+*   **TimescaleDB**: Run the initialization script to create the necessary hypertables.
+    ```bash
+    # Run this against your Postgres database
+    psql -d raven -f sql/create_bars_table.sql
+    ```
+
+### 3. System Libraries
+
+The binaries are dynamically linked. Ensure the following libraries are installed:
+*   **Linux**: `openssl` (libssl-dev / openssl-devel)
+*   **macOS**: Standard system libraries (SecureTransport/LibreSSL)
+
+### 4. Network Access
+
+*   **Outbound**: Source services need direct internet access to:
+    *   `wss://stream.binance.com:9443`
+    *   `wss://fstream.binance.com`
+*   **Inbound**: gRPC ports (default `500xx`) must be open between services if running on different machines.
+
+---
+
+## Configuration
+
+Raven uses a hierarchical configuration system.
+
+1.  **File (`prod.toml`)**: Create a `prod.toml` in the working directory (set `RUN_MODE=prod` to use).
+    ```toml
+    [server]
+    host = "0.0.0.0"
+    port_binance_spot = 50001
+    # ... see src/config.rs for all ports
+
+    [influx]
+    url = "http://localhost:8086"
+    token = "my-token"
+    org = "my-org"
+    bucket = "raven-prod"
+
+    [timescale]
+    url = "postgres://user:pass@localhost:5432/raven"
+    ```
+
+2.  **Environment Variables**: Override any setting using `RAVEN__` prefix (double underscore separator).
+    *   `RAVEN__INFLUX__TOKEN=my-secret-token`
+    *   `RAVEN__SERVER__PORT_BINANCE_SPOT=50099`
+
+---
+
+## Services & Binaries
+
+Raven consists of several specialized binaries. Below is a guide to each service and how to use it.
+
+### 1. Sources (Data Collectors)
+
+These services connect to external exchanges via WebSocket and stream raw trade data over gRPC.
+
+| Binary | Description | Default Port |
+| :--- | :--- | :--- |
+| `binance_spot` | Connects to Binance Spot API. | `50001` |
+| `binance_futures` | Connects to Binance Futures API. | `50002` |
+
+**Usage:**
 ```bash
-VERSION=v0.1.5
-wget https://github.com/skkugoon/raven/releases/download/${VERSION}/raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
-tar -xzf raven-${VERSION}-x86_64-unknown-linux-gnu.tar.gz
-sudo mv raven ravenctl /usr/local/bin
-raven -V && ravenctl --version
-```
+# Start the spot collector
+./binance_spot
 
-Option B: build locally.
+# Start the futures collector
+./binance_futures
+```
+*Note: These services do not start collecting data until requested by a downstream consumer or via `ravenctl`.*
+
+### 2. Aggregators (Processors)
+
+These services subscribe to **Sources**, process the data (e.g., build candles), and stream the results.
+
+| Binary | Description | Default Port |
+| :--- | :--- | :--- |
+| `raven_timebar` | Aggregates trades into time-based candles (e.g., 1m, 1h). | `50051` |
+| `raven_tibs` | Aggregates trades into Tick Imbalance Bars (TIBs). | `50052` |
+
+**Usage:**
 ```bash
-cargo build --release --bins
-cp target/release/raven target/release/ravenctl /usr/local/bin
+# Start 1-minute time bars (default)
+./raven_timebar
+
+# Start 5-minute time bars
+./raven_timebar --seconds 300
+
+# Start TIBs with custom parameters
+./raven_tibs --initial-size 1000.0 --alpha-size 0.1
 ```
 
-Yes, the system is **fully integrated**. We have successfully transitioned from a monolithic logic to a **modular, microservices-based architecture**.
+### 3. Persistence (Consumers)
 
-Here is the complete system overview:
+These services subscribe to **Sources** or **Aggregators** and write data to the databases.
 
-### **1. System Architecture**
-The system is composed of specialized binaries that communicate via **gRPC**. They all share the same protocol definitions (`proto/`) and service boilerplate (`src/service/`), ensuring compatibility.
+| Binary | Description | Default Port | Target DB |
+| :--- | :--- | :--- | :--- |
+| `tick_persistence` | Writes raw trades to InfluxDB. | `50091` | InfluxDB |
+| `bar_persistence` | Writes aggregated bars (Time & TIBs) to TimescaleDB. | `50092` | TimescaleDB |
 
-```mermaid
-graph TD
-    ctl[ravenctl] -- gRPC Control --> spot[binance_spot]
-    ctl -- gRPC Control --> fut[binance_futures]
-    ctl -- gRPC Control --> bars[raven_timebar_minutes]
-    ctl -- gRPC Control --> tibs[raven_tibs]
-    ctl -- gRPC Control --> persist[persistence]
-
-    subgraph Sources
-    spot -- WebSocket --> BinanceSpotAPI
-    fut -- WebSocket --> BinanceFuturesAPI
-    end
-
-    subgraph Processors
-    bars -- gRPC Data Stream --> spot
-    tibs -- gRPC Data Stream --> spot
-    persist -- gRPC Data Stream --> spot
-    end
-    
-    note[Note: Processors can connect to ANY upstream source via UPSTREAM_URL]
-```
-
-### **2. Component Breakdown**
-
-| Service | Role | Port (gRPC) | Port (Metrics) | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| **`binance_spot`** | **Source** | `50051` | `51051` | Connects to Binance Spot WS. Streams raw trades/orderbooks. |
-| **`binance_futures`**| **Source** | `50054` | `51054` | Connects to Binance Futures WS. Streams raw trades. |
-| **`persistence`** | **Consumer** | `50052` | `51052` | Subscribes to an upstream source and writes data to **InfluxDB**. |
-| **`raven_timebar_minutes`** | **Aggregator**| `50053` | `51053` | Subscribes to trades, aggregates them into **1m Candles**, and streams them out. |
-| **`raven_tibs`** | **Aggregator**| `50055` | `51055` | Subscribes to trades, runs **Tick Imbalance** logic, and streams TIBs out. |
-| **`ravenctl`** | **Control** | N/A | N/A | CLI tool to start/stop collections and check status on any service. |
-
-### **3. Integration Logic**
-The integration works through a **demand-driven chain**:
-1.  **Control**: You tell a downstream service (e.g., `raven_tibs`) to start collecting `BTCUSDT`.
-2.  **Propagation**: `raven_tibs` automatically connects to its configured **Upstream** (e.g., `binance_spot`) and sends a gRPC subscription request.
-3.  **Source Activation**: `binance_spot` receives the subscription. If it's not already connected to the WebSocket for that symbol, it connects immediately.
-4.  **Data Flow**:
-    *   Binance WS sends a trade.
-    *   `binance_spot` parses it and streams it to `raven_tibs`.
-    *   `raven_tibs` updates its internal state (Theta, EWMA).
-    *   When a bar closes, `raven_tibs` streams the bar to any of *its* clients.
-
-### **4. Operational Guide**
-
-To run the full "Spot -> TIBs" pipeline:
-
-**Terminal 1: Start the Source (Binance Spot)**
+**Usage:**
 ```bash
-cargo run --bin binance_spot
+./tick_persistence
+./bar_persistence
 ```
 
-**Terminal 2: Start the Aggregator (TIBs)**
-*Points to binance_spot by default via `UPSTREAM_URL`*
-```bash
-export UPSTREAM_URL=http://localhost:50051
-cargo run --bin raven_tibs
-```
+### 4. Control Plane (`ravenctl`)
 
-**Terminal 3: Control the System**
-*Tell TIBs to start. This implicitly starts Spot data collection.*
-```bash
-cargo run --bin ravenctl -- --host http://localhost:50055 start --symbol BTCUSDT
-```
+The Command Line Interface (CLI) for managing the Raven cluster. Use this to start/stop collections and check system status.
 
-**Terminal 4: Monitor**
-```bash
-# Check TIBs metrics
-curl -s http://localhost:51055/metrics | grep raven_tibs
+**Common Commands:**
 
-# Check Spot metrics (should show active connection)
-curl -s http://localhost:51051/metrics | grep raven_binance
-```
+| Action | Command | Description |
+| :--- | :--- | :--- |
+| **Check Status** | `./ravenctl status` | Checks health of all configured services. |
+| **List Active** | `./ravenctl list` | Lists all active subscriptions on the target host. |
+| **Start Spot** | `./ravenctl start --symbol BTCUSDT --service binance_spot` | Starts collecting BTCUSDT trades from Binance Spot. |
+| **Start Futures** | `./ravenctl start --symbol BTCUSDT --service binance_futures` | Starts collecting BTCUSDT trades from Binance Futures. |
+| **Start 1m Bars** | `./ravenctl start --symbol BTCUSDT --service timebar` | Starts 1m candle generation (auto-starts Spot source). |
+| **Start TIBs** | `./ravenctl start --symbol BTCUSDT --service tibs` | Starts TIB generation (auto-starts Spot source). |
+| **Stop** | `./ravenctl stop --symbol BTCUSDT` | Stops collection for a symbol. |
+| **Stop All** | `./ravenctl stop-all` | Emergency stop for all collections. |
+
+**Example Workflow:**
+
+1.  Start the services (e.g., in separate terminals or via systemd).
+    ```bash
+    ./binance_spot
+    ./raven_timebar
+    ```
+2.  Use `ravenctl` to start a data feed.
+    ```bash
+    # This tells raven_timebar to start.
+    # raven_timebar will automatically ask binance_spot to start streaming BTCUSDT.
+    ./ravenctl start --symbol BTCUSDT --service timebar
+    ```
+3.  Check the status.
+    ```bash
+    ./ravenctl list --service timebar
+    ```

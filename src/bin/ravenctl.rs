@@ -10,7 +10,7 @@ struct Cli {
     #[arg(long, default_value = "http://localhost:50051")]
     host: String,
 
-    /// Target service: binance_spot, binance_futures, persistence, timebar_minutes, tibs
+    /// Target service: binance_spot, binance_futures, tick_persistence, bar_persistence, timebar_minutes, tibs
     #[arg(short, long)]
     service: Option<String>,
 
@@ -38,6 +38,8 @@ enum Commands {
     StopAll,
     /// List active collections
     List,
+    /// Check status of all services
+    Status,
 }
 
 #[tokio::main]
@@ -52,13 +54,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(1);
     });
 
+    // Handle Status command separately as it iterates all services
+    if let Commands::Status = cli.command {
+        check_status(&settings).await;
+        return Ok(());
+    }
+
     let host = if let Some(s) = cli.service {
         let host_ip = &settings.server.host;
         match s.as_str() {
-            "binance_spot" => format!("http://{}:{}", host_ip, settings.server.port_spot),
-            "binance_futures" => format!("http://{}:{}", host_ip, settings.server.port_futures),
-            "persistence" => format!("http://{}:{}", host_ip, settings.server.port_persistence),
-            "timebar_minutes" => format!(
+            "binance_spot" => format!("http://{}:{}", host_ip, settings.server.port_binance_spot),
+            "binance_futures" => format!(
+                "http://{}:{}",
+                host_ip, settings.server.port_binance_futures
+            ),
+            "tick_persistence" | "persistence" => {
+                format!(
+                    "http://{}:{}",
+                    host_ip, settings.server.port_tick_persistence
+                )
+            }
+            "bar_persistence" => {
+                format!(
+                    "http://{}:{}",
+                    host_ip, settings.server.port_bar_persistence
+                )
+            }
+            "timebar" | "timebar_minutes" => format!(
                 "http://{}:{}",
                 host_ip, settings.server.port_timebar_minutes
             ),
@@ -112,7 +134,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
         }
+        Commands::Status => unreachable!(), // Handled above
     }
 
     Ok(())
+}
+
+async fn check_status(settings: &Settings) {
+    let services = vec![
+        ("Binance Spot", settings.server.port_binance_spot),
+        ("Binance Futures", settings.server.port_binance_futures),
+        ("TimeBar", settings.server.port_timebar_minutes),
+        ("Tibs", settings.server.port_tibs),
+        ("Tick Persistence", settings.server.port_tick_persistence),
+        ("Bar Persistence", settings.server.port_bar_persistence),
+    ];
+
+    println!("{:<20} | {:<10} | {:<10}", "Service", "Port", "Status");
+    println!("{:-<20}-|-{:-<10}-|-{:-<10}", "", "", "");
+
+    for (name, port) in services {
+        let addr = format!("http://{}:{}", settings.server.host, port);
+        let status = match ControlClient::connect(addr).await {
+            Ok(mut client) => {
+                // Try a simple request to verify health
+                match client.list_collections(ListRequest {}).await {
+                    Ok(_) => "\x1b[32mHEALTHY\x1b[0m",    // Green
+                    Err(_) => "\x1b[31mUNHEALTHY\x1b[0m", // Red
+                }
+            }
+            Err(_) => "\x1b[31mUNHEALTHY\x1b[0m", // Red
+        };
+        println!("{name:<20} | {port:<10} | {status}");
+    }
 }

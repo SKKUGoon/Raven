@@ -16,12 +16,16 @@ name = "binance_futures"
 path = "src/bin/binance_futures.rs"
 
 [[bin]]
-name = "persistence"
-path = "src/bin/persistence.rs"
+name = "tick_persistence"
+path = "src/bin/tick_persistence.rs"
 
 [[bin]]
-name = "raven_timebar_minutes"
-path = "src/bin/raven_timebar_minutes.rs"
+name = "bar_persistence"
+path = "src/bin/bar_persistence.rs"
+
+[[bin]]
+name = "raven_timebar"
+path = "src/bin/raven_timebar.rs"
 
 [[bin]]
 name = "raven_tibs"
@@ -47,6 +51,7 @@ futures-util = "0.3"
 
 # Database
 influxdb2 = "0.5"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
 
 # Serialization
 serde = { version = "1.0.225", features = ["derive"] }

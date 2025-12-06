@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(log_level)
         .init();
 
-    let addr = format!("{}:{}", settings.server.host, settings.server.port_spot).parse()?;
+    let addr = format!("{}:{}", settings.server.host, settings.server.port_binance_spot).parse()?;
     let service_impl = spot::new();
     let raven = RavenService::new("BinanceSpot", service_impl.clone());
 

@@ -195,4 +195,5 @@ logs/
 data/
 *.log
 *.json
-.DS_Storeprod.toml
+.DS_Store
+prod.toml

@@ -1,2 +1,2 @@
 pub mod tibs;
-pub mod timebar_minutes;
+pub mod timebar;

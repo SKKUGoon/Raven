@@ -1,11 +1,51 @@
+use clap::Parser;
 use raven::config::Settings;
 use raven::features::tibs;
 use raven::service::RavenService;
 use std::collections::HashMap;
 
+#[derive(Parser, Debug)]
+#[command(name = "raven_tibs")]
+#[command(about = "Tick Imbalance Bar aggregator", long_about = None)]
+struct Cli {
+    #[arg(long)]
+    initial_size: Option<f64>,
+    #[arg(long)]
+    initial_p_buy: Option<f64>,
+    #[arg(long)]
+    alpha_size: Option<f64>,
+    #[arg(long)]
+    alpha_imbl: Option<f64>,
+    #[arg(long)]
+    size_min: Option<f64>,
+    #[arg(long)]
+    size_max: Option<f64>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let settings = Settings::new()?;
+    let cli = Cli::parse();
+    let mut settings = Settings::new()?;
+
+    // Override settings with CLI arguments if provided
+    if let Some(v) = cli.initial_size {
+        settings.tibs.initial_size = v;
+    }
+    if let Some(v) = cli.initial_p_buy {
+        settings.tibs.initial_p_buy = v;
+    }
+    if let Some(v) = cli.alpha_size {
+        settings.tibs.alpha_size = v;
+    }
+    if let Some(v) = cli.alpha_imbl {
+        settings.tibs.alpha_imbl = v;
+    }
+    if let Some(v) = cli.size_min {
+        settings.tibs.size_min = v;
+    }
+    if let Some(v) = cli.size_max {
+        settings.tibs.size_max = v;
+    }
 
     let log_level = match settings.logging.level.to_lowercase().as_str() {
         "debug" => tracing::Level::DEBUG,
@@ -24,14 +64,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "BINANCE_SPOT".to_string(),
         format!(
             "http://{}:{}",
-            settings.server.host, settings.server.port_spot
+            settings.server.host, settings.server.port_binance_spot
         ),
     );
     upstreams.insert(
         "BINANCE_FUTURES".to_string(),
         format!(
             "http://{}:{}",
-            settings.server.host, settings.server.port_futures
+            settings.server.host, settings.server.port_binance_futures
         ),
     );
 

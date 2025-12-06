@@ -10,7 +10,7 @@ use tonic::{Request, Status};
 use tracing::{error, info, warn};
 
 #[derive(Clone, Debug)]
-struct TimeBarMinute {
+struct TimeBar {
     symbol: String,
     open: f64,
     high: f64,
@@ -18,10 +18,23 @@ struct TimeBarMinute {
     close: f64,
     volume: f64,
     start_time: i64,
+    buy_ticks: u64,
+    sell_ticks: u64,
+    total_ticks: u64,
+    interval_seconds: u64,
 }
 
-impl TimeBarMinute {
-    fn new(symbol: String, price: f64, quantity: f64, timestamp: i64) -> Self {
+impl TimeBar {
+    fn new(
+        symbol: String,
+        price: f64,
+        quantity: f64,
+        timestamp: i64,
+        side: &str,
+        interval_seconds: u64,
+    ) -> Self {
+        let (buy_ticks, sell_ticks) = if side == "buy" { (1, 0) } else { (0, 1) };
+        let interval_ms = (interval_seconds * 1000) as i64;
         Self {
             symbol,
             open: price,
@@ -29,12 +42,24 @@ impl TimeBarMinute {
             low: price,
             close: price,
             volume: quantity,
-            start_time: timestamp - (timestamp % 60000), // Snap to minute
+            start_time: timestamp - (timestamp % interval_ms),
+            buy_ticks,
+            sell_ticks,
+            total_ticks: 1,
+            interval_seconds,
         }
     }
 
-    fn update(&mut self, price: f64, quantity: f64, timestamp: i64) -> Option<TimeBarMinute> {
-        let period_start = timestamp - (timestamp % 60000);
+    fn update(
+        &mut self,
+        price: f64,
+        quantity: f64,
+        timestamp: i64,
+        side: &str,
+    ) -> Option<TimeBar> {
+        let interval_ms = (self.interval_seconds * 1000) as i64;
+        let period_start = timestamp - (timestamp % interval_ms);
+        let (is_buy, is_sell) = if side == "buy" { (1, 0) } else { (0, 1) };
 
         if period_start > self.start_time {
             // New bar started, return completed bar
@@ -47,6 +72,9 @@ impl TimeBarMinute {
             self.low = price;
             self.close = price;
             self.volume = quantity;
+            self.buy_ticks = is_buy;
+            self.sell_ticks = is_sell;
+            self.total_ticks = 1;
 
             Some(closed_bar)
         } else {
@@ -55,6 +83,9 @@ impl TimeBarMinute {
             self.low = f64::min(self.low, price);
             self.close = price;
             self.volume += quantity;
+            self.buy_ticks += is_buy;
+            self.sell_ticks += is_sell;
+            self.total_ticks += 1;
             None
         }
     }
@@ -68,18 +99,23 @@ impl TimeBarMinute {
             low: self.low,
             close: self.close,
             volume: self.volume,
-            interval: "1m".to_string(),
+            interval: format!("{}s", self.interval_seconds),
+            buy_ticks: self.buy_ticks,
+            sell_ticks: self.sell_ticks,
+            total_ticks: self.total_ticks,
+            theta: 0.0,
         }
     }
 }
 
 #[derive(Clone)]
-pub struct TimeBarMinutesWorker {
+pub struct TimeBarWorker {
     upstreams: HashMap<String, String>,
+    interval_seconds: u64,
 }
 
 #[tonic::async_trait]
-impl StreamWorker for TimeBarMinutesWorker {
+impl StreamWorker for TimeBarWorker {
     async fn run(
         &self,
         symbol_key: String,
@@ -111,14 +147,24 @@ impl StreamWorker for TimeBarMinutesWorker {
             }
         };
 
-        run_aggregation(upstream_url, symbol.to_string(), symbol_key, tx).await;
+        run_aggregation(
+            upstream_url,
+            symbol.to_string(),
+            symbol_key,
+            tx,
+            self.interval_seconds,
+        )
+        .await;
     }
 }
 
-pub type TimeBarMinutesService = StreamManager<TimeBarMinutesWorker>;
+pub type TimeBarService = StreamManager<TimeBarWorker>;
 
-pub fn new(upstreams: HashMap<String, String>) -> TimeBarMinutesService {
-    let worker = TimeBarMinutesWorker { upstreams };
+pub fn new(upstreams: HashMap<String, String>, interval_seconds: u64) -> TimeBarService {
+    let worker = TimeBarWorker {
+        upstreams,
+        interval_seconds,
+    };
     StreamManager::new(Arc::new(worker), 100, true)
 }
 
@@ -127,10 +173,11 @@ async fn run_aggregation(
     subscription_symbol: String,
     output_symbol: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
+    interval_seconds: u64,
 ) {
     info!(
-        "Starting timebar aggregation for {} using upstream {}",
-        output_symbol, upstream_url
+        "Starting timebar aggregation ({}s) for {} using upstream {}",
+        interval_seconds, output_symbol, upstream_url
     );
     TIMEBAR_MINUTES_ACTIVE_AGGREGATIONS.inc();
 
@@ -157,18 +204,20 @@ async fn run_aggregation(
         }
     };
 
-    let mut current_bar: Option<TimeBarMinute> = None;
+    let mut current_bar: Option<TimeBar> = None;
 
     while let Ok(Some(msg)) = stream.message().await {
         if let Some(market_data_message::Data::Trade(trade)) = msg.data {
             if let Some(bar) = &mut current_bar {
-                if let Some(completed) = bar.update(trade.price, trade.quantity, trade.timestamp) {
+                if let Some(completed) =
+                    bar.update(trade.price, trade.quantity, trade.timestamp, &trade.side)
+                {
                     // Emit completed bar
                     TIMEBAR_MINUTES_GENERATED
                         .with_label_values(&[&output_symbol])
                         .inc();
                     let candle_msg = MarketDataMessage {
-                        exchange: "raven_timebar_minutes".to_string(),
+                        exchange: "raven_timebar".to_string(),
                         data: Some(market_data_message::Data::Candle(completed.to_proto())),
                     };
                     if tx.send(Ok(candle_msg)).is_err() {
@@ -176,11 +225,13 @@ async fn run_aggregation(
                     }
                 }
             } else {
-                current_bar = Some(TimeBarMinute::new(
+                current_bar = Some(TimeBar::new(
                     subscription_symbol.clone(),
                     trade.price,
                     trade.quantity,
                     trade.timestamp,
+                    &trade.side,
+                    interval_seconds,
                 ));
             }
         }

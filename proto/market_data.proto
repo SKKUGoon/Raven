@@ -53,6 +53,10 @@ message Candle {
     double close = 6;
     double volume = 7;
     string interval = 8;
+    uint64 buy_ticks = 9;
+    uint64 sell_ticks = 10;
+    uint64 total_ticks = 11;
+    double theta = 12;
 }
 
 message FundingRate {

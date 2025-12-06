@@ -1,4 +1,4 @@
-use config::{Config, ConfigError, File, Environment};
+use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
 use std::env;
 
@@ -7,15 +7,17 @@ pub struct Settings {
     pub server: ServerConfig,
     pub tibs: TibsConfig,
     pub influx: InfluxConfig,
+    pub timescale: TimescaleConfig,
     pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
     pub host: String,
-    pub port_spot: u16,
-    pub port_futures: u16,
-    pub port_persistence: u16,
+    pub port_binance_spot: u16,
+    pub port_binance_futures: u16,
+    pub port_tick_persistence: u16,
+    pub port_bar_persistence: u16,
     pub port_timebar_minutes: u16,
     pub port_tibs: u16,
 }
@@ -40,6 +42,11 @@ pub struct InfluxConfig {
     pub batch_size: usize,
     #[serde(default = "default_batch_interval")]
     pub batch_interval_ms: u64,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct TimescaleConfig {
+    pub url: String,
 }
 
 fn default_batch_size() -> usize {
@@ -76,4 +83,3 @@ impl Settings {
         s.try_deserialize()
     }
 }
-

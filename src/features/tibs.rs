@@ -95,6 +95,9 @@ impl TickImbalanceBar {
     }
 
     fn to_proto(&self) -> Candle {
+        let buy_ticks = ((self.tick_size as i64 + self.theta as i64) / 2) as u64;
+        let sell_ticks = ((self.tick_size as i64 - self.theta as i64) / 2) as u64;
+
         Candle {
             symbol: self.symbol.clone(),
             timestamp: self.open_time.timestamp_millis(),
@@ -104,6 +107,10 @@ impl TickImbalanceBar {
             close: self.close,
             volume: self.trade_size,
             interval: "tib".to_string(),
+            buy_ticks,
+            sell_ticks,
+            total_ticks: self.tick_size as u64,
+            theta: self.theta as f64,
         }
     }
 }

@@ -1,10 +1,11 @@
 [server]
 host = "0.0.0.0"
-port_spot = 50051
-port_futures = 50054
-port_persistence = 50052
-port_timebar_minutes = 50053
-port_tibs = 50055
+port_binance_spot = 50001
+port_binance_futures = 50002
+port_timebar_minutes = 50051
+port_tibs = 50052
+port_tick_persistence = 50091
+port_bar_persistence = 50092
 
 [tibs]
 initial_size = 100.0
@@ -20,6 +21,8 @@ token = "prod-token"
 org = "prod-org"
 bucket = "raven-prod"
 
+[timescale]
+url = "postgres://user:password@db-host:5432/raven"
+
 [logging]
 level = "info"
-
