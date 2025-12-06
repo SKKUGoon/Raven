@@ -1,17 +1,12 @@
-// Project Raven - Core Library
-
-pub mod clients;
-pub mod common;
-pub mod controller;
-pub mod server;
-
-// Generated protobuf modules
 pub mod proto {
     tonic::include_proto!("raven");
 }
 
-// Re-export commonly used types
-pub use common::{
-    current_timestamp_millis, ConfigLoader, ConfigUtils, RavenError, RavenResult, RuntimeConfig,
-};
-pub use proto::*;
+pub mod config;
+pub mod db;
+pub mod source;
+pub mod features;
+pub mod service;
+pub mod telemetry;
+// pub mod config; // To be implemented
+// pub mod utils; // To be implemented

@@ -8,16 +8,32 @@ name = "raven"
 path = "src/lib.rs"
 
 [[bin]]
-name = "raven"
-path = "src/bin/raven.rs"
+name = "binance_spot"
+path = "src/bin/binance_spot.rs"
+
+[[bin]]
+name = "binance_futures"
+path = "src/bin/binance_futures.rs"
+
+[[bin]]
+name = "tick_persistence"
+path = "src/bin/tick_persistence.rs"
+
+[[bin]]
+name = "bar_persistence"
+path = "src/bin/bar_persistence.rs"
+
+[[bin]]
+name = "raven_timebar"
+path = "src/bin/raven_timebar.rs"
+
+[[bin]]
+name = "raven_tibs"
+path = "src/bin/raven_tibs.rs"
 
 [[bin]]
 name = "ravenctl"
 path = "src/bin/ravenctl.rs"
-
-[[bin]]
-name = "raven_client_bars"
-path = "src/bin/raven_client_bars.rs"
 
 [dependencies]
 # gRPC and Protocol Buffers
@@ -28,13 +44,14 @@ prost-types = "0.14.1"
 
 # Async runtime
 tokio = { version = "1.0", features = ["full"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["sync"] }
 async-stream = "0.3"
 async-trait = "0.1"
 futures-util = "0.3"
 
 # Database
 influxdb2 = "0.5"
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid"] }
 
 # Serialization
 serde = { version = "1.0.225", features = ["derive"] }
@@ -65,17 +82,9 @@ url = "2.4"
 chrono = { version = "0.4", features = ["serde"] }
 
 # Monitoring and Metrics
-prometheus = "0.14"
-axum = "0.8.4"
-tower = "0.5.2"
-tower-http = { version = "0.6.6", features = ["cors", "trace"] }
-opentelemetry = "0.31.0"
-opentelemetry-otlp = "0.31.0"
-opentelemetry_sdk = { version = "0.31.0", features = ["rt-tokio"] }
-tracing-opentelemetry = "0.32"
-hyper = { version = "1.7", features = ["full"] }
-http-body-util = "0.1"
-sqlx = { version = "0.8.3", features = ["runtime-tokio-native-tls", "postgres", "chrono", "uuid", "macros"] }
+prometheus = "0.13"
+hyper = { version = "0.14", features = ["full"] }
+lazy_static = "1.4"
 
 [dev-dependencies]
 criterion = { version = "0.7", features = ["html_reports"] }

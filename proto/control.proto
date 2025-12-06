@@ -3,58 +3,45 @@ syntax = "proto3";
 package raven;
 
 // Control service for managing data collection lifecycle
-service ControlService {
-    // Start collecting data for a specific exchange-symbol pair
-    rpc StartCollection(StartCollectionRequest) returns (StartCollectionResponse);
+service Control {
+    // Start collecting data for a specific symbol (forcibly)
+    rpc StartCollection(ControlRequest) returns (ControlResponse);
     
-    // Stop collecting data for a specific exchange-symbol pair
-    rpc StopCollection(StopCollectionRequest) returns (StopCollectionResponse);
+    // Stop collecting data for a specific symbol
+    rpc StopCollection(ControlRequest) returns (ControlResponse);
     
     // List all active collections with their status
-    rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+    rpc ListCollections(ListRequest) returns (ListResponse);
+
+    // Stop all active collections
+    rpc StopAllCollections(StopAllRequest) returns (StopAllResponse);
 }
 
-// Request to start data collection
-message StartCollectionRequest {
-    string exchange = 1;  // e.g., "binance_futures", "binance_spot"
-    string symbol = 2;   // e.g., "BTCUSDT"
+message ControlRequest {
+    string symbol = 1;   // e.g., "BTCUSDT"
+    string exchange = 2; // Optional, used for validation if provided
 }
 
-// Response for start collection request
-message StartCollectionResponse {
-    bool success = 1;
-    string message = 2;
-    string collection_id = 3;  // Unique identifier for this collection
-}
-
-// Request to stop data collection
-message StopCollectionRequest {
-    string exchange = 1;  // e.g., "binance_futures", "binance_spot"
-    string symbol = 2;   // e.g., "BTCUSDT"
-}
-
-// Response for stop collection request
-message StopCollectionResponse {
+message ControlResponse {
     bool success = 1;
     string message = 2;
 }
 
-// Request to list active collections
-message ListCollectionsRequest {
-    // Empty for now, could add filtering options later
-}
+message ListRequest {}
 
-// Response containing list of active collections
-message ListCollectionsResponse {
+message ListResponse {
     repeated CollectionInfo collections = 1;
 }
 
-// Information about an active collection
 message CollectionInfo {
-    string exchange = 1;
-    string symbol = 2;
-    string collection_id = 3;
-    int64 started_at = 4;  // Unix timestamp when collection started
-    string status = 5;     // "running", "stopping", "error"
-    repeated string data_types = 6;  // e.g., ["orderbook", "trades"]
+    string symbol = 1;
+    string status = 2;     // "active", "error", etc.
+    int32 subscriber_count = 3;
+}
+
+message StopAllRequest {}
+
+message StopAllResponse {
+    bool success = 1;
+    string message = 2;
 }

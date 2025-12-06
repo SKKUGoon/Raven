@@ -2,6 +2,25 @@ syntax = "proto3";
 
 package raven;
 
+// Market Data Service for streaming data to clients
+service MarketData {
+    // Subscribe to market data for a specific symbol
+    rpc Subscribe(MarketDataRequest) returns (stream MarketDataMessage);
+}
+
+message MarketDataRequest {
+    string symbol = 1;
+    DataType data_type = 2;
+}
+
+enum DataType {
+    UNKNOWN = 0;
+    ORDERBOOK = 1;
+    TRADE = 2;
+    CANDLE = 3;
+    FUNDING = 4;
+}
+
 // Market data types
 message OrderBookSnapshot {
     string symbol = 1;
@@ -34,6 +53,10 @@ message Candle {
     double close = 6;
     double volume = 7;
     string interval = 8;
+    uint64 buy_ticks = 9;
+    uint64 sell_ticks = 10;
+    uint64 total_ticks = 11;
+    double theta = 12;
 }
 
 message FundingRate {

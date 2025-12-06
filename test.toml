@@ -1,0 +1,31 @@
+[server]
+host = "0.0.0.0"
+port_binance_spot = 50001
+port_binance_futures = 50002
+port_timebar_minutes = 50051
+port_tibs = 50052
+port_tick_persistence = 50091
+port_bar_persistence = 50092
+
+[tibs]
+initial_size = 100.0
+initial_p_buy = 0.7
+alpha_size = 0.1
+alpha_imbl = 0.1
+size_min = 50.0
+size_max = 1000.0
+
+[influx]
+url = "http://localhost:8086"
+token = "admin-token-banana"
+org = "influx"
+bucket = "influx"
+batch_size = 1000
+batch_interval_ms = 1000
+
+[timescale]
+url = "postgres://postgres:postgres@localhost:5432/raven"
+
+[logging]
+level = "info"
+
