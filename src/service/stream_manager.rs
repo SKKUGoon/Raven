@@ -1,3 +1,4 @@
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use futures_util::StreamExt;
 use std::sync::Arc;
@@ -59,50 +60,51 @@ impl<W: StreamWorker + ?Sized> StreamManager<W> {
         &self,
         symbol: &str,
     ) -> broadcast::Sender<Result<MarketDataMessage, Status>> {
-        if let Some(entry) = self.channels.get(symbol) {
-            return entry.value().clone();
-        }
+        match self.channels.entry(symbol.to_string()) {
+            Entry::Occupied(entry) => entry.get().clone(),
+            Entry::Vacant(entry) => {
+                let (tx, _) = broadcast::channel(self.channel_capacity);
+                entry.insert(tx.clone());
 
-        let (tx, _) = broadcast::channel(self.channel_capacity);
-        self.channels.insert(symbol.to_string(), tx.clone());
+                // Spawn supervisor task
+                let symbol_clone = symbol.to_string();
+                let tx_clone = tx.clone();
+                let worker = self.worker.clone();
+                let channels = self.channels.clone();
+                let tasks = self.tasks.clone();
+                let prune = self.prune_on_no_subscribers;
 
-        // Spawn supervisor task
-        let symbol_clone = symbol.to_string();
-        let tx_clone = tx.clone();
-        let worker = self.worker.clone();
-        let channels = self.channels.clone();
-        let tasks = self.tasks.clone();
-        let prune = self.prune_on_no_subscribers;
+                let handle = tokio::spawn(async move {
+                    loop {
+                        // Run the worker
+                        worker.run(symbol_clone.clone(), tx_clone.clone()).await;
 
-        let handle = tokio::spawn(async move {
-            loop {
-                // Run the worker
-                worker.run(symbol_clone.clone(), tx_clone.clone()).await;
+                        // Worker exited. Check if we should restart or clean up.
+                        // If prune is enabled and no subscribers left, we stop.
+                        if prune && tx_clone.receiver_count() == 0 {
+                            info!(
+                                "Stream for {} ended (no subscribers). Cleaning up.",
+                                symbol_clone
+                            );
+                            channels.remove(&symbol_clone);
+                            tasks.remove(&symbol_clone);
+                            break;
+                        }
 
-                // Worker exited. Check if we should restart or clean up.
-                // If prune is enabled and no subscribers left, we stop.
-                if prune && tx_clone.receiver_count() == 0 {
-                    info!(
-                        "Stream for {} ended (no subscribers). Cleaning up.",
-                        symbol_clone
-                    );
-                    channels.remove(&symbol_clone);
-                    tasks.remove(&symbol_clone);
-                    break;
-                }
+                        // Otherwise (subscribers exist OR prune is disabled), restart with backoff.
+                        warn!(
+                            "Stream worker for {} exited unexpectedly. Restarting in 5s...",
+                            symbol_clone
+                        );
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                    }
+                });
 
-                // Otherwise (subscribers exist OR prune is disabled), restart with backoff.
-                warn!(
-                    "Stream worker for {} exited unexpectedly. Restarting in 5s...",
-                    symbol_clone
-                );
-                tokio::time::sleep(Duration::from_secs(5)).await;
+                self.tasks.insert(symbol.to_string(), handle);
+
+                tx
             }
-        });
-
-        self.tasks.insert(symbol.to_string(), handle);
-
-        tx
+        }
     }
 }
 
