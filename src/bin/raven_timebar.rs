@@ -11,6 +11,10 @@ struct Cli {
     /// Bar interval in seconds
     #[arg(short = 'k', long, default_value_t = 60)]
     seconds: u64,
+
+    /// Override listening port
+    #[arg(short, long)]
+    port: Option<u16>,
 }
 
 #[tokio::main]
@@ -27,11 +31,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing_subscriber::fmt().with_max_level(log_level).init();
 
-    let addr = format!(
-        "{}:{}",
-        settings.server.host, settings.server.port_timebar_minutes
-    )
-    .parse()?;
+    let port = cli.port.unwrap_or(settings.server.port_timebar_minutes);
+    let addr = format!("{}:{}", settings.server.host, port).parse()?;
 
     let mut upstreams = HashMap::new();
     // Standard names
@@ -51,7 +52,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let service_impl = timebar::new(upstreams, cli.seconds);
-    let raven = RavenService::new("RavenTimeBar", service_impl.clone());
+    let service_name = format!("RavenTimeBar_{}s", cli.seconds);
+    let raven = RavenService::new(&service_name, service_impl.clone());
 
     raven.serve_with_market_data(addr, service_impl).await?;
 
