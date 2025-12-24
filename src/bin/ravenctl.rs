@@ -6,7 +6,7 @@ use raven::proto::control_client::ControlClient;
 use raven::proto::{ControlRequest, DataType, ListRequest, StopAllRequest};
 use raven::routing::symbol_resolver::SymbolResolver;
 use raven::routing::venue_selector::VenueSelector;
-use raven::utils::process::{start_all_services_with_settings, stop_all_services};
+use raven::utils::process::{start_all_services_with_settings, stop_all_services, stop_service};
 use raven::utils::service_registry;
 use raven::utils::status::check_status;
 use raven::utils::tree::show_users_tree;
@@ -72,9 +72,9 @@ enum Commands {
         #[arg(long = "venue-exclude")]
         venue_exclude: Vec<String>,
     },
-    /// Stop all data collections (internal)
+    /// Stop all data collections (all services, unless --service is set)
     StopAll,
-    /// Shutdown all Raven services
+    /// Shutdown Raven services (all services, unless --service is set)
     Shutdown,
     /// List active collections
     List,
@@ -88,6 +88,29 @@ enum Commands {
 
 use std::time::Duration;
 
+async fn stop_all_collections_cluster(settings: &Settings) {
+    let host_ip = service_registry::client_host(&settings.server.host);
+    let services = service_registry::all_services(settings);
+
+    println!("Stopping all collections across {} services...", services.len());
+    for svc in services {
+        let addr = svc.addr(host_ip);
+        match ControlClient::connect(addr.clone()).await {
+            Ok(mut client) => match client.stop_all_collections(StopAllRequest {}).await {
+                Ok(resp) => {
+                    let inner = resp.into_inner();
+                    println!(
+                        "- {} ({}) @ {} -> success={} msg={}",
+                        svc.display_name, svc.id, addr, inner.success, inner.message
+                    );
+                }
+                Err(e) => println!("- {} ({}) @ {} -> ERROR: {e}", svc.display_name, svc.id, addr),
+            },
+            Err(e) => println!("- {} ({}) @ {} -> UNREACHABLE: {e}", svc.display_name, svc.id, addr),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -95,6 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Warning: Failed to load config: {e}. Using defaults.");
         std::process::exit(1);
     });
+    let service_opt = cli.service.clone();
 
     // Handle commands that don't need a specific client connection first
     match &cli.command {
@@ -324,23 +348,46 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             return Ok(());
         }
+        Commands::StopAll => {
+            // If no explicit --service is set, StopAll is cluster-wide and doesn't rely on a single control-plane host.
+            if service_opt.is_none() {
+                stop_all_collections_cluster(&settings).await;
+                return Ok(());
+            }
+        }
         Commands::Shutdown => {
-            stop_all_services();
+            if let Some(svc_id) = service_opt.as_deref() {
+                let services = service_registry::all_services(&settings);
+                if let Some(spec) = services.iter().find(|svc| svc.id == svc_id) {
+                    if stop_service(spec.log_name) {
+                        println!("Shutdown requested for {}", spec.display_name);
+                    } else {
+                        eprintln!(
+                            "No pid file found for {} ({}). Did you start it via `ravenctl start`?",
+                            spec.display_name, spec.log_name
+                        );
+                    }
+                } else {
+                    eprintln!("Unknown service id: {svc_id}");
+                }
+            } else {
+                stop_all_services();
+            }
             return Ok(());
         }
         _ => {}
     }
 
     // For other commands (Stop, StopAll, List), connect to the target host
-    let host = if let Some(s) = cli.service {
+    let host = if let Some(s) = cli.service.as_deref() {
         let host_ip = &settings.server.host;
         // Resolve against our canonical service registry first.
         let services = service_registry::all_services(&settings);
-        if let Some(spec) = services.iter().find(|svc| svc.id == s.as_str()) {
+        if let Some(spec) = services.iter().find(|svc| svc.id == s) {
             spec.addr(host_ip)
         } else {
             // Backwards-compatible aliases
-            match s.as_str() {
+            match s {
                 "persistence" => format!(
                     "http://{}:{}",
                     host_ip, settings.server.port_tick_persistence

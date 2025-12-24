@@ -2,19 +2,15 @@
 
 Raven is a modular market-data platform in Rust: **sources** ingest exchange data, **processors** build features/bars, and **persistence** stores ticks and bars. Everything is controlled via a gRPC **Control plane** (`ravenctl`).
 
-## Key process change: “wire first, subscribe later”
-
-Raven now follows a strict lifecycle:
-
-1. **Start infrastructure (processes)**.
-2. **Wire downstream consumers/processors first** (they will attempt to subscribe but will wait/retry).
-3. **Start upstream collectors last** (this is when the exchange WS subscriptions are activated).
-
-Important behavioral rule:
-
-- **`MarketData.Subscribe` never auto-starts streams.** If a stream isn't started, `Subscribe` returns a `failed_precondition` and internal services will retry until the stream exists.
 
 ## Prerequisites
+
+### System
+
+- **Rust toolchain**: Rust 2021 edition (install via `rustup`; `cargo` is required).
+- **OS**: macOS/Linux recommended. `ravenctl` manages processes using system commands like `ps` + `kill`.
+- **Filesystem**: `ravenctl` writes PID/log files under `~/.raven/log` (requires `$HOME` to be set and writeable).
+- **Native TLS deps (Linux only)**: because Raven uses `native-tls` (WebSockets + gRPC), you’ll typically need system OpenSSL tooling such as `pkg-config` + `libssl-dev`.
 
 ### Databases
 
@@ -22,8 +18,14 @@ Important behavioral rule:
 - **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` (writes `bar__time` and `bar__tick_imbalance`).
 
 Notes:
-- **InfluxDB** is schema-on-write (bucket + token required).
-- **TimescaleDB** tables/hypertables are created on service startup (best-effort). You still need the TimescaleDB extension available in the DB.
+- **InfluxDB** is schema-on-write, but you must provision:
+  - `influx.url`, `influx.org`, `influx.bucket`, and a valid `influx.token` with write permissions.
+- **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` calls `create_hypertable(...)`.
+  - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
+    - Schema: `timescale.schema` (default: `warehouse`)
+    - Tables: `warehouse.bar__time`, `warehouse.bar__tick_imbalance`
+  - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
+  - Reference DDL is also checked into `sql/` (`create_table_bar__time.sql`, `create_table_bar__tick_imbalance.sql`).
 
 ### Network
 
@@ -31,6 +33,7 @@ Notes:
   - `wss://stream.binance.com:9443`
   - `wss://fstream.binance.com`
 - Inbound gRPC: default ports are `500xx` (see config).
+- Prometheus metrics: each service also exposes `GET /metrics` on **(service port + 1000)**.
 
 ## Configuration (`.toml` + env)
 
@@ -145,6 +148,12 @@ What this does (per venue):
 
 ```bash
 ./target/release/ravenctl shutdown
+```
+
+Or stop a single service process:
+
+```bash
+./target/release/ravenctl --service binance_spot shutdown
 ```
 
 ### Status / introspection

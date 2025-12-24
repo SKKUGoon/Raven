@@ -23,7 +23,8 @@ org = "prod-org"
 bucket = "raven-prod"
 
 [timescale]
-url = "postgres://user:password@db-host:5432/raven"
+url = "postgres://user:password@db-host:5432/postgres"
+schema = "warehouse"
 
 [logging]
 level = "info"

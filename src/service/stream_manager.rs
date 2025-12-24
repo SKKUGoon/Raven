@@ -81,15 +81,22 @@ impl<W: StreamWorker + ?Sized> StreamManager<W> {
                         worker.run(key_clone.clone(), tx_clone.clone()).await;
 
                         // Worker exited. Check if we should restart or clean up.
-                        // If prune is enabled and no subscribers left, we stop.
+                        // If prune is enabled and no subscribers left, we *may* stop.
+                        // However, add a short grace period to avoid thrashing with retrying clients
+                        // ("wire first, subscribe later") where consumers may retry Subscribe every few seconds.
                         if prune && tx_clone.receiver_count() == 0 {
-                            info!(
-                                "Stream for {} ended (no subscribers). Cleaning up.",
-                                key_clone
-                            );
-                            channels.remove(&key_clone);
-                            tasks.remove(&key_clone);
-                            break;
+                            const NO_SUBSCRIBER_GRACE: Duration = Duration::from_secs(5);
+                            tokio::time::sleep(NO_SUBSCRIBER_GRACE).await;
+
+                            if tx_clone.receiver_count() == 0 {
+                                info!(
+                                    "Stream for {} ended (no subscribers). Cleaning up.",
+                                    key_clone
+                                );
+                                channels.remove(&key_clone);
+                                tasks.remove(&key_clone);
+                                break;
+                            }
                         }
 
                         // Otherwise (subscribers exist OR prune is disabled), restart with backoff.
@@ -196,16 +203,17 @@ impl<W: StreamWorker + ?Sized> MarketData for StreamManager<W> {
         let req = request.into_inner();
         let key = StreamKey::from_market_request(&req.symbol, &req.venue, req.data_type);
 
-        info!("Client subscribed (key: {key})");
         let tx = self
             .channels
             .get(&key)
             .map(|entry| entry.value().clone())
             .ok_or_else(|| {
+                // Note: don't log this at info-level; retrying clients can spam.
                 Status::failed_precondition(format!(
                     "Stream not started for {key}. Call Control.StartCollection first."
                 ))
             })?;
+        info!("Client subscribed (key: {key})");
         let rx = tx.subscribe();
 
         let stream = BroadcastStream::new(rx).map(|item| match item {

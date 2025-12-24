@@ -1,7 +1,7 @@
-CREATE SCHEMA IF NOT EXISTS data_warehouse;
+CREATE SCHEMA IF NOT EXISTS warehouse;
 
 -- Table for Time Bars (e.g. 1m)
-CREATE TABLE IF NOT EXISTS data_warehouse.bar__time (
+CREATE TABLE IF NOT EXISTS warehouse.bar__time (
     time        TIMESTAMPTZ NOT NULL,
     symbol      TEXT NOT NULL,
     exchange    TEXT NOT NULL,
@@ -17,4 +17,4 @@ CREATE TABLE IF NOT EXISTS data_warehouse.bar__time (
     theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
 );
 
-SELECT create_hypertable('data_warehouse.bar__time', 'time', if_not_exists => TRUE);
+SELECT create_hypertable('warehouse.bar__time', 'time', if_not_exists => TRUE);

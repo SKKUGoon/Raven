@@ -16,6 +16,15 @@ impl ServiceSpec {
     }
 }
 
+/// If services bind to `0.0.0.0` (listen on all interfaces), clients should connect to a
+/// routable address like `127.0.0.1` instead of `0.0.0.0`.
+pub fn client_host(host: &str) -> &str {
+    match host {
+        "0.0.0.0" | "::" => "127.0.0.1",
+        _ => host,
+    }
+}
+
 pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
     vec![
         ServiceSpec {

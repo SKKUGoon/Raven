@@ -56,6 +56,8 @@ pub struct InfluxConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct TimescaleConfig {
     pub url: String,
+    #[serde(default = "default_timescale_schema")]
+    pub schema: String,
 }
 
 fn default_batch_size() -> usize {
@@ -68,6 +70,10 @@ fn default_batch_interval() -> u64 {
 
 fn default_port_timebar_seconds() -> u16 {
     50053
+}
+
+fn default_timescale_schema() -> String {
+    "warehouse".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -105,6 +111,8 @@ impl Settings {
             .add_source(File::with_name("local").required(false))
             // Add in settings from the environment (with a prefix of APP)
             // e.g. `APP_DEBUG=1` would set the `debug` key
+            // Support both `RAVEN__FOO__BAR` (documented) and `raven__foo__bar` (legacy).
+            .add_source(Environment::with_prefix("RAVEN").separator("__"))
             .add_source(Environment::with_prefix("raven").separator("__"))
             .build()?;
 

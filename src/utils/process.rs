@@ -2,6 +2,7 @@ use std::env;
 use std::fs::{self, File};
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use crate::config::Settings;
 use crate::utils::service_registry;
@@ -25,10 +26,10 @@ pub fn find_binary(name: &str) -> Option<PathBuf> {
                 return Some(candidate_rel);
             }
             // 3. Just checking relative to CWD
-             let candidate_cwd = PathBuf::from(name);
-             if candidate_cwd.exists() {
-                 return Some(candidate_cwd);
-             }
+            let candidate_cwd = PathBuf::from(name);
+            if candidate_cwd.exists() {
+                return Some(candidate_cwd);
+            }
         }
     }
     None
@@ -59,13 +60,13 @@ pub fn start_service_proc(bin_name: &str, service_name: &str, args: &[&str]) {
     };
 
     println!("Starting {service_name}...");
-    
+
     // We clone log_file for stderr
     let stderr_file = match log_file.try_clone() {
         Ok(f) => f,
         Err(e) => {
-             eprintln!("Failed to clone log file handle: {e}");
-             return;
+            eprintln!("Failed to clone log file handle: {e}");
+            return;
         }
     };
 
@@ -105,6 +106,83 @@ pub fn start_all_services_with_settings(settings: &Settings) {
     println!("Check logs in {log_dir:?}/ for output.");
 }
 
+fn is_pid_running(pid: i32) -> bool {
+    Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn pid_command_name(pid: i32) -> Option<String> {
+    let out = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+fn kill_pid_gracefully(pid: i32, name: &str) {
+    if !is_pid_running(pid) {
+        println!("{name} (PID: {pid}) is not running. Cleaning up.");
+        return;
+    }
+
+    println!("Killing {name} (PID: {pid}) with SIGTERM...");
+    let _ = Command::new("kill").arg(pid.to_string()).status();
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if !is_pid_running(pid) {
+            println!("{name} stopped.");
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    println!("{name} still running; sending SIGKILL...");
+    let _ = Command::new("kill").arg("-9").arg(pid.to_string()).status();
+}
+
+/// Stop a single service using its PID file name (e.g. `binance_spot`, `timebar_1m`).
+/// Returns true if a pid file was found (regardless of whether the process was running).
+pub fn stop_service(log_name: &str) -> bool {
+    let log_dir = get_log_dir();
+    let pid_path = log_dir.join(format!("{log_name}.pid"));
+    if !pid_path.exists() {
+        return false;
+    }
+
+    if let Ok(content) = fs::read_to_string(&pid_path) {
+        if let Ok(pid) = content.trim().parse::<i32>() {
+            // Best-effort safety check: warn if pid doesn't look like the expected binary name.
+            if let Some(comm) = pid_command_name(pid) {
+                if !comm.contains(log_name)
+                    && !comm.contains("raven_")
+                    && !comm.contains("binance_")
+                {
+                    eprintln!(
+                        "Warning: PID {pid} command looks like `{comm}`, expected something like `{log_name}`. Proceeding to kill anyway."
+                    );
+                }
+            }
+            kill_pid_gracefully(pid, log_name);
+        }
+    }
+
+    let _ = fs::remove_file(&pid_path);
+    true
+}
+
 pub fn stop_all_services() {
     let log_dir = get_log_dir();
     if !log_dir.exists() {
@@ -113,7 +191,7 @@ pub fn stop_all_services() {
     }
 
     println!("Stopping Raven services...");
-    
+
     let entries = match fs::read_dir(&log_dir) {
         Ok(e) => e,
         Err(e) => {
@@ -127,21 +205,8 @@ pub fn stop_all_services() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("pid") {
             found_pid = true;
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(pid) = content.trim().parse::<i32>() {
-                    let name = path.file_stem().unwrap().to_string_lossy();
-                    
-                    // Use standard kill command since we are on unix-like systems
-                    if Command::new("kill").arg("-0").arg(pid.to_string()).status().map(|s| s.success()).unwrap_or(false) {
-                         println!("Killing {name} (PID: {pid})...");
-                         let _ = Command::new("kill").arg(pid.to_string()).status();
-                    } else {
-                        println!("{name} (PID: {pid}) is not running. Cleaning up.");
-                    }
-                    
-                    // Remove pid file
-                    let _ = fs::remove_file(&path);
-                }
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                let _ = stop_service(stem);
             }
         }
     }
@@ -152,4 +217,3 @@ pub fn stop_all_services() {
         println!("All services stopped.");
     }
 }
-

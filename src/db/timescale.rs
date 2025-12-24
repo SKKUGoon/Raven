@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 pub struct TimescaleWorker {
     timebar_upstream: String,
     tibs_upstream: String,
+    schema: String,
     pool: Pool<Postgres>,
 }
 
@@ -30,6 +31,7 @@ impl StreamWorker for TimescaleWorker {
             symbol,
             venue,
             key.to_string(),
+            self.schema.clone(),
             self.pool.clone(),
         )
         .await
@@ -43,71 +45,130 @@ pub async fn new(
     tibs_upstream: String,
     config: TimescaleConfig,
 ) -> Result<PersistenceService, sqlx::Error> {
+    let schema = validate_pg_ident(&config.schema)
+        .unwrap_or_else(|| {
+            warn!(
+                "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `warehouse`",
+                config.schema
+            );
+            "warehouse"
+        })
+        .to_string();
+
     let pool = PgPoolOptions::new()
         .max_connections(20)
         .connect(&config.url)
         .await?;
 
+    let time_table = qualify_table(&schema, "bar__time");
+    let tib_table = qualify_table(&schema, "bar__tick_imbalance");
+
     // Ensure the table exists (basic migration)
     // In a production env, use proper migrations.
-    sqlx::query(
-        r#"
-        CREATE SCHEMA IF NOT EXISTS data_warehouse;
-        
-        -- Table for Tick Imbalance Bars
-        CREATE TABLE IF NOT EXISTS data_warehouse.bar__tick_imbalance (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
-        );
-        SELECT create_hypertable('data_warehouse.bar__tick_imbalance', 'time', if_not_exists => TRUE);
-
-        -- Table for Time Bars
-        CREATE TABLE IF NOT EXISTS data_warehouse.bar__time (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
-        );
-        SELECT create_hypertable('data_warehouse.bar__time', 'time', if_not_exists => TRUE);
-        "#,
-    )
-    .execute(&pool)
-    .await
-    .unwrap_or_else(|e| {
+    if let Err(e) = ensure_schema_and_tables(&pool, &schema, &time_table, &tib_table).await {
         warn!(
             "Failed to create/verify hypertable (might already exist or not using TimescaleDB): {}",
             e
         );
-        Default::default()
-    });
+    }
 
     let worker = TimescaleWorker {
         timebar_upstream,
         tibs_upstream,
+        schema,
         pool,
     };
 
     Ok(StreamManager::new(Arc::new(worker), 10000, false))
+}
+
+fn validate_pg_ident(s: &str) -> Option<&str> {
+    let mut chars = s.chars();
+    let first = chars.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return None;
+    }
+    if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    Some(s)
+}
+
+fn qualify_table(schema: &str, table: &str) -> String {
+    format!("{schema}.{table}")
+}
+
+async fn ensure_schema_and_tables(
+    pool: &Pool<Postgres>,
+    schema: &str,
+    time_table: &str,
+    tib_table: &str,
+) -> Result<(), sqlx::Error> {
+    // Postgres drivers generally disallow multiple statements in a single prepared statement,
+    // so keep this strictly one statement per execute().
+    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
+        .execute(pool)
+        .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {tib_table} (
+            time        TIMESTAMPTZ NOT NULL,
+            symbol      TEXT NOT NULL,
+            exchange    TEXT NOT NULL,
+            interval    TEXT NOT NULL,
+            open        DOUBLE PRECISION NOT NULL,
+            high        DOUBLE PRECISION NOT NULL,
+            low         DOUBLE PRECISION NOT NULL,
+            close       DOUBLE PRECISION NOT NULL,
+            volume      DOUBLE PRECISION NOT NULL,
+            buy_ticks   BIGINT NOT NULL DEFAULT 0,
+            sell_ticks  BIGINT NOT NULL DEFAULT 0,
+            total_ticks BIGINT NOT NULL DEFAULT 0,
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    // If TimescaleDB isn't installed/enabled, this will error; that's okay.
+    // (Callers treat this as best-effort setup.)
+    sqlx::query(&format!(
+        "SELECT create_hypertable('{tib_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {time_table} (
+            time        TIMESTAMPTZ NOT NULL,
+            symbol      TEXT NOT NULL,
+            exchange    TEXT NOT NULL,
+            interval    TEXT NOT NULL,
+            open        DOUBLE PRECISION NOT NULL,
+            high        DOUBLE PRECISION NOT NULL,
+            low         DOUBLE PRECISION NOT NULL,
+            close       DOUBLE PRECISION NOT NULL,
+            volume      DOUBLE PRECISION NOT NULL,
+            buy_ticks   BIGINT NOT NULL DEFAULT 0,
+            sell_ticks  BIGINT NOT NULL DEFAULT 0,
+            total_ticks BIGINT NOT NULL DEFAULT 0,
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "SELECT create_hypertable('{time_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 async fn connect_candle_stream(
@@ -150,14 +211,20 @@ async fn connect_candle_stream(
     }
 }
 
-async fn persist_candle(pool: &Pool<Postgres>, venue: &str, key: &str, candle: crate::proto::Candle) {
+async fn persist_candle(
+    pool: &Pool<Postgres>,
+    schema: &str,
+    venue: &str,
+    key: &str,
+    candle: crate::proto::Candle,
+) {
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
 
     if let Some(t) = time {
         let table_name = if candle.interval == "tib" {
-            "data_warehouse.bar__tick_imbalance"
+            qualify_table(schema, "bar__tick_imbalance")
         } else {
-            "data_warehouse.bar__time"
+            qualify_table(schema, "bar__time")
         };
 
         let query = format!(
@@ -196,12 +263,12 @@ async fn run_dual_persistence(
     symbol: String,
     venue: String,
     key: String, // For logging
+    schema: String,
     pool: Pool<Postgres>,
 ) {
     info!("Bar Persistence task started for {}", key);
 
-    let mut timebar_stream =
-        connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
+    let mut timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
     let mut tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
 
     loop {
@@ -210,7 +277,7 @@ async fn run_dual_persistence(
                 match msg {
                     Ok(Some(m)) => {
                         if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                            persist_candle(&pool, &venue, &key, candle).await;
+                            persist_candle(&pool, &schema, &venue, &key, candle).await;
                         }
                     }
                     Ok(None) => {
@@ -229,7 +296,7 @@ async fn run_dual_persistence(
                 match msg {
                     Ok(Some(m)) => {
                         if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                            persist_candle(&pool, &venue, &key, candle).await;
+                            persist_candle(&pool, &schema, &venue, &key, candle).await;
                         }
                     }
                     Ok(None) => {

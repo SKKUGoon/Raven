@@ -6,11 +6,12 @@ use ptree::TreeBuilder;
 
 pub async fn show_users_tree(settings: &Settings) {
     let services = service_registry::all_services(settings);
+    let host = service_registry::client_host(&settings.server.host);
 
     let mut tree = TreeBuilder::new("Raven Cluster".to_string());
 
     for svc in services {
-        let addr = svc.addr(&settings.server.host);
+        let addr = svc.addr(host);
         let status = match ControlClient::connect(addr).await {
             Ok(mut client) => match client.list_collections(ListRequest {}).await {
                 Ok(resp) => {
