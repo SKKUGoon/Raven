@@ -16,18 +16,19 @@ use crate::proto::{
     CollectionInfo, ControlRequest, ControlResponse, ListRequest, ListResponse, MarketDataMessage,
     MarketDataRequest, StopAllRequest, StopAllResponse,
 };
+use crate::service::stream_key::StreamKey;
 
 /// Trait for stream workers that handle the actual data collection.
 #[tonic::async_trait]
 pub trait StreamWorker: Send + Sync + 'static {
     /// Run the worker for a specific symbol.
     /// This method should run indefinitely unless an error occurs or it is cancelled.
-    async fn run(&self, symbol: String, tx: broadcast::Sender<Result<MarketDataMessage, Status>>);
+    async fn run(&self, key: StreamKey, tx: broadcast::Sender<Result<MarketDataMessage, Status>>);
 }
 
 pub struct StreamManager<W: StreamWorker + ?Sized> {
-    channels: Arc<DashMap<String, broadcast::Sender<Result<MarketDataMessage, Status>>>>,
-    tasks: Arc<DashMap<String, JoinHandle<()>>>,
+    channels: Arc<DashMap<StreamKey, broadcast::Sender<Result<MarketDataMessage, Status>>>>,
+    tasks: Arc<DashMap<StreamKey, JoinHandle<()>>>,
     worker: Arc<W>,
     channel_capacity: usize,
     prune_on_no_subscribers: bool,
@@ -58,16 +59,16 @@ impl<W: StreamWorker + ?Sized> StreamManager<W> {
 
     pub async fn ensure_stream(
         &self,
-        symbol: &str,
+        key: StreamKey,
     ) -> broadcast::Sender<Result<MarketDataMessage, Status>> {
-        match self.channels.entry(symbol.to_string()) {
+        match self.channels.entry(key.clone()) {
             Entry::Occupied(entry) => entry.get().clone(),
             Entry::Vacant(entry) => {
                 let (tx, _) = broadcast::channel(self.channel_capacity);
                 entry.insert(tx.clone());
 
                 // Spawn supervisor task
-                let symbol_clone = symbol.to_string();
+                let key_clone = key.clone();
                 let tx_clone = tx.clone();
                 let worker = self.worker.clone();
                 let channels = self.channels.clone();
@@ -77,30 +78,30 @@ impl<W: StreamWorker + ?Sized> StreamManager<W> {
                 let handle = tokio::spawn(async move {
                     loop {
                         // Run the worker
-                        worker.run(symbol_clone.clone(), tx_clone.clone()).await;
+                        worker.run(key_clone.clone(), tx_clone.clone()).await;
 
                         // Worker exited. Check if we should restart or clean up.
                         // If prune is enabled and no subscribers left, we stop.
                         if prune && tx_clone.receiver_count() == 0 {
                             info!(
                                 "Stream for {} ended (no subscribers). Cleaning up.",
-                                symbol_clone
+                                key_clone
                             );
-                            channels.remove(&symbol_clone);
-                            tasks.remove(&symbol_clone);
+                            channels.remove(&key_clone);
+                            tasks.remove(&key_clone);
                             break;
                         }
 
                         // Otherwise (subscribers exist OR prune is disabled), restart with backoff.
                         warn!(
                             "Stream worker for {} exited unexpectedly. Restarting in 5s...",
-                            symbol_clone
+                            key_clone
                         );
                         tokio::time::sleep(Duration::from_secs(5)).await;
                     }
                 });
 
-                self.tasks.insert(symbol.to_string(), handle);
+                self.tasks.insert(key, handle);
 
                 tx
             }
@@ -115,17 +116,10 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
         request: Request<ControlRequest>,
     ) -> Result<Response<ControlResponse>, Status> {
         let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
-        let exchange = req.exchange.to_uppercase();
-
-        let key = if exchange.is_empty() {
-            symbol.clone()
-        } else {
-            format!("{symbol}:{exchange}")
-        };
+        let key = StreamKey::from_control_with_datatype(&req.symbol, &req.venue, req.data_type);
 
         info!("Control: Start collection for {key}");
-        self.ensure_stream(&key).await;
+        self.ensure_stream(key.clone()).await;
 
         Ok(Response::new(ControlResponse {
             success: true,
@@ -138,14 +132,7 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
         request: Request<ControlRequest>,
     ) -> Result<Response<ControlResponse>, Status> {
         let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
-        let exchange = req.exchange.to_uppercase();
-
-        let key = if exchange.is_empty() {
-            symbol.clone()
-        } else {
-            format!("{symbol}:{exchange}")
-        };
+        let key = StreamKey::from_control_with_datatype(&req.symbol, &req.venue, req.data_type);
 
         if let Some((_, handle)) = self.tasks.remove(&key) {
             handle.abort();
@@ -171,7 +158,7 @@ impl<W: StreamWorker + ?Sized> Control for StreamManager<W> {
             .channels
             .iter()
             .map(|entry| CollectionInfo {
-                symbol: entry.key().clone(),
+                symbol: entry.key().to_string(),
                 status: "active".to_string(),
                 subscriber_count: entry.value().receiver_count() as i32,
             })
@@ -207,10 +194,18 @@ impl<W: StreamWorker + ?Sized> MarketData for StreamManager<W> {
         request: Request<MarketDataRequest>,
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let req = request.into_inner();
-        let symbol = req.symbol.to_uppercase();
+        let key = StreamKey::from_market_request(&req.symbol, &req.venue, req.data_type);
 
-        info!("Client subscribed to {}", symbol);
-        let tx = self.ensure_stream(&symbol).await;
+        info!("Client subscribed (key: {key})");
+        let tx = self
+            .channels
+            .get(&key)
+            .map(|entry| entry.value().clone())
+            .ok_or_else(|| {
+                Status::failed_precondition(format!(
+                    "Stream not started for {key}. Call Control.StartCollection first."
+                ))
+            })?;
         let rx = tx.subscribe();
 
         let stream = BroadcastStream::new(rx).map(|item| match item {

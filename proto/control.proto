@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package raven;
 
+import "market_data.proto";
+
 // Control service for managing data collection lifecycle
 service Control {
     // Start collecting data for a specific symbol (forcibly)
@@ -19,7 +21,9 @@ service Control {
 
 message ControlRequest {
     string symbol = 1;   // e.g., "BTCUSDT"
-    string exchange = 2; // Optional, used for validation if provided
+    // Trading venue (e.g. BINANCE_SPOT, BINANCE_FUTURES).
+    string venue = 2;
+    DataType data_type = 3;
 }
 
 message ControlResponse {

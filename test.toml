@@ -3,6 +3,7 @@ host = "0.0.0.0"
 port_binance_spot = 50001
 port_binance_futures = 50002
 port_timebar_minutes = 50051
+port_timebar_seconds = 50053
 port_tibs = 50052
 port_tick_persistence = 50091
 port_bar_persistence = 50092
@@ -28,4 +29,14 @@ url = "postgres://postgres:postgres@localhost:5432/raven"
 
 [logging]
 level = "info"
+
+[routing]
+# Optional: venue selection defaults to all known venues if this list is empty.
+venue_include = []
+venue_exclude = []
+
+# Optional: venue-specific symbol overrides.
+# Example: spot uses PEPEUSDT but futures uses 1000PEPEUSDT.
+[routing.symbol_map]
+"PEPE/USDT" = { BINANCE_FUTURES = "1000PEPEUSDT" }
 

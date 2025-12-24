@@ -2,8 +2,9 @@ use crate::config::TibsConfig;
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::market_data_message;
 use crate::proto::{Candle, DataType, MarketDataMessage, MarketDataRequest};
-use crate::service::{StreamManager, StreamWorker};
+use crate::service::{StreamKey, StreamManager, StreamWorker};
 use crate::telemetry::{TIBS_ACTIVE_AGGREGATIONS, TIBS_GENERATED};
+use crate::utils::retry::retry_forever;
 use chrono::{DateTime, TimeZone, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -199,25 +200,21 @@ pub struct TibsWorker {
 impl StreamWorker for TibsWorker {
     async fn run(
         &self,
-        symbol_key: String,
+        key: StreamKey,
         tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
     ) {
-        let parts: Vec<&str> = symbol_key.split(':').collect();
-        let (symbol, exchange) = if parts.len() == 2 {
-            (parts[0], parts[1])
-        } else {
-            (parts[0], "BINANCE_SPOT")
-        };
+        let symbol = key.symbol.clone();
+        let venue = key.venue.clone().unwrap_or_else(|| "BINANCE_SPOT".to_string());
 
         // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
-        let upstream_url = if let Some(url) = self.upstreams.get(exchange) {
+        let upstream_url = if let Some(url) = self.upstreams.get(&venue) {
             url.clone()
         } else {
-            warn!("No upstream configured for exchange '{}'. Defaulting to BINANCE_SPOT if available.", exchange);
+            warn!("No upstream configured for exchange '{}'. Defaulting to BINANCE_SPOT if available.", venue);
             if let Some(url) = self.upstreams.get("BINANCE_SPOT") {
                 url.clone()
             } else {
-                error!("No upstream configuration found for BINANCE_SPOT. Cannot start aggregation for {}", symbol_key);
+                error!("No upstream configuration found for BINANCE_SPOT. Cannot start aggregation for {}", key);
                 return;
             }
         };
@@ -225,8 +222,9 @@ impl StreamWorker for TibsWorker {
         run_tib_aggregation(
             upstream_url,
             self.config.clone(),
-            symbol.to_string(),
-            symbol_key,
+            symbol,
+            key.to_string(),
+            venue,
             tx,
         )
         .await;
@@ -245,6 +243,7 @@ async fn run_tib_aggregation(
     config: TibsConfig,
     subscription_symbol: String,
     output_symbol: String,
+    venue: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
 ) {
     info!(
@@ -252,29 +251,6 @@ async fn run_tib_aggregation(
         output_symbol, upstream_url
     );
     TIBS_ACTIVE_AGGREGATIONS.inc();
-
-    let mut client = match MarketDataClient::connect(upstream_url).await {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to connect to upstream: {}", e);
-            TIBS_ACTIVE_AGGREGATIONS.dec();
-            return;
-        }
-    };
-
-    let request = Request::new(MarketDataRequest {
-        symbol: subscription_symbol.clone(),
-        data_type: DataType::Trade as i32,
-    });
-
-    let mut stream = match client.subscribe(request).await {
-        Ok(res) => res.into_inner(),
-        Err(e) => {
-            error!("Failed to subscribe to trades: {}", e);
-            TIBS_ACTIVE_AGGREGATIONS.dec();
-            return;
-        }
-    };
 
     // Initialize State with config
     let mut state = TickImbalanceState::new(
@@ -285,33 +261,72 @@ async fn run_tib_aggregation(
         (config.size_min, config.size_max),
     );
 
-    while let Ok(Some(msg)) = stream.message().await {
-        if let Some(market_data_message::Data::Trade(trade)) = msg.data {
-            let direction = match trade.side.as_str() {
-                "buy" => TickDirection::Buy,
-                _ => TickDirection::Sell,
-            };
+    loop {
+        let mut stream = retry_forever(
+            &format!("tibs connect+subscribe ({output_symbol})"),
+            std::time::Duration::from_secs(2),
+            || async {
+                let mut client = MarketDataClient::connect(upstream_url.clone())
+                    .await
+                    .map_err(|e| tonic::Status::unavailable(e.to_string()))?;
+                let request = Request::new(MarketDataRequest {
+                    symbol: subscription_symbol.clone(),
+                    data_type: DataType::Trade as i32,
+                    venue: venue.clone(),
+                });
+                let res = client.subscribe(request).await?;
+                Ok::<_, tonic::Status>(res.into_inner())
+            },
+        )
+        .await;
 
-            let ts = Utc.timestamp_millis_opt(trade.timestamp).unwrap();
+        loop {
+            match stream.message().await {
+                Ok(Some(msg)) => {
+                    if let Some(market_data_message::Data::Trade(trade)) = msg.data {
+                        let direction = match trade.side.as_str() {
+                            "buy" => TickDirection::Buy,
+                            _ => TickDirection::Sell,
+                        };
 
-            if let Some(closed_bar) = state.on_tick(
-                subscription_symbol.clone(),
-                trade.price,
-                trade.quantity,
-                direction,
-                ts,
-            ) {
-                TIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
-                let msg = MarketDataMessage {
-                    exchange: "raven_tibs".to_string(),
-                    data: Some(market_data_message::Data::Candle(closed_bar.to_proto())),
-                };
-                if tx.send(Ok(msg)).is_err() {
+                        let ts = Utc.timestamp_millis_opt(trade.timestamp).unwrap();
+
+                        if let Some(closed_bar) = state.on_tick(
+                            subscription_symbol.clone(),
+                            trade.price,
+                            trade.quantity,
+                            direction,
+                            ts,
+                        ) {
+                            TIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
+                            let msg = MarketDataMessage {
+                                // Backwards-compat: keep exchange as producer for older consumers.
+                                exchange: "raven_tibs".to_string(),
+                                venue: venue.clone(),
+                                producer: "raven_tibs".to_string(),
+                                data: Some(market_data_message::Data::Candle(closed_bar.to_proto())),
+                            };
+                            if tx.send(Ok(msg)).is_err() {
+                                // No subscribers; allow StreamManager to prune the task.
+                                info!("No subscribers for {output_symbol}; ending aggregation task.");
+                                info!("TIB aggregation task ended for {}", output_symbol);
+                                TIBS_ACTIVE_AGGREGATIONS.dec();
+                                return;
+                            }
+                        }
+                    }
+                }
+                Ok(None) => {
+                    warn!("Upstream stream ended for {output_symbol}. Reconnecting in 2s...");
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    break;
+                }
+                Err(e) => {
+                    warn!("Upstream stream error for {output_symbol}: {e}. Reconnecting in 2s...");
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     break;
                 }
             }
         }
     }
-    info!("TIB aggregation task ended for {}", output_symbol);
-    TIBS_ACTIVE_AGGREGATIONS.dec();
 }

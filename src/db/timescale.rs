@@ -1,53 +1,46 @@
 use crate::config::TimescaleConfig;
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::{market_data_message, DataType, MarketDataMessage, MarketDataRequest};
-use crate::service::{StreamManager, StreamWorker};
+use crate::service::{StreamKey, StreamManager, StreamWorker};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
-use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
+use tonic::Request;
 use tonic::Status;
 use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct TimescaleWorker {
-    upstreams: Arc<HashMap<String, String>>,
-    default_upstream: String,
+    timebar_upstream: String,
+    tibs_upstream: String,
     pool: Pool<Postgres>,
 }
 
 #[tonic::async_trait]
 impl StreamWorker for TimescaleWorker {
-    async fn run(&self, key: String, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
-        // Parse key (SYMBOL:EXCHANGE or just SYMBOL)
-        let (symbol, exchange) = match key.split_once(':') {
-            Some((s, e)) => (s.to_string(), e.to_string()),
-            None => (key.clone(), String::new()),
-        };
+    async fn run(&self, key: StreamKey, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        let symbol = key.symbol.clone();
+        let venue = key.venue.clone().unwrap_or_default();
 
-        // Select upstream
-        let upstream_url = if !exchange.is_empty() {
-            self.upstreams.get(&exchange).cloned().unwrap_or_else(|| {
-                warn!(
-                    "No upstream found for exchange '{}', falling back to default",
-                    exchange
-                );
-                self.default_upstream.clone()
-            })
-        } else {
-            self.default_upstream.clone()
-        };
-
-        run_persistence(upstream_url, symbol, exchange, key, self.pool.clone()).await;
+        run_dual_persistence(
+            self.timebar_upstream.clone(),
+            self.tibs_upstream.clone(),
+            symbol,
+            venue,
+            key.to_string(),
+            self.pool.clone(),
+        )
+        .await
     }
 }
 
 pub type PersistenceService = StreamManager<TimescaleWorker>;
 
 pub async fn new(
-    default_upstream: String,
-    upstreams: HashMap<String, String>,
+    timebar_upstream: String,
+    tibs_upstream: String,
     config: TimescaleConfig,
 ) -> Result<PersistenceService, sqlx::Error> {
     let pool = PgPoolOptions::new()
@@ -109,99 +102,148 @@ pub async fn new(
     });
 
     let worker = TimescaleWorker {
-        upstreams: Arc::new(upstreams),
-        default_upstream,
+        timebar_upstream,
+        tibs_upstream,
         pool,
     };
 
     Ok(StreamManager::new(Arc::new(worker), 10000, false))
 }
 
-async fn run_persistence(
-    upstream_url: String,
-    symbol: String,
-    exchange: String,
-    key: String, // For logging
-    pool: Pool<Postgres>,
-) {
-    let mut client = match MarketDataClient::connect(upstream_url.clone()).await {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to connect to upstream {}: {}", upstream_url, e);
-            return;
-        }
-    };
-
-    let request = tonic::Request::new(MarketDataRequest {
-        symbol: symbol.clone(),
-        data_type: DataType::Candle as i32,
-    });
-
-    let mut stream = match client.subscribe(request).await {
-        Ok(res) => res.into_inner(),
-        Err(e) => {
-            error!("Failed to subscribe to upstream: {}", e);
-            return;
-        }
-    };
-
-    info!("Bar Persistence task started for {}", key);
-
+async fn connect_candle_stream(
+    upstream_url: &str,
+    symbol: &str,
+    venue: &str,
+    key: &str,
+) -> tonic::Streaming<MarketDataMessage> {
     loop {
-        match stream.message().await {
-            Ok(Some(msg)) => {
-                if let Some(market_data_message::Data::Candle(candle)) = msg.data {
-                    // Convert timestamp (ms or ns? Proto says int64, usually ms in this system)
-                    // Assuming ms based on other parts of the code
-                    let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
-
-                    if let Some(t) = time {
-                        let table_name = if candle.interval == "tib" {
-                            "data_warehouse.bar__tick_imbalance"
-                        } else {
-                            "data_warehouse.bar__time"
-                        };
-
-                        let query = format!(
-                            r#"
-                            INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                            "#,
-                        );
-
-                        let result = sqlx::query(&query)
-                            .bind(t)
-                            .bind(&candle.symbol)
-                            .bind(&exchange) // Use the exchange from the key, or potentially from the msg if available
-                            .bind(&candle.interval)
-                            .bind(candle.open)
-                            .bind(candle.high)
-                            .bind(candle.low)
-                            .bind(candle.close)
-                            .bind(candle.volume)
-                            .bind(candle.buy_ticks as i64)
-                            .bind(candle.sell_ticks as i64)
-                            .bind(candle.total_ticks as i64)
-                            .bind(candle.theta)
-                            .execute(&pool)
-                            .await;
-
-                        if let Err(e) = result {
-                            error!("Failed to insert candle for {}: {}", key, e);
-                        }
-                    }
-                }
-            }
-            Ok(None) => {
-                info!("Stream ended for {}", key);
-                break;
-            }
+        let mut client = match MarketDataClient::connect(upstream_url.to_string()).await {
+            Ok(c) => c,
             Err(e) => {
-                error!("Error receiving message for {}: {}", key, e);
-                break;
+                warn!(
+                    "Failed to connect to upstream {}: {}. Retrying in 2s...",
+                    upstream_url, e
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let request = Request::new(MarketDataRequest {
+            symbol: symbol.to_string(),
+            data_type: DataType::Candle as i32,
+            venue: venue.to_string(),
+        });
+
+        match client.subscribe(request).await {
+            Ok(res) => return res.into_inner(),
+            Err(e) => {
+                // With "wire first, subscribe later", this can fail until the producer stream is started via Control.
+                warn!(
+                    "Failed to subscribe to candles ({} -> {}): {}. Retrying in 2s...",
+                    key, upstream_url, e
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
         }
     }
+}
 
-    info!("Bar Persistence task ended for {}", key);
+async fn persist_candle(pool: &Pool<Postgres>, venue: &str, key: &str, candle: crate::proto::Candle) {
+    let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
+
+    if let Some(t) = time {
+        let table_name = if candle.interval == "tib" {
+            "data_warehouse.bar__tick_imbalance"
+        } else {
+            "data_warehouse.bar__time"
+        };
+
+        let query = format!(
+            r#"
+            INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            "#,
+        );
+
+        let result = sqlx::query(&query)
+            .bind(t)
+            .bind(&candle.symbol)
+            .bind(venue)
+            .bind(&candle.interval)
+            .bind(candle.open)
+            .bind(candle.high)
+            .bind(candle.low)
+            .bind(candle.close)
+            .bind(candle.volume)
+            .bind(candle.buy_ticks as i64)
+            .bind(candle.sell_ticks as i64)
+            .bind(candle.total_ticks as i64)
+            .bind(candle.theta)
+            .execute(pool)
+            .await;
+
+        if let Err(e) = result {
+            error!("Failed to insert candle for {}: {}", key, e);
+        }
+    }
+}
+
+async fn run_dual_persistence(
+    timebar_upstream: String,
+    tibs_upstream: String,
+    symbol: String,
+    venue: String,
+    key: String, // For logging
+    pool: Pool<Postgres>,
+) {
+    info!("Bar Persistence task started for {}", key);
+
+    let mut timebar_stream =
+        connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
+    let mut tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
+
+    loop {
+        tokio::select! {
+            msg = timebar_stream.message() => {
+                match msg {
+                    Ok(Some(m)) => {
+                        if let Some(market_data_message::Data::Candle(candle)) = m.data {
+                            persist_candle(&pool, &venue, &key, candle).await;
+                        }
+                    }
+                    Ok(None) => {
+                        warn!("Timebar stream ended for {}. Reconnecting in 2s...", key);
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
+                    }
+                    Err(e) => {
+                        warn!("Timebar stream error for {}: {}. Reconnecting in 2s...", key, e);
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
+                    }
+                }
+            }
+            msg = tibs_stream.message() => {
+                match msg {
+                    Ok(Some(m)) => {
+                        if let Some(market_data_message::Data::Candle(candle)) = m.data {
+                            persist_candle(&pool, &venue, &key, candle).await;
+                        }
+                    }
+                    Ok(None) => {
+                        warn!("Tibs stream ended for {}. Reconnecting in 2s...", key);
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
+                    }
+                    Err(e) => {
+                        warn!("Tibs stream error for {}: {}. Reconnecting in 2s...", key, e);
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
+                    }
+                }
+            }
+        }
+    }
 }

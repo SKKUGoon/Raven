@@ -1,9 +1,17 @@
 use clap::{Parser, Subcommand};
-use ptree::TreeBuilder;
 use raven::config::Settings;
+use raven::domain::instrument::{Asset, Instrument};
+use raven::domain::venue::VenueId;
 use raven::proto::control_client::ControlClient;
-use raven::proto::{ControlRequest, ListRequest, StopAllRequest};
-use std::process::Command;
+use raven::proto::{ControlRequest, DataType, ListRequest, StopAllRequest};
+use raven::routing::symbol_resolver::SymbolResolver;
+use raven::routing::venue_selector::VenueSelector;
+use raven::utils::process::{start_all_services_with_settings, stop_all_services};
+use raven::utils::service_registry;
+use raven::utils::status::check_status;
+use raven::utils::tree::show_users_tree;
+use raven::utils::grpc::wait_for_control_ready;
+use std::io::{Error as IoError, ErrorKind};
 
 #[derive(Parser)]
 #[command(name = "ravenctl")]
@@ -24,19 +32,45 @@ struct Cli {
 enum Commands {
     /// Start services (no args) OR Start data collection for a symbol (with args)
     Start {
-        /// Symbol to collect (e.g. BTCUSDT)
+        /// Symbol or base asset to collect.
+        ///
+        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
+        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
         #[arg(short, long)]
         symbol: Option<String>,
-        /// Exchange (optional)
+        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
+        #[arg(long)]
+        base: Option<String>,
+        /// Target venue (single-venue selector).
         #[arg(short, long)]
         exchange: Option<String>,
+        /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
+        #[arg(long = "venue-include")]
+        venue_include: Vec<String>,
+        /// Optional denylist of venues (may be repeated). Overrides config denylist.
+        #[arg(long = "venue-exclude")]
+        venue_exclude: Vec<String>,
     },
     /// Stop data collection for a symbol
     Stop {
+        /// Symbol or base asset to stop.
+        ///
+        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
+        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
         #[arg(short, long)]
         symbol: String,
+        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
+        #[arg(long)]
+        base: Option<String>,
+        /// Target venue (single-venue selector).
         #[arg(short, long)]
-        exchange: Option<String>,
+        venue: Option<String>,
+        /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
+        #[arg(long = "venue-include")]
+        venue_include: Vec<String>,
+        /// Optional denylist of venues (may be repeated). Overrides config denylist.
+        #[arg(long = "venue-exclude")]
+        venue_exclude: Vec<String>,
     },
     /// Stop all data collections (internal)
     StopAll,
@@ -51,6 +85,8 @@ enum Commands {
     /// Show service users/subscriptions tree
     User,
 }
+
+use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,71 +106,257 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             show_users_tree(&settings).await;
             return Ok(());
         }
-        Commands::Start { symbol, .. } if symbol.is_none() => {
-            // "ravenctl start" (no args) -> Start services script
-            println!("Starting services using ./start_services.sh...");
-            let status = Command::new("sh")
-                .arg("start_services.sh")
-                .status()
-                .expect("Failed to execute start_services.sh");
-
-            if status.success() {
-                println!("Services started successfully.");
-            } else {
-                eprintln!("Failed to start services.");
+        Commands::Start {
+            symbol,
+            base,
+            exchange,
+            venue_include,
+            venue_exclude,
+        } => {
+            // Case 1: No symbol provided -> Start Infrastructure ONLY
+            if symbol.is_none() {
+                start_all_services_with_settings(&settings);
+                return Ok(());
             }
+
+            // Case 2: Symbol provided -> Start Infrastructure AND Start Collection
+            // First, ensure services are running
+            start_all_services_with_settings(&settings);
+
+            let sym_raw = symbol.as_ref().unwrap();
+
+            // Build instrument if base is provided; otherwise treat --symbol as a venue symbol.
+            let instrument = match &base {
+                Some(base_raw) => {
+                    let base_asset: Asset = sym_raw
+                        .parse()
+                        .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?;
+                    let quote_asset: Asset = base_raw
+                        .parse()
+                        .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?;
+                    Some(Instrument::new(base_asset, quote_asset))
+                }
+                None => None,
+            };
+
+            let resolver = SymbolResolver::from_config(&settings.routing);
+
+            // Resolve venues:
+            // - if --exchange provided, we run only that venue (backwards-compat)
+            // - else: merge config selector + CLI overrides
+            let venues: Vec<VenueId> = if let Some(exch) = exchange.as_deref() {
+                vec![exch
+                    .parse()
+                    .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?]
+            } else {
+                let selector = VenueSelector {
+                    include: if venue_include.is_empty() {
+                        settings.routing.venue_include.clone()
+                    } else {
+                        venue_include.clone()
+                    },
+                    exclude: if venue_exclude.is_empty() {
+                        settings.routing.venue_exclude.clone()
+                    } else {
+                        venue_exclude.clone()
+                    },
+                };
+                selector.resolve()
+            };
+
+            if venues.is_empty() {
+                eprintln!("No venues selected (after include/exclude). Nothing to do.");
+                return Ok(());
+            }
+
+            let tick_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tick_persistence
+            );
+            let bar_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_bar_persistence
+            );
+            let timebar_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_timebar_minutes
+            );
+            let tibs_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tibs
+            );
+
+            // Readiness checks
+            let ready_timeout = Duration::from_secs(15);
+            for (name, host) in [
+                ("tick_persistence", tick_host.clone()),
+                ("bar_persistence", bar_host.clone()),
+                ("timebar", timebar_host.clone()),
+                ("tibs", tibs_host.clone()),
+            ] {
+                if !wait_for_control_ready(&host, ready_timeout).await {
+                    eprintln!("Service {name} not ready at {host} (timeout {ready_timeout:?})");
+                }
+            }
+
+            for venue in venues {
+                let venue_wire = venue.as_wire();
+
+                let venue_symbol = match &instrument {
+                    Some(instr) => resolver.resolve(instr, &venue),
+                    None => sym_raw.clone(),
+                };
+
+                println!(
+                    "Starting collection pipeline for {} on {} (venue_symbol={})...",
+                    instrument
+                        .as_ref()
+                        .map(|i| i.to_string())
+                        .unwrap_or_else(|| sym_raw.clone()),
+                    venue_wire,
+                    venue_symbol
+                );
+
+                // 1. Start Collector (e.g. binance_spot)
+                let collector_port = match venue {
+                    VenueId::BinanceFutures => settings.server.port_binance_futures,
+                    _ => settings.server.port_binance_spot,
+                };
+                let collector_host = format!("http://{}:{}", settings.server.host, collector_port);
+
+                if !wait_for_control_ready(&collector_host, ready_timeout).await {
+                    eprintln!(
+                        "Collector not ready at {collector_host} (timeout {ready_timeout:?})"
+                    );
+                }
+
+                // Wire downstream FIRST
+                // 1) Tick Persistence (TRADE + ORDERBOOK)
+                match ControlClient::connect(tick_host.clone()).await {
+                    Ok(mut client) => {
+                        // Trades
+                        let req_trade = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Trade as i32,
+                        };
+                        let _ = client.start_collection(req_trade).await;
+
+                        // Orderbook
+                        let req_book = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Orderbook as i32,
+                        };
+                        let _ = client.start_collection(req_book).await;
+
+                        println!("  [+] Tick Persistence started for {venue_symbol}");
+                    }
+                    Err(e) => eprintln!("  [-] Failed to connect to tick persistence: {e}"),
+                }
+
+                // 2) Bar Persistence (CANDLE)
+                match ControlClient::connect(bar_host.clone()).await {
+                    Ok(mut client) => {
+                        let req = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Candle as i32,
+                        };
+                        let _ = client.start_collection(req).await;
+                        println!("  [+] Bar Persistence started for {venue_symbol}");
+                    }
+                    Err(e) => eprintln!("  [-] Failed to connect to bar persistence: {e}"),
+                }
+
+                // 3) Aggregators (Timebars) - output is CANDLE
+                match ControlClient::connect(timebar_host.clone()).await {
+                    Ok(mut client) => {
+                        let req = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Candle as i32,
+                        };
+                        let _ = client.start_collection(req).await;
+                        println!("  [+] Timebar started for {venue_symbol}");
+                    }
+                    Err(e) => eprintln!("  [-] Failed to connect to timebar: {e}"),
+                }
+
+                // 4) Aggregators (Tibs) - output is CANDLE
+                match ControlClient::connect(tibs_host.clone()).await {
+                    Ok(mut client) => {
+                        let req = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Candle as i32,
+                        };
+                        let _ = client.start_collection(req).await;
+                        println!("  [+] Tibs started for {venue_symbol}");
+                    }
+                    Err(e) => eprintln!("  [-] Failed to connect to tibs: {e}"),
+                }
+
+                // Start upstream LAST (this is when the actual venue WS subscription happens)
+                match ControlClient::connect(collector_host.clone()).await {
+                    Ok(mut client) => {
+                        // Trades
+                        let req_trade = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Trade as i32,
+                        };
+                        let _ = client.start_collection(req_trade).await;
+
+                        // Orderbook
+                        let req_book = ControlRequest {
+                            symbol: venue_symbol.clone(),
+                            venue: venue_wire.clone(),
+                            data_type: DataType::Orderbook as i32,
+                        };
+                        let _ = client.start_collection(req_book).await;
+
+                        println!("  [+] Collector started for {venue_symbol}");
+                    }
+                    Err(e) => eprintln!("  [-] Failed to connect to collector: {e}"),
+                }
+            }
+
             return Ok(());
         }
         Commands::Shutdown => {
-            println!("Stopping services using ./stop_services.sh...");
-            let status = Command::new("sh")
-                .arg("stop_services.sh")
-                .status()
-                .expect("Failed to execute stop_services.sh");
-
-            if status.success() {
-                println!("Services stopped successfully.");
-            } else {
-                eprintln!("Failed to stop services.");
-            }
+            stop_all_services();
             return Ok(());
         }
         _ => {}
     }
 
-    // For other commands, connect to the target host
+    // For other commands (Stop, StopAll, List), connect to the target host
     let host = if let Some(s) = cli.service {
         let host_ip = &settings.server.host;
-        match s.as_str() {
-            "binance_spot" => format!("http://{}:{}", host_ip, settings.server.port_binance_spot),
-            "binance_futures" => {
-                format!(
-                    "http://{}:{}",
-                    host_ip, settings.server.port_binance_futures
-                )
-            }
-            "tick_persistence" | "persistence" => {
-                format!(
+        // Resolve against our canonical service registry first.
+        let services = service_registry::all_services(&settings);
+        if let Some(spec) = services.iter().find(|svc| svc.id == s.as_str()) {
+            spec.addr(host_ip)
+        } else {
+            // Backwards-compatible aliases
+            match s.as_str() {
+                "persistence" => format!(
                     "http://{}:{}",
                     host_ip, settings.server.port_tick_persistence
-                )
-            }
-            "bar_persistence" => {
-                format!(
-                    "http://{}:{}",
-                    host_ip, settings.server.port_bar_persistence
-                )
-            }
-            "timebar" | "timebar_minutes" => {
-                format!(
+                ),
+                "timebar" | "timebar_minutes" => format!(
                     "http://{}:{}",
                     host_ip, settings.server.port_timebar_minutes
-                )
-            }
-            "tibs" => format!("http://{}:{}", host_ip, settings.server.port_tibs),
-            _ => {
-                eprintln!("Unknown service: {s}. Using default host.");
-                cli.host
+                ),
+                "timebar_seconds" => format!(
+                    "http://{}:{}",
+                    host_ip, settings.server.port_timebar_seconds
+                ),
+                _ => {
+                    eprintln!("Unknown service: {s}. Using default host.");
+                    cli.host
+                }
             }
         }
     } else {
@@ -146,29 +368,119 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ControlClient::connect(host).await?;
 
     match cli.command {
-        Commands::Start { symbol, exchange } => {
-            // "ravenctl start --symbol ..." -> Start collection
-            if let Some(sym) = symbol {
-                let request = ControlRequest {
-                    symbol: sym,
-                    exchange: exchange.unwrap_or_default(),
-                };
-                let response = client.start_collection(request).await?.into_inner();
-                println!("Success: {}", response.success);
-                println!("Message: {}", response.message);
-            } else {
-                // Should have been handled above
-                unreachable!();
-            }
-        }
-        Commands::Stop { symbol, exchange } => {
-            let request = ControlRequest {
-                symbol,
-                exchange: exchange.unwrap_or_default(),
+        // Start is handled above
+        Commands::Start { .. } => unreachable!(),
+
+        Commands::Stop { symbol, base, venue, venue_include, venue_exclude } => {
+            // Build instrument if base is provided; otherwise treat --symbol as a venue symbol.
+            let instrument = match &base {
+                Some(base_raw) => {
+                    let base_asset: Asset = symbol
+                        .parse()
+                        .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?;
+                    let quote_asset: Asset = base_raw
+                        .parse()
+                        .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?;
+                    Some(Instrument::new(base_asset, quote_asset))
+                }
+                None => None,
             };
-            let response = client.stop_collection(request).await?.into_inner();
-            println!("Success: {}", response.success);
-            println!("Message: {}", response.message);
+
+            let resolver = SymbolResolver::from_config(&settings.routing);
+            let venues: Vec<VenueId> = if let Some(v) = venue.as_deref() {
+                vec![v
+                    .parse()
+                    .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))?]
+            } else {
+                let selector = VenueSelector {
+                    include: if venue_include.is_empty() {
+                        settings.routing.venue_include.clone()
+                    } else {
+                        venue_include
+                    },
+                    exclude: if venue_exclude.is_empty() {
+                        settings.routing.venue_exclude.clone()
+                    } else {
+                        venue_exclude
+                    },
+                };
+                selector.resolve()
+            };
+
+            if venues.is_empty() {
+                eprintln!("No venues selected (after include/exclude). Nothing to do.");
+                return Ok(());
+            }
+
+            // Service hosts
+            let tick_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tick_persistence
+            );
+            let bar_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_bar_persistence
+            );
+            let timebar_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_timebar_minutes
+            );
+            let tibs_host = format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tibs
+            );
+
+            for venue_id in venues {
+                let venue_wire = venue_id.as_wire();
+                let venue_symbol = match &instrument {
+                    Some(instr) => resolver.resolve(instr, &venue_id),
+                    None => symbol.clone(),
+                };
+
+                // Downstream first
+                for (name, host, data_types) in [
+                    ("tick_persistence", tick_host.clone(), vec![DataType::Trade, DataType::Orderbook]),
+                    ("bar_persistence", bar_host.clone(), vec![DataType::Candle]),
+                    ("timebar", timebar_host.clone(), vec![DataType::Candle]),
+                    ("tibs", tibs_host.clone(), vec![DataType::Candle]),
+                ] {
+                    match ControlClient::connect(host.clone()).await {
+                        Ok(mut svc) => {
+                            for dt in data_types {
+                                let req = ControlRequest {
+                                    symbol: venue_symbol.clone(),
+                                    venue: venue_wire.clone(),
+                                    data_type: dt as i32,
+                                };
+                                let _ = svc.stop_collection(req).await;
+                            }
+                            println!("  [-] Stopped {name} for {venue_symbol} ({venue_wire})");
+                        }
+                        Err(e) => eprintln!("  [!] Failed to connect to {name}: {e}"),
+                    }
+                }
+
+                // Upstream last
+                let collector_port = match venue_id {
+                    VenueId::BinanceFutures => settings.server.port_binance_futures,
+                    _ => settings.server.port_binance_spot,
+                };
+                let collector_host = format!("http://{}:{}", settings.server.host, collector_port);
+                match ControlClient::connect(collector_host.clone()).await {
+                    Ok(mut svc) => {
+                        for dt in [DataType::Trade, DataType::Orderbook] {
+                            let req = ControlRequest {
+                                symbol: venue_symbol.clone(),
+                                venue: venue_wire.clone(),
+                                data_type: dt as i32,
+                            };
+                            let _ = svc.stop_collection(req).await;
+                        }
+                        println!("  [-] Stopped collector for {venue_symbol} ({venue_wire})");
+                    }
+                    Err(e) => eprintln!("  [!] Failed to connect to collector: {e}"),
+                }
+            }
         }
         Commands::StopAll => {
             let response = client
@@ -192,79 +504,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-async fn check_status(settings: &Settings) {
-    let mut services = vec![
-        ("Binance Spot", settings.server.port_binance_spot),
-        ("Binance Futures", settings.server.port_binance_futures),
-        ("TimeBar (1m)", settings.server.port_timebar_minutes),
-        ("Tibs", settings.server.port_tibs),
-        ("Tick Persistence", settings.server.port_tick_persistence),
-        ("Bar Persistence", settings.server.port_bar_persistence),
-    ];
-    // Manually add the new 1s timebar service (port 50053)
-    services.push(("TimeBar (1s)", 50053));
-
-    println!("{:<20} | {:<10} | {:<10}", "Service", "Port", "Status");
-    println!("{:-<20}-|-{:-<10}-|-{:-<10}", "", "", "");
-
-    for (name, port) in services {
-        let addr = format!("http://{}:{}", settings.server.host, port);
-        let status = match ControlClient::connect(addr).await {
-            Ok(mut client) => {
-                match client.list_collections(ListRequest {}).await {
-                    Ok(_) => "\x1b[32mHEALTHY\x1b[0m",    // Green
-                    Err(_) => "\x1b[31mUNHEALTHY\x1b[0m", // Red
-                }
-            }
-            Err(_) => "\x1b[31mUNHEALTHY\x1b[0m", // Red
-        };
-        println!("{name:<20} | {port:<10} | {status}");
-    }
-}
-
-async fn show_users_tree(settings: &Settings) {
-    let mut services = vec![
-        ("Binance Spot", settings.server.port_binance_spot),
-        ("Binance Futures", settings.server.port_binance_futures),
-        ("TimeBar (1m)", settings.server.port_timebar_minutes),
-        ("Tibs", settings.server.port_tibs),
-        ("Tick Persistence", settings.server.port_tick_persistence),
-        ("Bar Persistence", settings.server.port_bar_persistence),
-    ];
-    // Manually add the new 1s timebar service (port 50053)
-    services.push(("TimeBar (1s)", 50053));
-
-    let mut tree = TreeBuilder::new("Raven Cluster".to_string());
-
-    for (name, port) in services {
-        let addr = format!("http://{}:{}", settings.server.host, port);
-        let status = match ControlClient::connect(addr).await {
-            Ok(mut client) => match client.list_collections(ListRequest {}).await {
-                Ok(resp) => {
-                    let collections = resp.into_inner().collections;
-                    let node_text = format!("{} ({} active)", name, collections.len());
-                    let service_node = tree.begin_child(node_text);
-
-                    for c in collections {
-                        let info = format!("{} [subs: {}]", c.symbol, c.subscriber_count);
-                        service_node.add_empty_child(info);
-                    }
-                    service_node.end_child();
-                    true
-                }
-                Err(_) => false,
-            },
-            Err(_) => false,
-        };
-
-        if !status {
-            // Service is down, maybe show it?
-            let node_text = format!("{name} (UNREACHABLE)");
-            tree.add_empty_child(node_text);
-        }
-    }
-
-    let _ = ptree::print_tree(&tree.build());
 }

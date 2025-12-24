@@ -1,7 +1,6 @@
 use raven::config::Settings;
 use raven::db::timescale;
 use raven::service::RavenService;
-use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    // This service connects to aggregators (timebar_minutes, tibs)
-    let timebar_minutes_upstream = format!(
+    // This service connects to aggregators (timebar, tibs)
+    let timebar_upstream = format!(
         "http://{}:{}",
         settings.server.host, settings.server.port_timebar_minutes
     );
@@ -33,23 +32,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.host, settings.server.port_tibs
     );
 
-    let mut upstreams = HashMap::new();
-    upstreams.insert(
-        "raven_timebar_minutes".to_string(),
-        timebar_minutes_upstream.clone(),
-    );
-    upstreams.insert("raven_tibs".to_string(), tibs_upstream.clone());
-
-    // Default mappings for standard exchange names to timebar_minutes (or as desired)
-    upstreams.insert("BINANCE_SPOT".to_string(), timebar_minutes_upstream.clone());
-    upstreams.insert(
-        "BINANCE_FUTURES".to_string(),
-        timebar_minutes_upstream.clone(),
-    );
-
     let service_impl = timescale::new(
-        timebar_minutes_upstream,
-        upstreams,
+        timebar_upstream,
+        tibs_upstream,
         settings.timescale.clone(),
     )
     .await?;

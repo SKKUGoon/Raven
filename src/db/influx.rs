@@ -1,7 +1,7 @@
 use crate::config::InfluxConfig;
 use crate::proto::market_data_client::MarketDataClient;
 use crate::proto::{market_data_message, DataType, MarketDataMessage, MarketDataRequest};
-use crate::service::{StreamManager, StreamWorker};
+use crate::service::{StreamDataType, StreamKey, StreamManager, StreamWorker};
 use crate::telemetry::{INFLUX_ACTIVE_TASKS, INFLUX_POINTS_WRITTEN};
 use influxdb2::models::DataPoint;
 use influxdb2::Client;
@@ -11,6 +11,13 @@ use tokio::sync::{broadcast, mpsc};
 use tokio::time::{self, Duration};
 use tonic::Status;
 use tracing::{error, info, warn};
+
+struct InfluxActiveGuard;
+impl Drop for InfluxActiveGuard {
+    fn drop(&mut self) {
+        INFLUX_ACTIVE_TASKS.dec();
+    }
+}
 
 #[derive(Clone)]
 pub struct InfluxWorker {
@@ -24,11 +31,15 @@ pub struct InfluxWorker {
 
 #[tonic::async_trait]
 impl StreamWorker for InfluxWorker {
-    async fn run(&self, key: String, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
-        // Parse key (SYMBOL:EXCHANGE or just SYMBOL)
-        let (symbol, exchange) = match key.split_once(':') {
-            Some((s, e)) => (s.to_string(), e.to_string()),
-            None => (key.clone(), String::new()),
+    async fn run(&self, key: StreamKey, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
+        let symbol = key.symbol.clone();
+        let exchange = key.venue.clone().unwrap_or_default();
+        let data_type = match key.data_type {
+            StreamDataType::Trade => DataType::Trade,
+            StreamDataType::Orderbook => DataType::Orderbook,
+            StreamDataType::Candle => DataType::Candle,
+            StreamDataType::Funding => DataType::Funding,
+            StreamDataType::Unknown(_) => DataType::Unknown,
         };
 
         // Select upstream
@@ -48,7 +59,8 @@ impl StreamWorker for InfluxWorker {
             upstream_url,
             symbol,
             exchange,
-            key,
+            key.to_string(),
+            data_type,
             self.client.clone(),
             self.bucket.clone(),
             self.batch_size,
@@ -86,34 +98,15 @@ async fn run_persistence(
     symbol: String,
     exchange: String,
     key: String, // For logging
+    data_type: DataType,
     influx_client: Client,
     bucket: String,
     batch_size: usize,
     batch_interval_ms: u64,
 ) {
-    let mut client = match MarketDataClient::connect(upstream_url.clone()).await {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to connect to upstream {}: {}", upstream_url, e);
-            return;
-        }
-    };
-
-    let request = tonic::Request::new(MarketDataRequest {
-        symbol: symbol.clone(),
-        data_type: DataType::Trade as i32,
-    });
-
-    let mut stream = match client.subscribe(request).await {
-        Ok(res) => res.into_inner(),
-        Err(e) => {
-            error!("Failed to subscribe to upstream: {}", e);
-            return;
-        }
-    };
-
     let key_clone = key.clone();
     INFLUX_ACTIVE_TASKS.inc();
+    let _active_guard = InfluxActiveGuard;
 
     info!("Persistence task started for {}", key_clone);
 
@@ -126,7 +119,7 @@ async fn run_persistence(
     let writer_bucket = bucket.clone();
     let writer_key = key_clone.clone();
 
-    let writer_handle = tokio::spawn(async move {
+    let _writer_handle = tokio::spawn(async move {
         let mut buffer: Vec<DataPoint> = Vec::with_capacity(batch_size);
         let mut interval = time::interval(Duration::from_millis(batch_interval_ms));
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -157,52 +150,130 @@ async fn run_persistence(
         info!("Persistence writer task ended for {}", writer_key);
     });
 
-    // Reader loop - purely reads and pushes to channel
     loop {
-        match stream.message().await {
-            Ok(Some(msg)) => {
-                if let Some(market_data_message::Data::Trade(trade)) = msg.data {
-                    let timestamp_ns = trade.timestamp.saturating_mul(1_000_000);
+        // (Re)connect + (re)subscribe. This will initially fail until the upstream stream
+        // has been started via Control, which supports "wire first, subscribe later".
+        let mut client = match MarketDataClient::connect(upstream_url.clone()).await {
+            Ok(c) => c,
+            Err(e) => {
+                warn!(
+                    "Failed to connect to upstream {}: {}. Retrying in 2s...",
+                    upstream_url, e
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
 
-                    let mut point_builder = DataPoint::builder("trades")
-                        .tag("symbol", &trade.symbol)
-                        .tag("side", &trade.side)
-                        .field("price", trade.price)
-                        .field("quantity", trade.quantity)
-                        .timestamp(timestamp_ns);
+        let request = tonic::Request::new(MarketDataRequest {
+            symbol: symbol.clone(),
+            data_type: data_type as i32,
+            venue: exchange.clone(),
+        });
 
-                    if !exchange.is_empty() {
-                        point_builder = point_builder.tag("exchange", &exchange);
-                    }
+        let mut stream = match client.subscribe(request).await {
+            Ok(res) => res.into_inner(),
+            Err(e) => {
+                warn!(
+                    "Failed to subscribe to upstream ({}): {}. Retrying in 2s...",
+                    key_clone, e
+                );
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
+            }
+        };
 
-                    if let Ok(point) = point_builder.build() {
-                        // If channel is full, we drop the point to avoid blocking the stream
-                        // Alternatively, we could block, but that causes "Stream lagged" upstream.
-                        // Dropping is better for stability than crashing/lagging.
-                        if tx.try_send(point).is_err() {
-                            warn!("Persistence buffer full for {}. Dropping point.", key_clone);
+        // Reader loop - purely reads and pushes to channel
+        loop {
+            match stream.message().await {
+                Ok(Some(msg)) => match msg.data {
+                    Some(market_data_message::Data::Trade(trade)) => {
+                        let timestamp_ns = trade.timestamp.saturating_mul(1_000_000);
+
+                        let mut point_builder = DataPoint::builder("trades")
+                            .tag("symbol", &trade.symbol)
+                            .tag("side", &trade.side)
+                            .field("price", trade.price)
+                            .field("quantity", trade.quantity)
+                            .timestamp(timestamp_ns);
+
+                        if !exchange.is_empty() {
+                            point_builder = point_builder.tag("exchange", &exchange);
+                        }
+
+                        if let Ok(point) = point_builder.build() {
+                            if tx.try_send(point).is_err() {
+                                warn!("Persistence buffer full for {}. Dropping point.", key_clone);
+                            }
                         }
                     }
+                    Some(market_data_message::Data::Orderbook(book)) => {
+                        // Store orderbook snapshot (best bid/ask + derived values).
+                        let timestamp_ns = book.timestamp.saturating_mul(1_000_000);
+
+                        let best_bid = book.bids.first();
+                        let best_ask = book.asks.first();
+
+                        let mut point_builder = DataPoint::builder("orderbook")
+                            .tag("symbol", &book.symbol)
+                            .timestamp(timestamp_ns);
+
+                        if !exchange.is_empty() {
+                            point_builder = point_builder.tag("exchange", &exchange);
+                        }
+
+                        if let Some(bid) = best_bid {
+                            point_builder = point_builder
+                                .field("bid_price", bid.price)
+                                .field("bid_qty", bid.quantity);
+                        }
+
+                        if let Some(ask) = best_ask {
+                            point_builder = point_builder
+                                .field("ask_price", ask.price)
+                                .field("ask_qty", ask.quantity);
+                        }
+
+                        // Calculate spread and mid price if both exist
+                        if let (Some(bid), Some(ask)) = (best_bid, best_ask) {
+                            let spread = ask.price - bid.price;
+                            let mid = (ask.price + bid.price) / 2.0;
+                            point_builder = point_builder
+                                .field("spread", spread)
+                                .field("mid_price", mid);
+
+                            // Calculate simple imbalance (Bid Qty / (Bid Qty + Ask Qty))
+                            let imbalance = bid.quantity / (bid.quantity + ask.quantity);
+                            point_builder = point_builder.field("imbalance", imbalance);
+                        }
+
+                        if let Ok(point) = point_builder.build() {
+                            if tx.try_send(point).is_err() {
+                                warn!("Persistence buffer full for {}. Dropping point.", key_clone);
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                Ok(None) => {
+                    warn!(
+                        "Upstream stream ended for {}. Reconnecting in 2s...",
+                        key_clone
+                    );
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    break;
                 }
-            }
-            Ok(None) => {
-                info!("Stream ended for {}", key_clone);
-                break;
-            }
-            Err(e) => {
-                error!("Error receiving message for {}: {}", key_clone, e);
-                break;
+                Err(e) => {
+                    warn!(
+                        "Error receiving message for {}: {}. Reconnecting in 2s...",
+                        key_clone, e
+                    );
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    break;
+                }
             }
         }
     }
-
-    // Drop tx to signal writer to finish
-    drop(tx);
-    // Wait for writer to finish flushing
-    let _ = writer_handle.await;
-
-    info!("Persistence task ended for {}", key_clone);
-    INFLUX_ACTIVE_TASKS.dec();
 }
 
 async fn flush_buffer(client: &Client, bucket: &str, buffer: &mut Vec<DataPoint>) {

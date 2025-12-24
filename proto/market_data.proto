@@ -11,6 +11,9 @@ service MarketData {
 message MarketDataRequest {
     string symbol = 1;
     DataType data_type = 2;
+    // Trading venue (e.g. BINANCE_SPOT, BINANCE_FUTURES).
+    // Required when the producer is multi-venue.
+    string venue = 3;
 }
 
 enum DataType {
@@ -79,7 +82,13 @@ message Balance {
 }
 
 message MarketDataMessage {
+    // Backwards-compatibility field (historically used inconsistently).
+    // We keep emitting this as the producer service name for older consumers.
     string exchange = 6;
+    // Trading venue (e.g. BINANCE_SPOT, BINANCE_FUTURES).
+    string venue = 7;
+    // Producer service name (e.g. binance_spot, raven_timebar).
+    string producer = 8;
     oneof data {
         OrderBookSnapshot orderbook = 1;
         Trade trade = 2;

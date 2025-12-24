@@ -1,165 +1,179 @@
 # Raven
 
-Raven is a high-performance, modular market data platform written in Rust. It is designed to collect, process, and persist financial market data using a microservices architecture.
+Raven is a modular market-data platform in Rust: **sources** ingest exchange data, **processors** build features/bars, and **persistence** stores ticks and bars. Everything is controlled via a gRPC **Control plane** (`ravenctl`).
+
+## Key process change: “wire first, subscribe later”
+
+Raven now follows a strict lifecycle:
+
+1. **Start infrastructure (processes)**.
+2. **Wire downstream consumers/processors first** (they will attempt to subscribe but will wait/retry).
+3. **Start upstream collectors last** (this is when the exchange WS subscriptions are activated).
+
+Important behavioral rule:
+
+- **`MarketData.Subscribe` never auto-starts streams.** If a stream isn't started, `Subscribe` returns a `failed_precondition` and internal services will retry until the stream exists.
 
 ## Prerequisites
 
-Before running the Raven binaries, ensure your environment meets the following requirements.
+### Databases
 
-### 1. External Services (Databases)
+- **InfluxDB v2.x**: used by `tick_persistence` (writes trades + orderbook snapshots).
+- **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` (writes `bar__time` and `bar__tick_imbalance`).
 
-Raven requires two database services to be running and accessible.
+Notes:
+- **InfluxDB** is schema-on-write (bucket + token required).
+- **TimescaleDB** tables/hypertables are created on service startup (best-effort). You still need the TimescaleDB extension available in the DB.
 
-| Service | Role | Requirement | Auth |
-| :--- | :--- | :--- | :--- |
-| **InfluxDB v2.x** | Tick Persistence | Create an **Organization** and a **Bucket** (e.g., `raven-prod`). | API Token with write access. |
-| **PostgreSQL + TimescaleDB** | Bar Persistence | PostgreSQL server with the `timescaledb` extension installed. | Standard Postgres credentials. |
+### Network
 
-### 2. Database Initialization
+- Outbound WS:
+  - `wss://stream.binance.com:9443`
+  - `wss://fstream.binance.com`
+- Inbound gRPC: default ports are `500xx` (see config).
 
-You must initialize the database schemas before starting the persistence services.
+## Configuration (`.toml` + env)
 
-*   **InfluxDB**: Schema-on-write. No initialization required beyond bucket creation.
-*   **TimescaleDB**: Run the initialization script to create the necessary hypertables.
-    ```bash
-    # Run this against your Postgres database
-    psql -d raven -f sql/create_table_bar__tick_imbalance.sql
+Raven loads configuration in this order:
 
-    psql -d raven -f sql/create_table_bar__time.sql
-    ```
+1. `test.toml` (always loaded first as defaults)
+2. `${RUN_MODE}.toml` (optional, e.g. `prod.toml`)
+3. `local.toml` (optional, for uncommitted local overrides)
+4. Environment variables with prefix `RAVEN__` (double-underscore separator)
 
-### 3. System Libraries
+Examples:
 
-The binaries are dynamically linked. Ensure the following libraries are installed:
-*   **Linux**: `openssl` (libssl-dev / openssl-devel)
-*   **macOS**: Standard system libraries (SecureTransport/LibreSSL)
-
-### 4. Network Access
-
-*   **Outbound**: Source services need direct internet access to:
-    *   `wss://stream.binance.com:9443`
-    *   `wss://fstream.binance.com`
-*   **Inbound**: gRPC ports (default `500xx`) must be open between services if running on different machines.
-
----
-
-## Configuration
-
-Raven uses a hierarchical configuration system.
-
-1.  **File (`prod.toml`)**: Create a `prod.toml` in the working directory (set `RUN_MODE=prod` to use).
-    ```toml
-    [server]
-    host = "0.0.0.0"
-    port_binance_spot = 50001
-    # ... see src/config.rs for all ports
-
-    [influx]
-    url = "http://localhost:8086"
-    token = "my-token"
-    org = "my-org"
-    bucket = "raven-prod"
-
-    [timescale]
-    url = "postgres://user:pass@localhost:5432/raven"
-    ```
-
-2.  **Environment Variables**: Override any setting using `RAVEN__` prefix (double underscore separator).
-    *   `RAVEN__INFLUX__TOKEN=my-secret-token`
-    *   `RAVEN__SERVER__PORT_BINANCE_SPOT=50099`
-
----
-
-## Services & Binaries
-
-Raven consists of several specialized binaries. Below is a guide to each service and how to use it.
-
-### 1. Sources (Data Collectors)
-
-These services connect to external exchanges via WebSocket and stream raw trade data over gRPC.
-
-| Binary | Description | Default Port |
-| :--- | :--- | :--- |
-| `binance_spot` | Connects to Binance Spot API. | `50001` |
-| `binance_futures` | Connects to Binance Futures API. | `50002` |
-
-**Usage:**
 ```bash
-# Start the spot collector
-./binance_spot
-
-# Start the futures collector
-./binance_futures
-```
-*Note: These services do not start collecting data until requested by a downstream consumer or via `ravenctl`.*
-
-### 2. Aggregators (Processors)
-
-These services subscribe to **Sources**, process the data (e.g., build candles), and stream the results.
-
-| Binary | Description | Default Port |
-| :--- | :--- | :--- |
-| `raven_timebar` | Aggregates trades into time-based candles (e.g., 1m, 1h). | `50051` |
-| `raven_tibs` | Aggregates trades into Tick Imbalance Bars (TIBs). | `50052` |
-
-**Usage:**
-```bash
-# Start 1-minute time bars (default)
-./raven_timebar
-
-# Start 5-minute time bars
-./raven_timebar --seconds 300
-
-# Start TIBs with custom parameters
-./raven_tibs --initial-size 1000.0 --alpha-size 0.1
+export RUN_MODE=prod
+export RAVEN__INFLUX__TOKEN="my-secret-token"
+export RAVEN__SERVER__PORT_BINANCE_SPOT=50099
 ```
 
-### 3. Persistence (Consumers)
+### Routing section: venues + symbol mapping
 
-These services subscribe to **Sources** or **Aggregators** and write data to the databases.
+Raven supports:
 
-| Binary | Description | Default Port | Target DB |
-| :--- | :--- | :--- | :--- |
-| `tick_persistence` | Writes raw trades to InfluxDB. | `50091` | InfluxDB |
-| `bar_persistence` | Writes aggregated bars (Time & TIBs) to TimescaleDB. | `50092` | TimescaleDB |
+- **Venue selection**: `routing.venue_include` / `routing.venue_exclude`
+- **Venue-specific symbol mapping**: `routing.symbol_map`
 
-**Usage:**
-```bash
-./tick_persistence
-./bar_persistence
+Example (spot uses `PEPEUSDT`, futures uses `1000PEPEUSDT`):
+
+```toml
+[routing]
+venue_include = []
+venue_exclude = []
+
+[routing.symbol_map]
+"PEPE/USDT" = { BINANCE_FUTURES = "1000PEPEUSDT" }
 ```
 
-### 4. Control Plane (`ravenctl`)
+## Services & binaries
 
-The Command Line Interface (CLI) for managing the Raven cluster. Use this to start/stop collections and check system status.
+### Sources (collectors)
 
-**Common Commands:**
+- `binance_spot` (default `50001`)
+- `binance_futures` (default `50002`)
 
-| Action | Command | Description |
-| :--- | :--- | :--- |
-| **Check Status** | `./ravenctl status` | Checks health of all configured services. |
-| **List Active** | `./ravenctl list` | Lists all active subscriptions on the target host. |
-| **Start Spot** | `./ravenctl start --symbol BTCUSDT --service binance_spot` | Starts collecting BTCUSDT trades from Binance Spot. |
-| **Start Futures** | `./ravenctl start --symbol BTCUSDT --service binance_futures` | Starts collecting BTCUSDT trades from Binance Futures. |
-| **Start 1m Bars** | `./ravenctl start --symbol BTCUSDT --service timebar` | Starts 1m candle generation (auto-starts Spot source). |
-| **Start TIBs** | `./ravenctl start --symbol BTCUSDT --service tibs` | Starts TIB generation (auto-starts Spot source). |
-| **Stop** | `./ravenctl stop --symbol BTCUSDT` | Stops collection for a symbol. |
-| **Stop All** | `./ravenctl stop-all` | Emergency stop for all collections. |
+Collectors only connect/subscribe when their streams are started via **Control**.
 
-**Example Workflow:**
+### Processors (feature makers)
 
-1.  Start the services (e.g., in separate terminals or via systemd).
-    ```bash
-    ./binance_spot
-    ./raven_timebar
-    ```
-2.  Use `ravenctl` to start a data feed.
-    ```bash
-    # This tells raven_timebar to start.
-    # raven_timebar will automatically ask binance_spot to start streaming BTCUSDT.
-    ./ravenctl start --symbol BTCUSDT --service timebar
-    ```
-3.  Check the status.
-    ```bash
-    ./ravenctl list --service timebar
-    ```
+- `raven_timebar` (default `50051`)
+- `raven_tibs` (default `50052`)
+
+These services subscribe to sources. With the “wire first” rule, they will keep retrying until the relevant source stream is started.
+
+### Persistence
+
+- `tick_persistence` (default `50091`) → InfluxDB
+- `bar_persistence` (default `50092`) → TimescaleDB
+
+## Control plane: `ravenctl`
+
+`ravenctl` is the intended way to run Raven.
+
+### Build
+
+```bash
+cargo build --release
+```
+
+### Start infrastructure (all services)
+
+```bash
+./target/release/ravenctl start
+```
+
+This starts all service processes based on the service registry and writes PID/log files under:
+
+- `~/.raven/log/*.pid`
+- `~/.raven/log/*.log`
+
+### Start a pipeline (instrument + venues)
+
+Canonical instrument input:
+
+```bash
+./target/release/ravenctl start --symbol ETH --base USDC
+```
+
+Venue selection:
+
+```bash
+./target/release/ravenctl start --symbol ETH --base USDC --venue-include BINANCE_SPOT --venue-include BINANCE_FUTURES
+./target/release/ravenctl start --symbol ETH --base USDC --venue-exclude BINANCE_FUTURES
+```
+
+What this does (per venue):
+
+1. Starts downstream collections first:
+   - `tick_persistence` (TRADE + ORDERBOOK)
+   - `bar_persistence` (CANDLE; subscribes to both `raven_timebar` + `raven_tibs`)
+   - `raven_timebar` (CANDLE)
+   - `raven_tibs` (CANDLE)
+2. Starts collectors last:
+   - source TRADE + ORDERBOOK streams
+
+### Stop a pipeline (instrument + venues)
+
+```bash
+./target/release/ravenctl stop --symbol ETH --base USDC
+./target/release/ravenctl stop --symbol ETH --base USDC --venue BINANCE_FUTURES
+```
+
+### Stop everything
+
+```bash
+./target/release/ravenctl shutdown
+```
+
+### Status / introspection
+
+```bash
+./target/release/ravenctl status
+./target/release/ravenctl user
+```
+
+## Protocol note (if you write your own client)
+
+`MarketDataRequest` includes a **required** `venue` field:
+
+- `symbol`: the **venue symbol** (e.g. `ETHUSDC` or `1000PEPEUSDT`)
+- `venue`: e.g. `BINANCE_SPOT`, `BINANCE_FUTURES`
+- `data_type`: `TRADE`, `ORDERBOOK`, `CANDLE`, ...
+
+And remember: **you must call `Control.StartCollection` before `MarketData.Subscribe` will succeed**.
+
+Control requests use the same concept:
+
+- `ControlRequest.symbol`: venue symbol
+- `ControlRequest.venue`: venue id (e.g. `BINANCE_SPOT`)
+
+## Do we still need `start_services.sh` and `stop_services.sh`?
+
+Not strictly.
+
+- `start_services.sh` is just a thin wrapper over `ravenctl start` (infra start).
+- `stop_services.sh` duplicates `ravenctl shutdown` behavior (kill services via PID files).
+
+Recommendation: keep them only if you like the convenience; otherwise you can delete them and use `ravenctl` directly.

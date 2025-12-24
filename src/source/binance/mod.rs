@@ -1,5 +1,5 @@
 use crate::proto::market_data_message;
-use crate::proto::{MarketDataMessage, Trade};
+use crate::proto::MarketDataMessage;
 use futures_util::StreamExt;
 use prometheus::{IntCounterVec, IntGauge};
 use tokio::sync::broadcast;
@@ -13,34 +13,31 @@ pub mod spot;
 #[derive(Clone)]
 pub struct BinanceWsClient {
     base_url: String,
-    stream_type: String,
     exchange_name: String,
-    parser: fn(&str, &str) -> Option<Trade>,
+    venue: String,
 }
 
 impl BinanceWsClient {
-    pub fn new(
-        base_url: String,
-        stream_type: String,
-        exchange_name: String,
-        parser: fn(&str, &str) -> Option<Trade>,
-    ) -> Self {
+    pub fn new(base_url: String, exchange_name: String, venue: String) -> Self {
         Self {
             base_url,
-            stream_type,
             exchange_name,
-            parser,
+            venue,
         }
     }
 
-    pub async fn run(
+    pub async fn run<F>(
         &self,
         symbol: String,
+        stream_type: String,
+        parser: F,
         tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
         metrics_processed: &IntCounterVec,
         metrics_active: &IntGauge,
-    ) {
-        let stream_name = format!("{}@{}", symbol.to_lowercase(), self.stream_type);
+    ) where
+        F: Fn(&str, &str) -> Option<market_data_message::Data> + Send + Sync + 'static,
+    {
+        let stream_name = format!("{}@{}", symbol.to_lowercase(), stream_type);
         let url_str = format!("{}{}", self.base_url, stream_name);
         // Ensure the URL is valid, handle error gracefully if needed, but panic is okay if config is hardcoded.
         let url = match Url::parse(&url_str) {
@@ -74,11 +71,14 @@ impl BinanceWsClient {
                             while let Some(msg) = read.next().await {
                                 match msg {
                                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                                        if let Some(trade) = (self.parser)(&text, &symbol) {
+                                        if let Some(data) = parser(&text, &symbol) {
                                             metrics_processed.with_label_values(&[&symbol]).inc();
                                             let msg = MarketDataMessage {
+                                                // Backwards-compat: keep exchange as producer for older consumers.
                                                 exchange: self.exchange_name.clone(),
-                                                data: Some(market_data_message::Data::Trade(trade)),
+                                                venue: self.venue.clone(),
+                                                producer: self.exchange_name.clone(),
+                                                data: Some(data),
                                             };
                                             if tx.send(Ok(msg)).is_err() {
                                                 return false; // No subscribers, stop completely

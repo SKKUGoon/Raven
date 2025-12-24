@@ -13,7 +13,9 @@ use hyper_util::rt::TokioIo;
 use prometheus::{Encoder, TextEncoder};
 use tokio::net::TcpListener;
 
+pub mod stream_key;
 pub mod stream_manager;
+pub use stream_key::{StreamDataType, StreamKey};
 pub use stream_manager::{StreamManager, StreamWorker};
 
 pub struct RavenService<C> {
