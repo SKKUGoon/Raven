@@ -29,6 +29,8 @@ pub struct ServerConfig {
     pub port_timebar_minutes: u16,
     #[serde(default = "default_port_timebar_seconds")]
     pub port_timebar_seconds: u16,
+    #[serde(default = "default_port_vpin")]
+    pub port_vpin: u16,
     /// Legacy single TIBS service port (deprecated; use port_tibs_small/port_tibs_large).
     pub port_tibs: u16,
     /// Small TIBS service port (used by `raven_tibs_small`).
@@ -37,6 +39,18 @@ pub struct ServerConfig {
     /// Large TIBS service port (used by `raven_tibs_large`).
     #[serde(default = "default_port_tibs_large")]
     pub port_tibs_large: u16,
+    /// Small TRBS (tick run bars) service port (used by `raven_trbs_small`).
+    #[serde(default = "default_port_trbs_small")]
+    pub port_trbs_small: u16,
+    /// Large TRBS (tick run bars) service port (used by `raven_trbs_large`).
+    #[serde(default = "default_port_trbs_large")]
+    pub port_trbs_large: u16,
+    /// Small VIBS (volume imbalance bars) service port (used by `raven_vibs_small`).
+    #[serde(default = "default_port_vibs_small")]
+    pub port_vibs_small: u16,
+    /// Large VIBS (volume imbalance bars) service port (used by `raven_vibs_large`).
+    #[serde(default = "default_port_vibs_large")]
+    pub port_vibs_large: u16,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -136,12 +150,32 @@ fn default_port_timebar_seconds() -> u16 {
     50053
 }
 
+fn default_port_vpin() -> u16 {
+    50054
+}
+
 fn default_port_tibs_small() -> u16 {
     50062
 }
 
 fn default_port_tibs_large() -> u16 {
     50052
+}
+
+fn default_port_trbs_small() -> u16 {
+    50063
+}
+
+fn default_port_trbs_large() -> u16 {
+    50064
+}
+
+fn default_port_vibs_small() -> u16 {
+    50065
+}
+
+fn default_port_vibs_large() -> u16 {
+    50066
 }
 
 fn default_timescale_schema() -> String {

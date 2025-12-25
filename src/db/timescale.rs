@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 pub struct TimescaleWorker {
     timebar_upstream: String,
     tibs_upstreams: Vec<String>,
+    vibs_upstreams: Vec<String>,
     schema: String,
     pool: Pool<Postgres>,
 }
@@ -26,13 +27,16 @@ impl StreamWorker for TimescaleWorker {
         let venue = key.venue.clone().unwrap_or_default();
 
         run_multi_persistence(
-            self.timebar_upstream.clone(),
-            self.tibs_upstreams.clone(),
-            symbol,
-            venue,
-            key.to_string(),
-            self.schema.clone(),
-            self.pool.clone(),
+            MultiPersistenceArgs {
+                timebar_upstream: self.timebar_upstream.clone(),
+                tibs_upstreams: self.tibs_upstreams.clone(),
+                vibs_upstreams: self.vibs_upstreams.clone(),
+                symbol,
+                venue,
+                key: key.to_string(),
+                schema: self.schema.clone(),
+                pool: self.pool.clone(),
+            },
         )
         .await
     }
@@ -43,6 +47,7 @@ pub type PersistenceService = StreamManager<TimescaleWorker>;
 pub async fn new(
     timebar_upstream: String,
     tibs_upstreams: Vec<String>,
+    vibs_upstreams: Vec<String>,
     config: TimescaleConfig,
 ) -> Result<PersistenceService, sqlx::Error> {
     let schema = validate_pg_ident(&config.schema)
@@ -62,10 +67,11 @@ pub async fn new(
 
     let time_table = qualify_table(&schema, "bar__time");
     let tib_table = qualify_table(&schema, "bar__tick_imbalance");
+    let vib_table = qualify_table(&schema, "bar__volume_imbalance");
 
     // Ensure the table exists (basic migration)
     // In a production env, use proper migrations.
-    if let Err(e) = ensure_schema_and_tables(&pool, &schema, &time_table, &tib_table).await {
+    if let Err(e) = ensure_schema_and_tables(&pool, &schema, &time_table, &tib_table, &vib_table).await {
         warn!(
             "Failed to create/verify hypertable (might already exist or not using TimescaleDB): {}",
             e
@@ -75,6 +81,7 @@ pub async fn new(
     let worker = TimescaleWorker {
         timebar_upstream,
         tibs_upstreams,
+        vibs_upstreams,
         schema,
         pool,
     };
@@ -103,6 +110,7 @@ async fn ensure_schema_and_tables(
     schema: &str,
     time_table: &str,
     tib_table: &str,
+    vib_table: &str,
 ) -> Result<(), sqlx::Error> {
     // Postgres drivers generally disallow multiple statements in a single prepared statement,
     // so keep this strictly one statement per execute().
@@ -136,6 +144,34 @@ async fn ensure_schema_and_tables(
     // (Callers treat this as best-effort setup.)
     sqlx::query(&format!(
         "SELECT create_hypertable('{tib_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {vib_table} (
+            time        TIMESTAMPTZ NOT NULL,
+            symbol      TEXT NOT NULL,
+            exchange    TEXT NOT NULL,
+            interval    TEXT NOT NULL,
+            open        DOUBLE PRECISION NOT NULL,
+            high        DOUBLE PRECISION NOT NULL,
+            low         DOUBLE PRECISION NOT NULL,
+            close       DOUBLE PRECISION NOT NULL,
+            volume      DOUBLE PRECISION NOT NULL,
+            buy_ticks   BIGINT NOT NULL DEFAULT 0,
+            sell_ticks  BIGINT NOT NULL DEFAULT 0,
+            total_ticks BIGINT NOT NULL DEFAULT 0,
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "SELECT create_hypertable('{vib_table}', 'time', if_not_exists => TRUE);"
     ))
     .execute(pool)
     .await?;
@@ -221,8 +257,10 @@ async fn persist_candle(
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
 
     if let Some(t) = time {
-        let table_name = if candle.interval.starts_with("tib") {
+        let table_name = if candle.interval.starts_with("tib") || candle.interval.starts_with("trb") {
             qualify_table(schema, "bar__tick_imbalance")
+        } else if candle.interval.starts_with("vib") {
+            qualify_table(schema, "bar__volume_imbalance")
         } else {
             qualify_table(schema, "bar__time")
         };
@@ -288,15 +326,28 @@ async fn run_persistence_loop(
     }
 }
 
-async fn run_multi_persistence(
+struct MultiPersistenceArgs {
     timebar_upstream: String,
     tibs_upstreams: Vec<String>,
+    vibs_upstreams: Vec<String>,
     symbol: String,
     venue: String,
     key: String, // For logging
     schema: String,
     pool: Pool<Postgres>,
-) {
+}
+
+async fn run_multi_persistence(args: MultiPersistenceArgs) {
+    let MultiPersistenceArgs {
+        timebar_upstream,
+        tibs_upstreams,
+        vibs_upstreams,
+        symbol,
+        venue,
+        key,
+        schema,
+        pool,
+    } = args;
     info!("Bar Persistence task started for {}", key);
 
     let t_key = key.clone();
@@ -335,8 +386,29 @@ async fn run_multi_persistence(
         }));
     }
 
+    let mut vib_tasks = Vec::with_capacity(vibs_upstreams.len());
+    for (i, upstream) in vibs_upstreams.into_iter().enumerate() {
+        let t_key = key.clone();
+        let t_schema = schema.clone();
+        let t_pool = pool.clone();
+        let t_symbol = symbol.clone();
+        let t_venue = venue.clone();
+        let label: &'static str = match i {
+            0 => "Vibs(0)",
+            1 => "Vibs(1)",
+            2 => "Vibs(2)",
+            _ => "Vibs",
+        };
+        vib_tasks.push(tokio::spawn(async move {
+            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+        }));
+    }
+
     let _ = timebar_task.await;
     for t in tib_tasks {
+        let _ = t.await;
+    }
+    for t in vib_tasks {
         let _ = t.await;
     }
 }

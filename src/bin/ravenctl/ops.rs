@@ -18,6 +18,11 @@ struct ServiceHosts {
     timebar: String,
     tibs_small: String,
     tibs_large: String,
+    trbs_small: String,
+    trbs_large: String,
+    vibs_small: String,
+    vibs_large: String,
+    vpin: String,
 }
 
 impl ServiceHosts {
@@ -43,6 +48,26 @@ impl ServiceHosts {
                 "http://{}:{}",
                 settings.server.host, settings.server.port_tibs_large
             ),
+            trbs_small: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_trbs_small
+            ),
+            trbs_large: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_trbs_large
+            ),
+            vibs_small: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_vibs_small
+            ),
+            vibs_large: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_vibs_large
+            ),
+            vpin: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_vpin
+            ),
         }
     }
 }
@@ -57,7 +82,10 @@ fn parse_venue(s: &str) -> Result<VenueId, IoError> {
         .map_err(|e| IoError::new(ErrorKind::InvalidInput, e))
 }
 
-fn build_instrument(symbol_or_base: &str, base: &Option<String>) -> Result<Option<Instrument>, IoError> {
+fn build_instrument(
+    symbol_or_base: &str,
+    base: &Option<String>,
+) -> Result<Option<Instrument>, IoError> {
     match base {
         Some(quote_raw) => {
             let base_asset = parse_asset(symbol_or_base)?;
@@ -98,7 +126,10 @@ pub async fn stop_all_collections_cluster(settings: &Settings) {
     let host_ip = service_registry::client_host(&settings.server.host);
     let services = service_registry::all_services(settings);
 
-    println!("Stopping all collections across {} services...", services.len());
+    println!(
+        "Stopping all collections across {} services...",
+        services.len()
+    );
     for svc in services {
         let addr = svc.addr(host_ip);
         match ControlClient::connect(addr.clone()).await {
@@ -110,7 +141,10 @@ pub async fn stop_all_collections_cluster(settings: &Settings) {
                         svc.display_name, svc.id, addr, inner.success, inner.message
                     );
                 }
-                Err(e) => println!("- {} ({}) @ {} -> ERROR: {e}", svc.display_name, svc.id, addr),
+                Err(e) => println!(
+                    "- {} ({}) @ {} -> ERROR: {e}",
+                    svc.display_name, svc.id, addr
+                ),
             },
             Err(e) => println!(
                 "- {} ({}) @ {} -> UNREACHABLE: {e}",
@@ -140,7 +174,11 @@ pub fn shutdown(settings: &Settings, service_opt: &Option<String>) {
     }
 }
 
-pub fn resolve_control_host(cli_host: String, service_opt: &Option<String>, settings: &Settings) -> String {
+pub fn resolve_control_host(
+    cli_host: String,
+    service_opt: &Option<String>,
+    settings: &Settings,
+) -> String {
     if let Some(s) = service_opt.as_deref() {
         let host_ip = &settings.server.host;
         // Resolve against our canonical service registry first.
@@ -150,12 +188,21 @@ pub fn resolve_control_host(cli_host: String, service_opt: &Option<String>, sett
         } else {
             // Backwards-compatible aliases
             match s {
-                "persistence" => format!("http://{}:{}", host_ip, settings.server.port_tick_persistence),
+                "persistence" => format!(
+                    "http://{}:{}",
+                    host_ip, settings.server.port_tick_persistence
+                ),
                 "timebar" | "timebar_minutes" => {
-                    format!("http://{}:{}", host_ip, settings.server.port_timebar_minutes)
+                    format!(
+                        "http://{}:{}",
+                        host_ip, settings.server.port_timebar_minutes
+                    )
                 }
                 "timebar_seconds" => {
-                    format!("http://{}:{}", host_ip, settings.server.port_timebar_seconds)
+                    format!(
+                        "http://{}:{}",
+                        host_ip, settings.server.port_timebar_seconds
+                    )
                 }
                 _ => {
                     eprintln!("Unknown service: {s}. Using default host.");
@@ -196,12 +243,7 @@ pub async fn handle_start(
     // Resolve venues:
     // - if --exchange provided, we run only that venue (backwards-compat)
     // - else: merge config selector + CLI overrides
-    let venues = resolve_venues(
-        settings,
-        exchange.as_deref(),
-        venue_include,
-        venue_exclude,
-    )?;
+    let venues = resolve_venues(settings, exchange.as_deref(), venue_include, venue_exclude)?;
 
     if venues.is_empty() {
         eprintln!("No venues selected (after include/exclude). Nothing to do.");
@@ -218,6 +260,11 @@ pub async fn handle_start(
         ("timebar", hosts.timebar.clone()),
         ("tibs_small", hosts.tibs_small.clone()),
         ("tibs_large", hosts.tibs_large.clone()),
+        ("trbs_small", hosts.trbs_small.clone()),
+        ("trbs_large", hosts.trbs_large.clone()),
+        ("vibs_small", hosts.vibs_small.clone()),
+        ("vibs_large", hosts.vibs_large.clone()),
+        ("vpin", hosts.vpin.clone()),
     ] {
         if !wait_for_control_ready(&host, ready_timeout).await {
             eprintln!("Service {name} not ready at {host} (timeout {ready_timeout:?})");
@@ -325,6 +372,58 @@ pub async fn handle_start(
             }
         }
 
+        // 5) Aggregators (Trbs small+large) - output is CANDLE
+        for (name, host) in [
+            ("trbs_small", hosts.trbs_small.clone()),
+            ("trbs_large", hosts.trbs_large.clone()),
+        ] {
+            match ControlClient::connect(host).await {
+                Ok(mut client) => {
+                    let req = ControlRequest {
+                        symbol: venue_symbol.clone(),
+                        venue: venue_wire.clone(),
+                        data_type: DataType::Candle as i32,
+                    };
+                    let _ = client.start_collection(req).await;
+                    println!("  [+] {name} started for {venue_symbol}");
+                }
+                Err(e) => eprintln!("  [-] Failed to connect to {name}: {e}"),
+            }
+        }
+
+        // 6) Aggregators (Vibs small+large) - output is CANDLE
+        for (name, host) in [
+            ("vibs_small", hosts.vibs_small.clone()),
+            ("vibs_large", hosts.vibs_large.clone()),
+        ] {
+            match ControlClient::connect(host).await {
+                Ok(mut client) => {
+                    let req = ControlRequest {
+                        symbol: venue_symbol.clone(),
+                        venue: venue_wire.clone(),
+                        data_type: DataType::Candle as i32,
+                    };
+                    let _ = client.start_collection(req).await;
+                    println!("  [+] {name} started for {venue_symbol}");
+                }
+                Err(e) => eprintln!("  [-] Failed to connect to {name}: {e}"),
+            }
+        }
+
+        // 7) Aggregator (VPIN) - output is CANDLE
+        match ControlClient::connect(hosts.vpin.clone()).await {
+            Ok(mut client) => {
+                let req = ControlRequest {
+                    symbol: venue_symbol.clone(),
+                    venue: venue_wire.clone(),
+                    data_type: DataType::Candle as i32,
+                };
+                let _ = client.start_collection(req).await;
+                println!("  [+] vpin started for {venue_symbol}");
+            }
+            Err(e) => eprintln!("  [-] Failed to connect to vpin: {e}"),
+        }
+
         // Start upstream LAST (this is when the actual venue WS subscription happens)
         match ControlClient::connect(collector_host.clone()).await {
             Ok(mut client) => {
@@ -365,12 +464,7 @@ pub async fn handle_stop(
     let instrument = build_instrument(&symbol, &base)?;
 
     let resolver = SymbolResolver::from_config(&settings.routing);
-    let venues = resolve_venues(
-        settings,
-        venue.as_deref(),
-        &venue_include,
-        &venue_exclude,
-    )?;
+    let venues = resolve_venues(settings, venue.as_deref(), &venue_include, &venue_exclude)?;
 
     if venues.is_empty() {
         eprintln!("No venues selected (after include/exclude). Nothing to do.");
@@ -395,8 +489,37 @@ pub async fn handle_stop(
             ),
             ("bar_persistence", hosts.bar.clone(), vec![DataType::Candle]),
             ("timebar", hosts.timebar.clone(), vec![DataType::Candle]),
-            ("tibs_small", hosts.tibs_small.clone(), vec![DataType::Candle]),
-            ("tibs_large", hosts.tibs_large.clone(), vec![DataType::Candle]),
+            (
+                "tibs_small",
+                hosts.tibs_small.clone(),
+                vec![DataType::Candle],
+            ),
+            (
+                "tibs_large",
+                hosts.tibs_large.clone(),
+                vec![DataType::Candle],
+            ),
+            (
+                "trbs_small",
+                hosts.trbs_small.clone(),
+                vec![DataType::Candle],
+            ),
+            (
+                "trbs_large",
+                hosts.trbs_large.clone(),
+                vec![DataType::Candle],
+            ),
+            (
+                "vibs_small",
+                hosts.vibs_small.clone(),
+                vec![DataType::Candle],
+            ),
+            (
+                "vibs_large",
+                hosts.vibs_large.clone(),
+                vec![DataType::Candle],
+            ),
+            ("vpin", hosts.vpin.clone(), vec![DataType::Candle]),
         ] {
             match ControlClient::connect(host.clone()).await {
                 Ok(mut svc) => {
@@ -438,5 +561,3 @@ pub async fn handle_stop(
 
     Ok(())
 }
-
-

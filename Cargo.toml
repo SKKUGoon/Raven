@@ -36,6 +36,10 @@ name = "raven_tibs_large"
 path = "src/bin/raven_tibs_large.rs"
 
 [[bin]]
+name = "raven_vpin"
+path = "src/bin/raven_vpin.rs"
+
+[[bin]]
 name = "ravenctl"
 path = "src/bin/ravenctl.rs"
 
