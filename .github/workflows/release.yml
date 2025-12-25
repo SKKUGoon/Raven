@@ -44,7 +44,7 @@ jobs:
             -C target/x86_64-unknown-linux-gnu/release \
             ravenctl \
             binance_spot binance_futures \
-            raven_timebar raven_tibs_small raven_tibs_large \
+            raven_timebar raven_tibs raven_trbs raven_vibs raven_vpin \
             tick_persistence bar_persistence \
 
       - name: Upload to Github releases
