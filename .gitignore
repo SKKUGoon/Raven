@@ -197,3 +197,4 @@ data/
 *.json
 .DS_Store
 prod.toml
+secret.toml
