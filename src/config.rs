@@ -31,9 +31,6 @@ pub struct ServerConfig {
     pub port_timebar_seconds: u16,
     #[serde(default = "default_port_vpin")]
     pub port_vpin: u16,
-    /// Legacy single TIBS service port (deprecated; use port_tibs_small/port_tibs_large).
-    #[serde(default = "default_port_tibs_legacy")]
-    pub port_tibs: u16,
     /// Small TIBS service port (used by `raven_tibs_small`).
     #[serde(default = "default_port_tibs_small")]
     pub port_tibs_small: u16,
@@ -161,11 +158,6 @@ fn default_port_tibs_small() -> u16 {
 
 fn default_port_tibs_large() -> u16 {
     50052
-}
-
-fn default_port_tibs_legacy() -> u16 {
-    // Historically, the single `raven_tibs` service used the same port as the current "large" profile.
-    default_port_tibs_large()
 }
 
 fn default_port_trbs_small() -> u16 {

@@ -403,8 +403,8 @@ async fn run_vpin_aggregation(
                             };
 
                             let out = MarketDataMessage {
-                                // Backwards-compat: keep exchange as producer for older consumers.
-                                exchange: "raven_vpin".to_string(),
+                                // Legacy proto field; prefer `producer` + `venue`.
+                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_vpin".to_string(),
                                 data: Some(market_data_message::Data::Candle(candle)),

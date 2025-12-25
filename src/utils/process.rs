@@ -88,10 +88,6 @@ pub fn start_service_proc(bin_name: &str, service_name: &str, args: &[&str]) {
     }
 }
 
-pub fn start_all_services() {
-    eprintln!("start_all_services() without settings is deprecated; use start_all_services_with_settings().");
-}
-
 pub fn start_all_services_with_settings(settings: &Settings) {
     println!("Starting Raven services...");
 

@@ -324,8 +324,8 @@ async fn run_tib_aggregation(
                         ) {
                             TIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                             let msg = MarketDataMessage {
-                                // Backwards-compat: keep exchange as producer for older consumers.
-                                exchange: "raven_tibs".to_string(),
+                                // Legacy proto field; prefer `producer` + `venue`.
+                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_tibs".to_string(),
                                 data: Some(market_data_message::Data::Candle(

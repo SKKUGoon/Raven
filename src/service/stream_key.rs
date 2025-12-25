@@ -51,20 +51,6 @@ pub struct StreamKey {
 }
 
 impl StreamKey {
-    pub fn from_control(symbol: &str, exchange: &str) -> Self {
-        let symbol = symbol.trim().to_uppercase();
-        let venue = match exchange.trim() {
-            "" => None,
-            v => Some(v.to_uppercase()),
-        };
-
-        Self {
-            symbol,
-            venue,
-            data_type: StreamDataType::Trade,
-        }
-    }
-
     pub fn from_control_with_datatype(symbol: &str, exchange: &str, data_type: i32) -> Self {
         let symbol = symbol.trim().to_uppercase();
         let venue = match exchange.trim() {

@@ -352,8 +352,8 @@ async fn run_trb_aggregation(
                         ) {
                             TRBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                             let msg = MarketDataMessage {
-                                // Backwards-compat: keep exchange as producer for older consumers.
-                                exchange: "raven_trbs".to_string(),
+                                // Legacy proto field; prefer `producer` + `venue`.
+                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_trbs".to_string(),
                                 data: Some(market_data_message::Data::Candle(

@@ -217,8 +217,8 @@ async fn run_aggregation(
                                     .with_label_values(&[&output_symbol])
                                     .inc();
                                 let candle_msg = MarketDataMessage {
-                                    // Backwards-compat: keep exchange as producer for older consumers.
-                                    exchange: "raven_timebar".to_string(),
+                                    // Legacy proto field; prefer `producer` + `venue`.
+                                    exchange: String::new(),
                                     venue: venue.clone(),
                                     producer: "raven_timebar".to_string(),
                                     data: Some(market_data_message::Data::Candle(

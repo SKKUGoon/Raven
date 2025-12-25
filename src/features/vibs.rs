@@ -361,7 +361,8 @@ async fn run_vib_aggregation(
                         ) {
                             VIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                             let msg = MarketDataMessage {
-                                exchange: "raven_vibs".to_string(),
+                                // Legacy proto field; prefer `producer` + `venue`.
+                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_vibs".to_string(),
                                 data: Some(market_data_message::Data::Candle(

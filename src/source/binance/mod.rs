@@ -52,7 +52,8 @@ impl BinanceWsClient {
         const MAX_RETRIES: u32 = 10;
         const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
         // 23 hours and 30 minutes
-        const CONNECTION_LIFETIME: std::time::Duration = std::time::Duration::from_secs(23 * 3600 + 30 * 60);
+        const CONNECTION_LIFETIME: std::time::Duration =
+            std::time::Duration::from_secs(23 * 3600 + 30 * 60);
 
         loop {
             info!("Connecting to {} WS: {}", self.exchange_name, url);
@@ -74,8 +75,8 @@ impl BinanceWsClient {
                                         if let Some(data) = parser(&text, &symbol) {
                                             metrics_processed.with_label_values(&[&symbol]).inc();
                                             let msg = MarketDataMessage {
-                                                // Backwards-compat: keep exchange as producer for older consumers.
-                                                exchange: self.exchange_name.clone(),
+                                                // Legacy proto field; prefer `producer` + `venue`.
+                                                exchange: String::new(),
                                                 venue: self.venue.clone(),
                                                 producer: self.exchange_name.clone(),
                                                 data: Some(data),
@@ -122,7 +123,10 @@ impl BinanceWsClient {
             }
 
             if retry_count >= MAX_RETRIES {
-                error!("Max retries ({}) reached for {}. Exiting.", MAX_RETRIES, symbol);
+                error!(
+                    "Max retries ({}) reached for {}. Exiting.",
+                    MAX_RETRIES, symbol
+                );
                 break;
             }
 
