@@ -16,7 +16,8 @@ struct ServiceHosts {
     tick: String,
     bar: String,
     timebar: String,
-    tibs: String,
+    tibs_small: String,
+    tibs_large: String,
 }
 
 impl ServiceHosts {
@@ -34,7 +35,14 @@ impl ServiceHosts {
                 "http://{}:{}",
                 settings.server.host, settings.server.port_timebar_minutes
             ),
-            tibs: format!("http://{}:{}", settings.server.host, settings.server.port_tibs),
+            tibs_small: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tibs_small
+            ),
+            tibs_large: format!(
+                "http://{}:{}",
+                settings.server.host, settings.server.port_tibs_large
+            ),
         }
     }
 }
@@ -208,7 +216,8 @@ pub async fn handle_start(
         ("tick_persistence", hosts.tick.clone()),
         ("bar_persistence", hosts.bar.clone()),
         ("timebar", hosts.timebar.clone()),
-        ("tibs", hosts.tibs.clone()),
+        ("tibs_small", hosts.tibs_small.clone()),
+        ("tibs_large", hosts.tibs_large.clone()),
     ] {
         if !wait_for_control_ready(&host, ready_timeout).await {
             eprintln!("Service {name} not ready at {host} (timeout {ready_timeout:?})");
@@ -297,18 +306,23 @@ pub async fn handle_start(
             Err(e) => eprintln!("  [-] Failed to connect to timebar: {e}"),
         }
 
-        // 4) Aggregators (Tibs) - output is CANDLE
-        match ControlClient::connect(hosts.tibs.clone()).await {
-            Ok(mut client) => {
-                let req = ControlRequest {
-                    symbol: venue_symbol.clone(),
-                    venue: venue_wire.clone(),
-                    data_type: DataType::Candle as i32,
-                };
-                let _ = client.start_collection(req).await;
-                println!("  [+] Tibs started for {venue_symbol}");
+        // 4) Aggregators (Tibs small+large) - output is CANDLE
+        for (name, host) in [
+            ("tibs_small", hosts.tibs_small.clone()),
+            ("tibs_large", hosts.tibs_large.clone()),
+        ] {
+            match ControlClient::connect(host).await {
+                Ok(mut client) => {
+                    let req = ControlRequest {
+                        symbol: venue_symbol.clone(),
+                        venue: venue_wire.clone(),
+                        data_type: DataType::Candle as i32,
+                    };
+                    let _ = client.start_collection(req).await;
+                    println!("  [+] {name} started for {venue_symbol}");
+                }
+                Err(e) => eprintln!("  [-] Failed to connect to {name}: {e}"),
             }
-            Err(e) => eprintln!("  [-] Failed to connect to tibs: {e}"),
         }
 
         // Start upstream LAST (this is when the actual venue WS subscription happens)
@@ -381,7 +395,8 @@ pub async fn handle_stop(
             ),
             ("bar_persistence", hosts.bar.clone(), vec![DataType::Candle]),
             ("timebar", hosts.timebar.clone(), vec![DataType::Candle]),
-            ("tibs", hosts.tibs.clone(), vec![DataType::Candle]),
+            ("tibs_small", hosts.tibs_small.clone(), vec![DataType::Candle]),
+            ("tibs_large", hosts.tibs_large.clone(), vec![DataType::Candle]),
         ] {
             match ControlClient::connect(host.clone()).await {
                 Ok(mut svc) => {

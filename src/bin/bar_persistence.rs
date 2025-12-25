@@ -27,14 +27,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.host, settings.server.port_timebar_minutes
     );
 
-    let tibs_upstream = format!(
-        "http://{}:{}",
-        settings.server.host, settings.server.port_tibs
-    );
+    let tibs_upstreams = vec![
+        format!(
+            "http://{}:{}",
+            settings.server.host, settings.server.port_tibs_small
+        ),
+        format!(
+            "http://{}:{}",
+            settings.server.host, settings.server.port_tibs_large
+        ),
+    ];
 
     let service_impl = timescale::new(
         timebar_upstream,
-        tibs_upstream,
+        tibs_upstreams,
         settings.timescale.clone(),
     )
     .await?;

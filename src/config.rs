@@ -1,7 +1,7 @@
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use std::env;
 use std::collections::HashMap;
+use std::env;
 use std::str::FromStr;
 
 use crate::domain::instrument::Instrument;
@@ -10,6 +10,7 @@ use crate::domain::venue::VenueId;
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
     pub server: ServerConfig,
+    #[serde(default)]
     pub tibs: TibsConfig,
     pub influx: InfluxConfig,
     pub timescale: TimescaleConfig,
@@ -28,7 +29,14 @@ pub struct ServerConfig {
     pub port_timebar_minutes: u16,
     #[serde(default = "default_port_timebar_seconds")]
     pub port_timebar_seconds: u16,
+    /// Legacy single TIBS service port (deprecated; use port_tibs_small/port_tibs_large).
     pub port_tibs: u16,
+    /// Small TIBS service port (used by `raven_tibs_small`).
+    #[serde(default = "default_port_tibs_small")]
+    pub port_tibs_small: u16,
+    /// Large TIBS service port (used by `raven_tibs_large`).
+    #[serde(default = "default_port_tibs_large")]
+    pub port_tibs_large: u16,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -37,8 +45,64 @@ pub struct TibsConfig {
     pub initial_p_buy: f64,
     pub alpha_size: f64,
     pub alpha_imbl: f64,
-    pub size_min: f64,
-    pub size_max: f64,
+    /// Absolute lower bound for expected bar size (ticks per bar).
+    /// Deprecated in favor of `size_min_pct` / `size_max_pct`.
+    #[serde(default)]
+    pub size_min: Option<f64>,
+    /// Absolute upper bound for expected bar size (ticks per bar).
+    /// Deprecated in favor of `size_min_pct` / `size_max_pct`.
+    #[serde(default)]
+    pub size_max: Option<f64>,
+
+    /// Percentage band (relative to `initial_size`) to clamp expected bar size.
+    /// If set, bounds are:
+    /// - min = initial_size * (1 - size_min_pct)
+    /// - max = initial_size * (1 + size_max_pct)
+    #[serde(default)]
+    pub size_min_pct: Option<f64>,
+    #[serde(default)]
+    pub size_max_pct: Option<f64>,
+
+    /// Optional additional named profiles, e.g. `[tibs.profiles.small]`.
+    /// These run in parallel and emit candles with interval `tib_<name>` (unless the name already starts with `tib`).
+    #[serde(default)]
+    pub profiles: HashMap<String, TibsProfileConfig>,
+}
+
+impl Default for TibsConfig {
+    fn default() -> Self {
+        Self {
+            initial_size: 100.0,
+            initial_p_buy: 0.7,
+            alpha_size: 0.1,
+            alpha_imbl: 0.1,
+            size_min: None,
+            size_max: None,
+            size_min_pct: Some(0.1),
+            size_max_pct: Some(0.1),
+            profiles: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TibsProfileConfig {
+    #[serde(default)]
+    pub initial_size: Option<f64>,
+    #[serde(default)]
+    pub initial_p_buy: Option<f64>,
+    #[serde(default)]
+    pub alpha_size: Option<f64>,
+    #[serde(default)]
+    pub alpha_imbl: Option<f64>,
+    #[serde(default)]
+    pub size_min: Option<f64>,
+    #[serde(default)]
+    pub size_max: Option<f64>,
+    #[serde(default)]
+    pub size_min_pct: Option<f64>,
+    #[serde(default)]
+    pub size_max_pct: Option<f64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -70,6 +134,14 @@ fn default_batch_interval() -> u64 {
 
 fn default_port_timebar_seconds() -> u16 {
     50053
+}
+
+fn default_port_tibs_small() -> u16 {
+    50062
+}
+
+fn default_port_tibs_large() -> u16 {
+    50052
 }
 
 fn default_timescale_schema() -> String {
@@ -126,7 +198,12 @@ impl Settings {
 
     fn validate_routing(&self) -> Result<(), ConfigError> {
         // Validate venue lists
-        for v in self.routing.venue_include.iter().chain(self.routing.venue_exclude.iter()) {
+        for v in self
+            .routing
+            .venue_include
+            .iter()
+            .chain(self.routing.venue_exclude.iter())
+        {
             VenueId::from_str(v)
                 .map_err(|e| ConfigError::Message(format!("Invalid routing venue '{v}': {e}")))?;
         }

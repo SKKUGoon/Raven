@@ -7,7 +7,7 @@ pub struct Cli {
     #[arg(long, default_value = "http://localhost:50051")]
     pub host: String,
 
-    /// Target service: binance_spot, binance_futures, tick_persistence, bar_persistence, timebar_minutes, tibs
+    /// Target service: binance_spot, binance_futures, tick_persistence, bar_persistence, timebar_60s, timebar_1s, tibs_small, tibs_large
     #[arg(short, long)]
     pub service: Option<String>,
 

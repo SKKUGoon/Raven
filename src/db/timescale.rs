@@ -14,7 +14,7 @@ use tracing::{error, info, warn};
 #[derive(Clone)]
 pub struct TimescaleWorker {
     timebar_upstream: String,
-    tibs_upstream: String,
+    tibs_upstreams: Vec<String>,
     schema: String,
     pool: Pool<Postgres>,
 }
@@ -25,9 +25,9 @@ impl StreamWorker for TimescaleWorker {
         let symbol = key.symbol.clone();
         let venue = key.venue.clone().unwrap_or_default();
 
-        run_dual_persistence(
+        run_multi_persistence(
             self.timebar_upstream.clone(),
-            self.tibs_upstream.clone(),
+            self.tibs_upstreams.clone(),
             symbol,
             venue,
             key.to_string(),
@@ -42,7 +42,7 @@ pub type PersistenceService = StreamManager<TimescaleWorker>;
 
 pub async fn new(
     timebar_upstream: String,
-    tibs_upstream: String,
+    tibs_upstreams: Vec<String>,
     config: TimescaleConfig,
 ) -> Result<PersistenceService, sqlx::Error> {
     let schema = validate_pg_ident(&config.schema)
@@ -74,7 +74,7 @@ pub async fn new(
 
     let worker = TimescaleWorker {
         timebar_upstream,
-        tibs_upstream,
+        tibs_upstreams,
         schema,
         pool,
     };
@@ -221,7 +221,7 @@ async fn persist_candle(
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
 
     if let Some(t) = time {
-        let table_name = if candle.interval == "tib" {
+        let table_name = if candle.interval.starts_with("tib") {
             qualify_table(schema, "bar__tick_imbalance")
         } else {
             qualify_table(schema, "bar__time")
@@ -257,9 +257,40 @@ async fn persist_candle(
     }
 }
 
-async fn run_dual_persistence(
+async fn run_persistence_loop(
+    upstream_url: String,
+    symbol: String,
+    venue: String,
+    key: String, // For logging
+    schema: String,
+    pool: Pool<Postgres>,
+    stream_name: &'static str,
+) {
+    let mut stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+    loop {
+        match stream.message().await {
+            Ok(Some(m)) => {
+                if let Some(market_data_message::Data::Candle(candle)) = m.data {
+                    persist_candle(&pool, &schema, &venue, &key, candle).await;
+                }
+            }
+            Ok(None) => {
+                warn!("{stream_name} stream ended for {}. Reconnecting in 2s...", key);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+            }
+            Err(e) => {
+                warn!("{stream_name} stream error for {}: {}. Reconnecting in 2s...", key, e);
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+            }
+        }
+    }
+}
+
+async fn run_multi_persistence(
     timebar_upstream: String,
-    tibs_upstream: String,
+    tibs_upstreams: Vec<String>,
     symbol: String,
     venue: String,
     key: String, // For logging
@@ -268,49 +299,44 @@ async fn run_dual_persistence(
 ) {
     info!("Bar Persistence task started for {}", key);
 
-    let mut timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
-    let mut tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
+    let t_key = key.clone();
+    let t_schema = schema.clone();
+    let t_pool = pool.clone();
+    let t_symbol = symbol.clone();
+    let t_venue = venue.clone();
+    let timebar_task = tokio::spawn(async move {
+        run_persistence_loop(
+            timebar_upstream,
+            t_symbol,
+            t_venue,
+            t_key,
+            t_schema,
+            t_pool,
+            "Timebar",
+        )
+        .await;
+    });
 
-    loop {
-        tokio::select! {
-            msg = timebar_stream.message() => {
-                match msg {
-                    Ok(Some(m)) => {
-                        if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                            persist_candle(&pool, &schema, &venue, &key, candle).await;
-                        }
-                    }
-                    Ok(None) => {
-                        warn!("Timebar stream ended for {}. Reconnecting in 2s...", key);
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
-                    }
-                    Err(e) => {
-                        warn!("Timebar stream error for {}: {}. Reconnecting in 2s...", key, e);
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        timebar_stream = connect_candle_stream(&timebar_upstream, &symbol, &venue, &key).await;
-                    }
-                }
-            }
-            msg = tibs_stream.message() => {
-                match msg {
-                    Ok(Some(m)) => {
-                        if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                            persist_candle(&pool, &schema, &venue, &key, candle).await;
-                        }
-                    }
-                    Ok(None) => {
-                        warn!("Tibs stream ended for {}. Reconnecting in 2s...", key);
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
-                    }
-                    Err(e) => {
-                        warn!("Tibs stream error for {}: {}. Reconnecting in 2s...", key, e);
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-                        tibs_stream = connect_candle_stream(&tibs_upstream, &symbol, &venue, &key).await;
-                    }
-                }
-            }
-        }
+    let mut tib_tasks = Vec::with_capacity(tibs_upstreams.len());
+    for (i, upstream) in tibs_upstreams.into_iter().enumerate() {
+        let t_key = key.clone();
+        let t_schema = schema.clone();
+        let t_pool = pool.clone();
+        let t_symbol = symbol.clone();
+        let t_venue = venue.clone();
+        let label: &'static str = match i {
+            0 => "Tibs(0)",
+            1 => "Tibs(1)",
+            2 => "Tibs(2)",
+            _ => "Tibs",
+        };
+        tib_tasks.push(tokio::spawn(async move {
+            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+        }));
+    }
+
+    let _ = timebar_task.await;
+    for t in tib_tasks {
+        let _ = t.await;
     }
 }

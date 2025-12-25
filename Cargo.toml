@@ -28,8 +28,12 @@ name = "raven_timebar"
 path = "src/bin/raven_timebar.rs"
 
 [[bin]]
-name = "raven_tibs"
-path = "src/bin/raven_tibs.rs"
+name = "raven_tibs_small"
+path = "src/bin/raven_tibs_small.rs"
+
+[[bin]]
+name = "raven_tibs_large"
+path = "src/bin/raven_tibs_large.rs"
 
 [[bin]]
 name = "ravenctl"

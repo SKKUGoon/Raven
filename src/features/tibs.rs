@@ -95,7 +95,7 @@ impl TickImbalanceBar {
         buy_ticks / self.tick_size as f64
     }
 
-    fn to_proto(&self) -> Candle {
+    fn to_proto_with_interval(&self, interval: String) -> Candle {
         let buy_ticks = ((self.tick_size as i64 + self.theta as i64) / 2) as u64;
         let sell_ticks = ((self.tick_size as i64 - self.theta as i64) / 2) as u64;
 
@@ -107,7 +107,7 @@ impl TickImbalanceBar {
             low: self.low,
             close: self.close,
             volume: self.trade_size,
-            interval: "tib".to_string(),
+            interval,
             buy_ticks,
             sell_ticks,
             total_ticks: self.tick_size as u64,
@@ -116,6 +116,7 @@ impl TickImbalanceBar {
     }
 }
 
+#[derive(Clone)]
 pub struct TickImbalanceState {
     pub threshold: f64,
     pub size_ewma: f64,
@@ -190,10 +191,26 @@ impl TickImbalanceState {
     }
 }
 
+fn bounds_from_config(config: &TibsConfig, initial_size: f64) -> (f64, f64) {
+    // Preferred: percentage bounds relative to initial_size
+    if let (Some(min_pct), Some(max_pct)) = (config.size_min_pct, config.size_max_pct) {
+        let min = initial_size * (1.0 - min_pct);
+        let max = initial_size * (1.0 + max_pct);
+        return (min, max);
+    }
+    // Back-compat: absolute bounds
+    if let (Some(min), Some(max)) = (config.size_min, config.size_max) {
+        return (min, max);
+    }
+    // Sensible default: +/- 10%
+    (initial_size * 0.9, initial_size * 1.1)
+}
+
 #[derive(Clone)]
 pub struct TibsWorker {
     upstreams: HashMap<String, String>,
     config: TibsConfig,
+    interval: String,
 }
 
 #[tonic::async_trait]
@@ -205,6 +222,7 @@ impl StreamWorker for TibsWorker {
     ) {
         let symbol = key.symbol.clone();
         let venue = key.venue.clone().unwrap_or_else(|| "BINANCE_SPOT".to_string());
+        let interval = self.interval.clone();
 
         // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
         let upstream_url = if let Some(url) = self.upstreams.get(&venue) {
@@ -226,6 +244,7 @@ impl StreamWorker for TibsWorker {
             key.to_string(),
             venue,
             tx,
+            interval,
         )
         .await;
     }
@@ -233,8 +252,12 @@ impl StreamWorker for TibsWorker {
 
 pub type TibsService = StreamManager<TibsWorker>;
 
-pub fn new(upstreams: HashMap<String, String>, config: TibsConfig) -> TibsService {
-    let worker = TibsWorker { upstreams, config };
+pub fn new(upstreams: HashMap<String, String>, config: TibsConfig, interval: String) -> TibsService {
+    let worker = TibsWorker {
+        upstreams,
+        config,
+        interval,
+    };
     StreamManager::new(Arc::new(worker), 100, true)
 }
 
@@ -245,6 +268,7 @@ async fn run_tib_aggregation(
     output_symbol: String,
     venue: String,
     tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
+    interval: String,
 ) {
     info!(
         "Starting TIB aggregation for {} using upstream {}",
@@ -252,13 +276,13 @@ async fn run_tib_aggregation(
     );
     TIBS_ACTIVE_AGGREGATIONS.inc();
 
-    // Initialize State with config
+    // Initialize State with config (single profile per service)
     let mut state = TickImbalanceState::new(
         config.initial_size,
         config.initial_p_buy,
         config.alpha_size,
         config.alpha_imbl,
-        (config.size_min, config.size_max),
+        bounds_from_config(&config, config.initial_size),
     );
 
     loop {
@@ -304,7 +328,9 @@ async fn run_tib_aggregation(
                                 exchange: "raven_tibs".to_string(),
                                 venue: venue.clone(),
                                 producer: "raven_tibs".to_string(),
-                                data: Some(market_data_message::Data::Candle(closed_bar.to_proto())),
+                                data: Some(market_data_message::Data::Candle(
+                                    closed_bar.to_proto_with_interval(interval.clone()),
+                                )),
                             };
                             if tx.send(Ok(msg)).is_err() {
                                 // No subscribers; allow StreamManager to prune the task.

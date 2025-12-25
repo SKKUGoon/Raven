@@ -82,7 +82,8 @@ Collectors only connect/subscribe when their streams are started via **Control**
 ### Processors (feature makers)
 
 - `raven_timebar` (default `50051`)
-- `raven_tibs` (default `50052`)
+- `raven_tibs_small` (default `50062`)
+- `raven_tibs_large` (default `50052`)
 
 These services subscribe to sources. With the “wire first” rule, they will keep retrying until the relevant source stream is started.
 
@@ -131,9 +132,10 @@ What this does (per venue):
 
 1. Starts downstream collections first:
    - `tick_persistence` (TRADE + ORDERBOOK)
-   - `bar_persistence` (CANDLE; subscribes to both `raven_timebar` + `raven_tibs`)
+   - `bar_persistence` (CANDLE; subscribes to `raven_timebar` + `raven_tibs_small` + `raven_tibs_large`)
    - `raven_timebar` (CANDLE)
-   - `raven_tibs` (CANDLE)
+   - `raven_tibs_small` (CANDLE)
+   - `raven_tibs_large` (CANDLE)
 2. Starts collectors last:
    - source TRADE + ORDERBOOK streams
 
