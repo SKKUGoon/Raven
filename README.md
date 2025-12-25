@@ -72,18 +72,35 @@ Notes:
 
 Raven loads configuration in this order:
 
-1. `test.toml` (always loaded first as defaults)
-2. `${RUN_MODE}.toml` (optional, e.g. `prod.toml`)
-3. `local.toml` (optional, for uncommitted local overrides)
+1. Compiled-in defaults from `test.toml` (always loaded first)
+2. A config file selected in this order:
+   - `RAVEN_CONFIG_FILE=/absolute/path/to/prod.toml` (highest priority)
+   - `./${RUN_MODE}.toml` (optional, e.g. `./prod.toml`)
+   - `~/.config/raven/${RUN_MODE}.toml` (optional)
+   - `~/.raven/${RUN_MODE}.toml` (optional)
+   - `/etc/raven/${RUN_MODE}.toml` (optional)
+3. `local.toml` (optional) or `RAVEN_LOCAL_CONFIG_FILE=/path/to/local.toml`
 4. Environment variables with prefix `RAVEN__` (double-underscore separator)
 
 Examples:
 
 ```bash
 export RUN_MODE=prod
+export RAVEN_CONFIG_FILE="/etc/raven/prod.toml"
 export RAVEN__INFLUX__TOKEN="my-secret-token"
 export RAVEN__SERVER__PORT_BINANCE_SPOT=50099
 ```
+
+### `ravenctl setup` (recommended for system-wide installs)
+
+If you installed `ravenctl` into `/usr/local/bin` and want to run it from anywhere, run:
+
+```bash
+ravenctl setup --config /etc/raven/prod.toml --run-mode prod
+```
+
+This persists the config location under `~/.raven/` and on future runs `ravenctl` will
+auto-set `RAVEN_CONFIG_FILE` (and `RUN_MODE`) for itself and any services it spawns.
 
 ### Routing section: venues + symbol mapping
 

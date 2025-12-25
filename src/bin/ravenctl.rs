@@ -12,10 +12,85 @@ use raven::proto::control_client::ControlClient;
 use raven::proto::{ListRequest, StopAllRequest};
 use raven::utils::status::check_status;
 use raven::utils::tree::show_users_tree;
+use serde::{Deserialize, Serialize};
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RavenCtlPersistedConfig {
+    config_file: String,
+    #[serde(default)]
+    run_mode: Option<String>,
+}
+
+fn persisted_config_path() -> Option<PathBuf> {
+    let home = env::var("HOME").ok()?;
+    Some(PathBuf::from(home).join(".raven").join("ravenctl_config.json"))
+}
+
+fn load_persisted_config() -> Option<RavenCtlPersistedConfig> {
+    let path = persisted_config_path()?;
+    let s = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&s).ok()
+}
+
+fn write_persisted_config(cfg: &RavenCtlPersistedConfig) -> Result<PathBuf, std::io::Error> {
+    let path = persisted_config_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
+    })?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&path, serde_json::to_string_pretty(cfg).unwrap())?;
+    Ok(path)
+}
+
+fn apply_persisted_env_if_missing() {
+    // Allow explicit env vars to win.
+    if env::var("RAVEN_CONFIG_FILE").is_ok() && env::var("RUN_MODE").is_ok() {
+        return;
+    }
+    let Some(cfg) = load_persisted_config() else {
+        return;
+    };
+    if env::var("RAVEN_CONFIG_FILE").is_err() && !cfg.config_file.trim().is_empty() {
+        env::set_var("RAVEN_CONFIG_FILE", cfg.config_file);
+    }
+    if env::var("RUN_MODE").is_err() {
+        if let Some(run_mode) = cfg.run_mode {
+            if !run_mode.trim().is_empty() {
+                env::set_var("RUN_MODE", run_mode);
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    // Handle `setup` before any config is loaded.
+    if let Commands::Setup { config, run_mode } = &cli.command {
+        let cfg = RavenCtlPersistedConfig {
+            config_file: config.clone(),
+            run_mode: run_mode.clone(),
+        };
+        match write_persisted_config(&cfg) {
+            Ok(path) => {
+                println!("Saved ravenctl config to {path:?}");
+                println!("This will set RAVEN_CONFIG_FILE on future `ravenctl` runs.");
+            }
+            Err(e) => {
+                eprintln!("Failed to save ravenctl config: {e}");
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
+    // If the user ran `ravenctl setup`, use it automatically (unless env vars already set).
+    apply_persisted_env_if_missing();
 
     // Graph should not require config; it only depends on the compiled-in PipelineSpec.
     if let Commands::Graph { format } = &cli.command {
@@ -97,6 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Start is handled above
         Commands::Start { .. } => unreachable!(),
         Commands::Plan { .. } => unreachable!(),
+        Commands::Setup { .. } => unreachable!(),
 
         Commands::Stop {
             symbol,

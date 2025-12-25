@@ -17,6 +17,20 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Persist the config file location for `ravenctl` (so it can be run from any directory).
+    ///
+    /// This writes a small file under `~/.raven/` and, on subsequent runs, `ravenctl` will
+    /// automatically set `RAVEN_CONFIG_FILE` (and optionally `RUN_MODE`) for itself and any
+    /// services it spawns.
+    Setup {
+        /// Path to a config file like `prod.toml` (absolute or relative).
+        #[arg(long)]
+        config: String,
+        /// Optional: persist RUN_MODE as well (e.g. prod / test).
+        #[arg(long)]
+        run_mode: Option<String>,
+    },
+
     /// Start services (no args) OR Start data collection for a symbol (with args)
     Start {
         /// Symbol or base asset to collect.

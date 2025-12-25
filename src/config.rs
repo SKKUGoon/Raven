@@ -1,7 +1,8 @@
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, ConfigError, Environment, File, FileFormat};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::env;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 use crate::domain::instrument::Instrument;
@@ -205,16 +206,63 @@ impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
         let run_mode = env::var("RUN_MODE").unwrap_or_else(|_| "test".into());
 
-        let s = Config::builder()
-            // Start with default values from "test.toml"
-            .add_source(File::with_name("test"))
-            // Add in the current environment file if it exists (e.g. "prod.toml")
-            // This file should be in .gitignore
-            .add_source(File::with_name(&run_mode).required(false))
-            // Add in a local config file usually not checked in
-            .add_source(File::with_name("local").required(false))
-            // Add in settings from the environment.
-            // Example: `RAVEN__SERVER__PORT_BINANCE_SPOT=50099`
+        // Embed `test.toml` defaults so binaries don't require `./test.toml` at runtime.
+        //
+        // This makes `ravenctl` usable when installed system-wide (e.g. /usr/local/bin) and run
+        // from arbitrary directories.
+        const DEFAULT_TEST_TOML: &str = include_str!("../test.toml");
+
+        let mut builder =
+            Config::builder().add_source(File::from_str(DEFAULT_TEST_TOML, FileFormat::Toml));
+
+        // Highest priority file override: explicit path.
+        //
+        // This is intended to be set by `ravenctl setup` (persisted) or by the user directly.
+        if let Ok(path) = env::var("RAVEN_CONFIG_FILE") {
+            builder = builder.add_source(File::from(PathBuf::from(path)).required(true));
+        } else {
+            // Backward compatibility: in repo/dev workflows, allow a local `./test.toml` to
+            // override the compiled-in defaults (best-effort).
+            builder = builder.add_source(File::with_name("test").required(false));
+
+            // 1) CWD: `${RUN_MODE}.toml` (e.g. ./prod.toml)
+            builder = builder.add_source(File::with_name(&run_mode).required(false));
+
+            // 2) Standard locations (best-effort)
+            builder = builder.add_source(
+                File::from(PathBuf::from(format!("/etc/raven/{run_mode}.toml"))).required(false),
+            );
+            if let Ok(home) = env::var("HOME") {
+                builder = builder
+                    .add_source(
+                        File::from(
+                            PathBuf::from(&home)
+                                .join(".config/raven")
+                                .join(format!("{run_mode}.toml")),
+                        )
+                        .required(false),
+                    )
+                    .add_source(
+                        File::from(
+                            PathBuf::from(&home)
+                                .join(".raven")
+                                .join(format!("{run_mode}.toml")),
+                        )
+                        .required(false),
+                    );
+            }
+        }
+
+        // Local overrides (optional).
+        if let Ok(path) = env::var("RAVEN_LOCAL_CONFIG_FILE") {
+            builder = builder.add_source(File::from(PathBuf::from(path)).required(false));
+        } else {
+            builder = builder.add_source(File::with_name("local").required(false));
+        }
+
+        // Add in settings from the environment.
+        // Example: `RAVEN__SERVER__PORT_BINANCE_SPOT=50099`
+        let s = builder
             .add_source(Environment::with_prefix("RAVEN").separator("__"))
             .build()?;
 
