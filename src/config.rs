@@ -109,11 +109,9 @@ impl Settings {
             .add_source(File::with_name(&run_mode).required(false))
             // Add in a local config file usually not checked in
             .add_source(File::with_name("local").required(false))
-            // Add in settings from the environment (with a prefix of APP)
-            // e.g. `APP_DEBUG=1` would set the `debug` key
-            // Support both `RAVEN__FOO__BAR` (documented) and `raven__foo__bar` (legacy).
+            // Add in settings from the environment.
+            // Example: `RAVEN__SERVER__PORT_BINANCE_SPOT=50099`
             .add_source(Environment::with_prefix("RAVEN").separator("__"))
-            .add_source(Environment::with_prefix("raven").separator("__"))
             .build()?;
 
         // You can deserialize (and thus freeze) the entire configuration as
