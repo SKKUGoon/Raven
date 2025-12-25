@@ -28,12 +28,16 @@ name = "raven_timebar"
 path = "src/bin/raven_timebar.rs"
 
 [[bin]]
-name = "raven_tibs_small"
-path = "src/bin/raven_tibs_small.rs"
+name = "raven_tibs"
+path = "src/bin/raven_tibs.rs"
 
 [[bin]]
-name = "raven_tibs_large"
-path = "src/bin/raven_tibs_large.rs"
+name = "raven_trbs"
+path = "src/bin/raven_trbs.rs"
+
+[[bin]]
+name = "raven_vibs"
+path = "src/bin/raven_vibs.rs"
 
 [[bin]]
 name = "raven_vpin"

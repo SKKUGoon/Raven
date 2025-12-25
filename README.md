@@ -21,7 +21,7 @@ Your mental model is the right one; here is how it maps to the current code:
     - collectors last (this is when exchange WebSocket subscriptions actually happen)
 
 - **3) Multi-symbol is “within the same process”**
-  - Services like `raven_tibs_small` / `raven_trbs_large` are long-lived processes that run **one task per `(symbol, venue, datatype)`**.
+- Services like `raven_tibs` / `raven_trbs` / `raven_vibs` are long-lived processes that run **one task per `(symbol, venue, datatype)`**.
   - Adding another symbol later does **not** require starting another `raven_tibs_*` process; it starts another stream task inside the existing service.
 
 - **4) Data flow until you stop**
@@ -115,12 +115,9 @@ Collectors only connect/subscribe when their streams are started via **Control**
 ### Processors (feature makers)
 
 - `raven_timebar` (default `50051`)
-- `raven_tibs_small` (default `50062`)
-- `raven_tibs_large` (default `50052`)
-- `raven_trbs_small` (see config)
-- `raven_trbs_large` (see config)
-- `raven_vibs_small` (see config)
-- `raven_vibs_large` (see config)
+- `raven_tibs` (TIBS; configured via `ServiceSpec` entries `tibs_small` / `tibs_large`)
+- `raven_trbs` (TRBS; configured via `ServiceSpec` entries `trbs_small` / `trbs_large`)
+- `raven_vibs` (VIBS; configured via `ServiceSpec` entries `vibs_small` / `vibs_large`)
 - `raven_vpin` (see config)
 
 These services subscribe to sources. With the “wire first” rule, they will keep retrying until the relevant source stream is started.
@@ -179,12 +176,9 @@ What this does (per venue):
    - `tick_persistence` (TRADE + ORDERBOOK)
    - `bar_persistence` (CANDLE; subscribes to `raven_timebar` + `raven_tibs_*` + `raven_trbs_*` + `raven_vibs_*`)
    - `raven_timebar` (CANDLE)
-   - `raven_tibs_small` (CANDLE)
-   - `raven_tibs_large` (CANDLE)
-   - `raven_trbs_small` (CANDLE)
-   - `raven_trbs_large` (CANDLE)
-   - `raven_vibs_small` (CANDLE)
-   - `raven_vibs_large` (CANDLE)
+   - `raven_tibs` (CANDLE)
+   - `raven_trbs` (CANDLE)
+   - `raven_vibs` (CANDLE)
    - `raven_vpin` (CANDLE; streamed, not persisted by default)
 2. Starts collectors last:
    - source TRADE + ORDERBOOK streams

@@ -31,22 +31,22 @@ pub struct ServerConfig {
     pub port_timebar_seconds: u16,
     #[serde(default = "default_port_vpin")]
     pub port_vpin: u16,
-    /// Small TIBS service port (used by `raven_tibs_small`).
+    /// Small TIBS service port (used by `raven_tibs` via ServiceSpec).
     #[serde(default = "default_port_tibs_small")]
     pub port_tibs_small: u16,
-    /// Large TIBS service port (used by `raven_tibs_large`).
+    /// Large TIBS service port (used by `raven_tibs` via ServiceSpec).
     #[serde(default = "default_port_tibs_large")]
     pub port_tibs_large: u16,
-    /// Small TRBS (tick run bars) service port (used by `raven_trbs_small`).
+    /// Small TRBS (tick run bars) service port (used by `raven_trbs` via ServiceSpec).
     #[serde(default = "default_port_trbs_small")]
     pub port_trbs_small: u16,
-    /// Large TRBS (tick run bars) service port (used by `raven_trbs_large`).
+    /// Large TRBS (tick run bars) service port (used by `raven_trbs` via ServiceSpec).
     #[serde(default = "default_port_trbs_large")]
     pub port_trbs_large: u16,
-    /// Small VIBS (volume imbalance bars) service port (used by `raven_vibs_small`).
+    /// Small VIBS (volume imbalance bars) service port (used by `raven_vibs` via ServiceSpec).
     #[serde(default = "default_port_vibs_small")]
     pub port_vibs_small: u16,
-    /// Large VIBS (volume imbalance bars) service port (used by `raven_vibs_large`).
+    /// Large VIBS (volume imbalance bars) service port (used by `raven_vibs` via ServiceSpec).
     #[serde(default = "default_port_vibs_large")]
     pub port_vibs_large: u16,
 }

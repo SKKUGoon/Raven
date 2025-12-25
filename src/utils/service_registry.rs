@@ -1,29 +1,6 @@
 use crate::config::Settings;
 
-#[derive(Clone, Debug)]
-pub struct ServiceSpec {
-    pub id: &'static str,
-    pub display_name: &'static str,
-    pub bin_name: &'static str,
-    pub log_name: &'static str,
-    pub port: u16,
-    pub args: Vec<String>,
-}
-
-impl ServiceSpec {
-    pub fn addr(&self, host: &str) -> String {
-        format!("http://{}:{}", host, self.port)
-    }
-}
-
-/// If services bind to `0.0.0.0` (listen on all interfaces), clients should connect to a
-/// routable address like `127.0.0.1` instead of `0.0.0.0`.
-pub fn client_host(host: &str) -> &str {
-    match host {
-        "0.0.0.0" | "::" => "127.0.0.1",
-        _ => host,
-    }
-}
+pub use crate::service::spec::{client_host, ImbalanceBarSpec, ServiceSpec};
 
 pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
     vec![
@@ -34,6 +11,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
             log_name: "binance_spot",
             port: settings.server.port_binance_spot,
             args: vec![],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "binance_futures",
@@ -42,6 +21,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
             log_name: "binance_futures",
             port: settings.server.port_binance_futures,
             args: vec![],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "timebar_60s",
@@ -55,6 +36,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
                 "--port".to_string(),
                 settings.server.port_timebar_minutes.to_string(),
             ],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "timebar_1s",
@@ -68,54 +51,122 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
                 "--port".to_string(),
                 settings.server.port_timebar_seconds.to_string(),
             ],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "tibs_small",
             display_name: "Tibs (small)",
-            bin_name: "raven_tibs_small",
+            bin_name: "raven_tibs",
             log_name: "tibs_small",
             port: settings.server.port_tibs_small,
             args: vec![],
+            interval: Some("tib_small".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 100.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(110.0),
+                size_max: Some(90.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "tibs_large",
             display_name: "Tibs (large)",
-            bin_name: "raven_tibs_large",
+            bin_name: "raven_tibs",
             log_name: "tibs_large",
             port: settings.server.port_tibs_large,
             args: vec![],
+            interval: Some("tib_large".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 500.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(550.0),
+                size_max: Some(450.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "trbs_small",
             display_name: "Trbs (small)",
-            bin_name: "raven_trbs_small",
+            bin_name: "raven_trbs",
             log_name: "trbs_small",
             port: settings.server.port_trbs_small,
             args: vec![],
+            interval: Some("trb_small".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 100.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(110.0),
+                size_max: Some(90.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "trbs_large",
             display_name: "Trbs (large)",
-            bin_name: "raven_trbs_large",
+            bin_name: "raven_trbs",
             log_name: "trbs_large",
             port: settings.server.port_trbs_large,
             args: vec![],
+            interval: Some("trb_large".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 500.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(550.0),
+                size_max: Some(450.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "vibs_small",
             display_name: "Vibs (small)",
-            bin_name: "raven_vibs_small",
+            bin_name: "raven_vibs",
             log_name: "vibs_small",
             port: settings.server.port_vibs_small,
             args: vec![],
+            interval: Some("vib_small".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 100.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(110.0),
+                size_max: Some(90.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "vibs_large",
             display_name: "Vibs (large)",
-            bin_name: "raven_vibs_large",
+            bin_name: "raven_vibs",
             log_name: "vibs_large",
             port: settings.server.port_vibs_large,
             args: vec![],
+            interval: Some("vib_large".to_string()),
+            imbalance: Some(ImbalanceBarSpec {
+                initial_size: 500.0,
+                initial_p_buy: 0.7,
+                alpha_size: 0.7,
+                alpha_imbl: 0.72,
+                size_min: Some(550.0),
+                size_max: Some(450.0),
+                size_min_pct: None,
+                size_max_pct: None,
+            }),
         },
         ServiceSpec {
             id: "vpin",
@@ -128,6 +179,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
                 "--port".to_string(),
                 settings.server.port_vpin.to_string(),
             ],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "tick_persistence",
@@ -136,6 +189,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
             log_name: "tick_persistence",
             port: settings.server.port_tick_persistence,
             args: vec![],
+            interval: None,
+            imbalance: None,
         },
         ServiceSpec {
             id: "bar_persistence",
@@ -144,8 +199,8 @@ pub fn all_services(settings: &Settings) -> Vec<ServiceSpec> {
             log_name: "bar_persistence",
             port: settings.server.port_bar_persistence,
             args: vec![],
+            interval: None,
+            imbalance: None,
         },
     ]
 }
-
-

@@ -16,6 +16,7 @@ pub struct TimescaleWorker {
     timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
+    vpin_upstreams: Vec<String>, // Not a bar, but its bucket like feature is similar to bars
     schema: String,
     pool: Pool<Postgres>,
 }
@@ -26,18 +27,17 @@ impl StreamWorker for TimescaleWorker {
         let symbol = key.symbol.clone();
         let venue = key.venue.clone().unwrap_or_default();
 
-        run_multi_persistence(
-            MultiPersistenceArgs {
-                timebar_upstreams: self.timebar_upstreams.clone(),
-                tibs_upstreams: self.tibs_upstreams.clone(),
-                vibs_upstreams: self.vibs_upstreams.clone(),
-                symbol,
-                venue,
-                key: key.to_string(),
-                schema: self.schema.clone(),
-                pool: self.pool.clone(),
-            },
-        )
+        run_multi_persistence(MultiPersistenceArgs {
+            timebar_upstreams: self.timebar_upstreams.clone(),
+            tibs_upstreams: self.tibs_upstreams.clone(),
+            vibs_upstreams: self.vibs_upstreams.clone(),
+            vpin_upstreams: self.vpin_upstreams.clone(),
+            symbol,
+            venue,
+            key: key.to_string(),
+            schema: self.schema.clone(),
+            pool: self.pool.clone(),
+        })
         .await
     }
 }
@@ -48,6 +48,7 @@ pub async fn new(
     timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
+    vpin_upstreams: Vec<String>,
     config: TimescaleConfig,
 ) -> Result<PersistenceService, sqlx::Error> {
     let schema = validate_pg_ident(&config.schema)
@@ -68,10 +69,20 @@ pub async fn new(
     let time_table = qualify_table(&schema, "bar__time");
     let tib_table = qualify_table(&schema, "bar__tick_imbalance");
     let vib_table = qualify_table(&schema, "bar__volume_imbalance");
+    let vpin_table = qualify_table(&schema, "bar__vpin");
 
     // Ensure the table exists (basic migration)
     // In a production env, use proper migrations.
-    if let Err(e) = ensure_schema_and_tables(&pool, &schema, &time_table, &tib_table, &vib_table).await {
+    if let Err(e) = ensure_schema_and_tables(
+        &pool,
+        &schema,
+        &time_table,
+        &tib_table,
+        &vib_table,
+        &vpin_table,
+    )
+    .await
+    {
         warn!(
             "Failed to create/verify hypertable (might already exist or not using TimescaleDB): {}",
             e
@@ -82,6 +93,7 @@ pub async fn new(
         timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
+        vpin_upstreams,
         schema,
         pool,
     };
@@ -111,6 +123,7 @@ async fn ensure_schema_and_tables(
     time_table: &str,
     tib_table: &str,
     vib_table: &str,
+    vpin_table: &str,
 ) -> Result<(), sqlx::Error> {
     // Postgres drivers generally disallow multiple statements in a single prepared statement,
     // so keep this strictly one statement per execute().
@@ -172,6 +185,34 @@ async fn ensure_schema_and_tables(
 
     sqlx::query(&format!(
         "SELECT create_hypertable('{vib_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {vpin_table} (
+            time        TIMESTAMPTZ NOT NULL,
+            symbol      TEXT NOT NULL,
+            exchange    TEXT NOT NULL,
+            interval    TEXT NOT NULL,
+            open        DOUBLE PRECISION NOT NULL,
+            high        DOUBLE PRECISION NOT NULL,
+            low         DOUBLE PRECISION NOT NULL,
+            close       DOUBLE PRECISION NOT NULL,
+            volume      DOUBLE PRECISION NOT NULL,
+            buy_ticks   BIGINT NOT NULL DEFAULT 0,
+            sell_ticks  BIGINT NOT NULL DEFAULT 0,
+            total_ticks BIGINT NOT NULL DEFAULT 0,
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "SELECT create_hypertable('{vpin_table}', 'time', if_not_exists => TRUE);"
     ))
     .execute(pool)
     .await?;
@@ -257,7 +298,9 @@ async fn persist_candle(
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
 
     if let Some(t) = time {
-        let table_name = if candle.interval.starts_with("tib") || candle.interval.starts_with("trb") {
+        let table_name = if candle.interval.starts_with("vpin") {
+            qualify_table(schema, "bar__vpin")
+        } else if candle.interval.starts_with("tib") || candle.interval.starts_with("trb") {
             qualify_table(schema, "bar__tick_imbalance")
         } else if candle.interval.starts_with("vib") {
             qualify_table(schema, "bar__volume_imbalance")
@@ -313,12 +356,18 @@ async fn run_persistence_loop(
                 }
             }
             Ok(None) => {
-                warn!("{stream_name} stream ended for {}. Reconnecting in 2s...", key);
+                warn!(
+                    "{stream_name} stream ended for {}. Reconnecting in 2s...",
+                    key
+                );
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
             }
             Err(e) => {
-                warn!("{stream_name} stream error for {}: {}. Reconnecting in 2s...", key, e);
+                warn!(
+                    "{stream_name} stream error for {}: {}. Reconnecting in 2s...",
+                    key, e
+                );
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
             }
@@ -330,6 +379,7 @@ struct MultiPersistenceArgs {
     timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
+    vpin_upstreams: Vec<String>,
     symbol: String,
     venue: String,
     key: String, // For logging
@@ -342,6 +392,7 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
+        vpin_upstreams,
         symbol,
         venue,
         key,
@@ -403,6 +454,22 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         }));
     }
 
+    let mut vpin_tasks = Vec::with_capacity(vpin_upstreams.len());
+    for (i, upstream) in vpin_upstreams.into_iter().enumerate() {
+        let t_key = key.clone();
+        let t_schema = schema.clone();
+        let t_pool = pool.clone();
+        let t_symbol = symbol.clone();
+        let t_venue = venue.clone();
+        let label: &'static str = match i {
+            0 => "VPIN(0)",
+            _ => "VPIN",
+        };
+        vpin_tasks.push(tokio::spawn(async move {
+            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+        }));
+    }
+
     for t in timebar_tasks {
         let _ = t.await;
     }
@@ -410,6 +477,9 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         let _ = t.await;
     }
     for t in vib_tasks {
+        let _ = t.await;
+    }
+    for t in vpin_tasks {
         let _ = t.await;
     }
 }

@@ -93,7 +93,8 @@ pub fn start_all_services_with_settings(settings: &Settings) {
 
     let services = service_registry::all_services(settings);
     for svc in services {
-        let args: Vec<&str> = svc.args.iter().map(|s| s.as_str()).collect();
+        let eff = svc.effective_args();
+        let args: Vec<&str> = eff.iter().map(|s| s.as_str()).collect();
         start_service_proc(svc.bin_name, svc.log_name, &args);
     }
 

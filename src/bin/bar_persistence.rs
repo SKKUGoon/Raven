@@ -64,10 +64,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
+    let vpin_upstreams = vec![format!(
+        "http://{}:{}",
+        settings.server.host, settings.server.port_vpin
+    )];
+
     let service_impl = timescale::new(
         timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
+        vpin_upstreams,
         settings.timescale.clone(),
     )
     .await?;

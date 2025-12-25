@@ -69,15 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let spec = PipelineSpec::default();
                 print!("{}", render::render_ascii(&spec));
             }
-            ops::handle_start(
-                &settings,
-                symbol,
-                base,
-                venue,
-                venue_include,
-                venue_exclude,
-            )
-            .await?;
+            ops::handle_start(&settings, symbol, base, venue, venue_include, venue_exclude).await?;
             return Ok(());
         }
         Commands::StopAll => {
