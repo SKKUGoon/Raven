@@ -131,6 +131,55 @@ These services subscribe to sources. With the “wire first” rule, they will k
 
 `ravenctl` is the intended way to run Raven.
 
+### Install from GitHub Releases (Linux)
+
+If you don't want to build from source, you can download a prebuilt release artifact and install the binaries on your server.
+
+1) Choose a version and download the `.tar.gz`:
+
+```bash
+VERSION="2.5.3"
+TARGET="x86_64-unknown-linux-gnu"
+
+curl -fL -o "raven-v${VERSION}-${TARGET}.tar.gz" \
+  "https://github.com/SKKUGoon/Raven/releases/download/v${VERSION}/raven-v${VERSION}-${TARGET}.tar.gz"
+```
+
+2) Extract it:
+
+```bash
+tar -xzf "raven-v${VERSION}-${TARGET}.tar.gz"
+```
+
+3) Install the binaries (system-wide) and verify:
+
+```bash
+DIR="raven-v${VERSION}-${TARGET}"
+
+# (Optional) see what you got
+ls -la "${DIR}"
+
+# Install all compiled binaries into /usr/local/bin
+sudo install -m 0755 "${DIR}/binance_spot"      /usr/local/bin/
+sudo install -m 0755 "${DIR}/binance_futures"   /usr/local/bin/
+sudo install -m 0755 "${DIR}/tick_persistence"  /usr/local/bin/
+sudo install -m 0755 "${DIR}/bar_persistence"   /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_timebar"     /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_tibs"        /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_trbs"        /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_vibs"        /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_vpin"        /usr/local/bin/
+sudo install -m 0755 "${DIR}/ravenctl"          /usr/local/bin/
+
+ravenctl --version
+```
+
+If your tarball layout differs, inspect it with:
+
+```bash
+tar -tzf "raven-v${VERSION}-${TARGET}.tar.gz" | head
+```
+
 ### Build
 
 ```bash
