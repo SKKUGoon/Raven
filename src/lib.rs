@@ -11,5 +11,6 @@ pub mod features;
 pub mod service;
 pub mod telemetry;
 pub mod utils;
+pub mod pipeline;
 // pub mod config; // To be implemented
 // pub mod utils; // To be implemented

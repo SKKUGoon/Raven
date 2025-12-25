@@ -30,7 +30,33 @@ pub enum Commands {
         base: Option<String>,
         /// Target venue (single-venue selector).
         #[arg(short, long)]
-        exchange: Option<String>,
+        venue: Option<String>,
+        /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
+        #[arg(long = "venue-include")]
+        venue_include: Vec<String>,
+        /// Optional denylist of venues (may be repeated). Overrides config denylist.
+        #[arg(long = "venue-exclude")]
+        venue_exclude: Vec<String>,
+
+        /// Print the pipeline graph before executing.
+        #[arg(long)]
+        print_graph: bool,
+    },
+
+    /// Print the execution plan for starting a symbol (no execution).
+    Plan {
+        /// Symbol or base asset to collect.
+        ///
+        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
+        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
+        #[arg(short, long)]
+        symbol: String,
+        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
+        #[arg(long)]
+        base: Option<String>,
+        /// Target venue (single-venue selector).
+        #[arg(short, long)]
+        venue: Option<String>,
         /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
         #[arg(long = "venue-include")]
         venue_include: Vec<String>,
@@ -71,4 +97,11 @@ pub enum Commands {
     Ping,
     /// Show service users/subscriptions tree
     User,
+
+    /// Print the pipeline graph (topology), optionally as DOT for Graphviz.
+    Graph {
+        /// Output format: ascii | dot
+        #[arg(long, default_value = "ascii")]
+        format: String,
+    },
 }

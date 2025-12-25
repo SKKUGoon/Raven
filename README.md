@@ -2,10 +2,43 @@
 
 Raven is a modular market-data platform in Rust: **sources** ingest exchange data, **processors** build features/bars, and **persistence** stores ticks and bars. Everything is controlled via a gRPC **Control plane** (`ravenctl`).
 
+## Operational model (how Raven runs)
+
+Your mental model is the right one; here is how it maps to the current code:
+
+- **1) Instrument + venues**
+  - Preferred: **canonical instrument** + quote (base/quote) and let Raven resolve venue symbols:
+    - `ravenctl start --symbol ETH --base USDC` (instrument = `ETH/USDC`)
+  - Optional: restrict venues using:
+    - `--venue BINANCE_SPOT` (single venue)
+    - `--venue-include ...` / `--venue-exclude ...` (multi-venue selection)
+  - Venue symbol differences (e.g. spot `PEPEUSDT` vs futures `1000PEPEUSDT`) are handled via `routing.symbol_map`.
+
+- **2) Start = spin up services, then wire, then subscribe**
+  - `ravenctl start` (no symbol) starts all service processes (collectors, feature makers, persistence).
+  - `ravenctl start --symbol ...` starts infra (if needed) and then starts **collections** in a strict order:
+    - downstream first (persistence + feature makers)
+    - collectors last (this is when exchange WebSocket subscriptions actually happen)
+
+- **3) Multi-symbol is “within the same process”**
+  - Services like `raven_tibs_small` / `raven_trbs_large` are long-lived processes that run **one task per `(symbol, venue, datatype)`**.
+  - Adding another symbol later does **not** require starting another `raven_tibs_*` process; it starts another stream task inside the existing service.
+
+- **4) Data flow until you stop**
+  - Collectors produce `TRADE` + `ORDERBOOK`.
+  - Feature makers subscribe to `TRADE` and emit `CANDLE` feature streams (time bars, imbalance bars, etc.).
+  - Persistence subscribes to upstream streams and writes to DB.
+  - The pipeline runs until you call `ravenctl stop ...` (stop collections) or `ravenctl shutdown` (stop processes).
+
+To see the topology and exact calls Raven will make:
+
+- `ravenctl graph` (ASCII) / `ravenctl graph --format dot` (Graphviz)
+- `ravenctl plan --symbol ETH --base USDC ...` (no execution; prints the exact ordered `start_collection(...)` calls)
+
 
 ## Prerequisites
 
-### System
+### System (For Developers)
 
 - **Rust toolchain**: Rust 2021 edition (install via `rustup`; `cargo` is required).
 - **OS**: macOS/Linux recommended. `ravenctl` manages processes using system commands like `ps` + `kill`.
@@ -23,7 +56,7 @@ Notes:
 - **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` calls `create_hypertable(...)`.
   - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
     - Schema: `timescale.schema` (default: `warehouse`)
-    - Tables: `warehouse.bar__time`, `warehouse.bar__tick_imbalance`
+    - Tables: `warehouse.bar__time`, `warehouse.bar__tick_imbalance`, `warehouse.bar__volume_imbalance`
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
   - Reference DDL is also checked into `sql/` (`create_table_bar__time.sql`, `create_table_bar__tick_imbalance.sql`).
 
@@ -84,6 +117,11 @@ Collectors only connect/subscribe when their streams are started via **Control**
 - `raven_timebar` (default `50051`)
 - `raven_tibs_small` (default `50062`)
 - `raven_tibs_large` (default `50052`)
+- `raven_trbs_small` (see config)
+- `raven_trbs_large` (see config)
+- `raven_vibs_small` (see config)
+- `raven_vibs_large` (see config)
+- `raven_vpin` (see config)
 
 These services subscribe to sources. With the “wire first” rule, they will keep retrying until the relevant source stream is started.
 
@@ -121,9 +159,16 @@ Canonical instrument input:
 ./target/release/ravenctl start --symbol ETH --base USDC
 ```
 
+Venue-symbol input (no base/quote parsing; you are responsible for the venue symbol):
+
+```bash
+./target/release/ravenctl start --symbol ETHUSDC --venue BINANCE_SPOT
+```
+
 Venue selection:
 
 ```bash
+./target/release/ravenctl start --symbol ETH --base USDC --venue BINANCE_SPOT
 ./target/release/ravenctl start --symbol ETH --base USDC --venue-include BINANCE_SPOT --venue-include BINANCE_FUTURES
 ./target/release/ravenctl start --symbol ETH --base USDC --venue-exclude BINANCE_FUTURES
 ```
@@ -132,12 +177,23 @@ What this does (per venue):
 
 1. Starts downstream collections first:
    - `tick_persistence` (TRADE + ORDERBOOK)
-   - `bar_persistence` (CANDLE; subscribes to `raven_timebar` + `raven_tibs_small` + `raven_tibs_large`)
+   - `bar_persistence` (CANDLE; subscribes to `raven_timebar` + `raven_tibs_*` + `raven_trbs_*` + `raven_vibs_*`)
    - `raven_timebar` (CANDLE)
    - `raven_tibs_small` (CANDLE)
    - `raven_tibs_large` (CANDLE)
+   - `raven_trbs_small` (CANDLE)
+   - `raven_trbs_large` (CANDLE)
+   - `raven_vibs_small` (CANDLE)
+   - `raven_vibs_large` (CANDLE)
+   - `raven_vpin` (CANDLE; streamed, not persisted by default)
 2. Starts collectors last:
    - source TRADE + ORDERBOOK streams
+
+Tip: to see the exact execution plan without running anything:
+
+```bash
+./target/release/ravenctl plan --symbol ETH --base USDC --venue-include BINANCE_SPOT
+```
 
 ### Stop a pipeline (instrument + venues)
 
@@ -146,13 +202,19 @@ What this does (per venue):
 ./target/release/ravenctl stop --symbol ETH --base USDC --venue BINANCE_FUTURES
 ```
 
-### Stop everything
+### Stop all collections (leave processes running)
+
+```bash
+./target/release/ravenctl stop-all
+```
+
+### Shutdown services (stop processes)
 
 ```bash
 ./target/release/ravenctl shutdown
 ```
 
-Or stop a single service process:
+Or shutdown a single service process:
 
 ```bash
 ./target/release/ravenctl --service binance_spot shutdown
@@ -163,6 +225,8 @@ Or stop a single service process:
 ```bash
 ./target/release/ravenctl status
 ./target/release/ravenctl user
+./target/release/ravenctl graph
+./target/release/ravenctl graph --format dot
 ```
 
 ## Protocol note (if you write your own client)
@@ -180,11 +244,96 @@ Control requests use the same concept:
 - `ControlRequest.symbol`: venue symbol
 - `ControlRequest.venue`: venue id (e.g. `BINANCE_SPOT`)
 
-## Do we still need `start_services.sh` and `stop_services.sh`?
+## Python client example: subscribe to bar (CANDLE) streams
 
-Not strictly.
+Raven exposes bar/feature streams as `DataType.CANDLE` via the `MarketData.Subscribe` gRPC stream on **feature services** (e.g. `raven_timebar`, `raven_tibs_*`, `raven_trbs_*`, `raven_vibs_*`, `raven_vpin`).
 
-- `start_services.sh` is just a thin wrapper over `ravenctl start` (infra start).
-- `stop_services.sh` duplicates `ravenctl shutdown` behavior (kill services via PID files).
+Important notes:
 
-Recommendation: keep them only if you like the convenience; otherwise you can delete them and use `ravenctl` directly.
+- You typically **start the pipeline** with `ravenctl start ...` first (this will call `Control.StartCollection` for you).
+- Then your client connects to the **feature service port** (e.g. timebar `50051`) and subscribes to `CANDLE`.
+
+### 1) Generate Python gRPC stubs
+
+From the repo root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install grpcio grpcio-tools protobuf
+
+mkdir -p python_client
+python -m grpc_tools.protoc \
+  -I ./proto \
+  --python_out=./python_client \
+  --grpc_python_out=./python_client \
+  ./proto/market_data.proto ./proto/control.proto
+```
+
+### 2) Start a pipeline (example)
+
+```bash
+./target/release/ravenctl start --symbol ETH --base USDC --venue BINANCE_SPOT
+```
+
+### 3) Subscribe to candles from `raven_timebar`
+
+Save as `python_client/subscribe_timebars.py`:
+
+```python
+import grpc
+
+import market_data_pb2
+import market_data_pb2_grpc
+import control_pb2
+import control_pb2_grpc
+
+
+def ensure_timebar_collection_started(timebar_addr: str, symbol: str, venue: str) -> None:
+    """
+    Optional: start the CANDLE stream on the timebar service directly.
+    If you used `ravenctl start ...`, you can skip this.
+    """
+    channel = grpc.insecure_channel(timebar_addr)
+    control = control_pb2_grpc.ControlStub(channel)
+    control.StartCollection(
+        control_pb2.ControlRequest(
+            symbol=symbol,
+            venue=venue,
+            data_type=market_data_pb2.CANDLE,
+        )
+    )
+
+
+def subscribe_candles(timebar_addr: str, symbol: str, venue: str) -> None:
+    channel = grpc.insecure_channel(timebar_addr)
+    md = market_data_pb2_grpc.MarketDataStub(channel)
+    req = market_data_pb2.MarketDataRequest(
+        symbol=symbol,
+        venue=venue,
+        data_type=market_data_pb2.CANDLE,
+    )
+
+    for msg in md.Subscribe(req):
+        if msg.WhichOneof("data") != "candle":
+            continue
+        c = msg.candle
+        # timestamp is bar open time in millis
+        print(
+            f"{msg.venue} {c.symbol} interval={c.interval} ts={c.timestamp} "
+            f"o={c.open} h={c.high} l={c.low} c={c.close} v={c.volume} ticks={c.total_ticks}"
+        )
+
+
+if __name__ == "__main__":
+    # Timebar default port in this repo is usually 50051 (see config).
+    timebar_addr = "localhost:50051"
+    symbol = "ETHUSDC"        # venue symbol
+    venue = "BINANCE_SPOT"
+
+    # If you already ran `ravenctl start ...`, this is optional.
+    # ensure_timebar_collection_started(timebar_addr, symbol, venue)
+
+    subscribe_candles(timebar_addr, symbol, venue)
+```
+

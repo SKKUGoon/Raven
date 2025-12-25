@@ -6,6 +6,8 @@ mod ops;
 use clap::Parser;
 use cli::{Cli, Commands};
 use raven::config::Settings;
+use raven::pipeline::render::{self, GraphFormat};
+use raven::pipeline::spec::PipelineSpec;
 use raven::proto::control_client::ControlClient;
 use raven::proto::{ListRequest, StopAllRequest};
 use raven::utils::status::check_status;
@@ -14,8 +16,21 @@ use raven::utils::tree::show_users_tree;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    // Graph should not require config; it only depends on the compiled-in PipelineSpec.
+    if let Commands::Graph { format } = &cli.command {
+        let spec = PipelineSpec::default();
+        let fmt = GraphFormat::parse(format).unwrap_or(GraphFormat::Ascii);
+        let s = match fmt {
+            GraphFormat::Ascii => render::render_ascii(&spec),
+            GraphFormat::Dot => render::render_dot(&spec),
+        };
+        print!("{s}");
+        return Ok(());
+    }
+
     let settings = Settings::new().unwrap_or_else(|e| {
-        eprintln!("Warning: Failed to load config: {e}. Using defaults.");
+        eprintln!("Failed to load config: {e}.");
         std::process::exit(1);
     });
     let service_opt = cli.service.clone();
@@ -30,18 +45,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             show_users_tree(&settings).await;
             return Ok(());
         }
-        Commands::Start {
+        Commands::Plan {
             symbol,
             base,
-            exchange,
+            venue,
             venue_include,
             venue_exclude,
         } => {
+            let s = ops::handle_plan(&settings, symbol, base, venue, venue_include, venue_exclude)
+                .await?;
+            print!("{s}");
+            return Ok(());
+        }
+        Commands::Start {
+            symbol,
+            base,
+            venue,
+            venue_include,
+            venue_exclude,
+            print_graph,
+        } => {
+            if *print_graph {
+                let spec = PipelineSpec::default();
+                print!("{}", render::render_ascii(&spec));
+            }
             ops::handle_start(
                 &settings,
                 symbol,
                 base,
-                exchange,
+                venue,
                 venue_include,
                 venue_exclude,
             )
@@ -72,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         // Start is handled above
         Commands::Start { .. } => unreachable!(),
+        Commands::Plan { .. } => unreachable!(),
 
         Commands::Stop {
             symbol,
