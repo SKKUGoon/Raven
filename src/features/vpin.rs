@@ -13,7 +13,8 @@ use tracing::{error, info, warn};
 /// VPIN configuration (mirrors the Python VPINConfig).
 #[derive(Clone, Debug)]
 pub struct VpinConfig {
-    /// Volume per bucket (each bucket contains ~this much traded volume).
+    /// Notional volume per bucket in quote currency (each bucket contains ~this much traded notional).
+    /// For crypto this should generally be quote notional (e.g., USD/USDT), not base-asset quantity.
     pub v: f64,
     /// Rolling number of buckets for VPIN.
     pub n: usize,
@@ -50,12 +51,14 @@ struct VolumeBucket {
     high: f64,
     low: f64,
     close: f64,
-    volume_sum: f64,
+    // Accumulated notional in quote currency (price * quantity).
+    notional_sum: f64,
     ticks: u64,
 }
 
 impl VolumeBucket {
     fn new(ts: i64, price: f64, qty: f64) -> Self {
+        let notional = price * qty;
         Self {
             start_ts: ts,
             end_ts: ts,
@@ -63,17 +66,18 @@ impl VolumeBucket {
             high: price,
             low: price,
             close: price,
-            volume_sum: qty,
+            notional_sum: notional,
             ticks: 1,
         }
     }
 
     fn update(&mut self, ts: i64, price: f64, qty: f64) {
+        let notional = price * qty;
         self.end_ts = ts;
         self.high = self.high.max(price);
         self.low = self.low.min(price);
         self.close = price;
-        self.volume_sum += qty;
+        self.notional_sum += notional;
         self.ticks += 1;
     }
 }
@@ -86,7 +90,7 @@ pub struct ClosedBucket {
     pub high: f64,
     pub low: f64,
     pub close: f64,
-    /// Conceptual bucket volume for VPIN computation (clipped to cfg.v).
+    /// Conceptual bucket notional (quote currency) for VPIN computation (fixed to cfg.v).
     pub v: f64,
     /// Number of trade prints in the bucket (not used in VPIN math; useful for debugging).
     pub ticks: u64,
@@ -148,7 +152,7 @@ impl VpinCalculator {
         let should_close = self
             .current_bucket
             .as_ref()
-            .is_some_and(|b| b.volume_sum >= v);
+            .is_some_and(|b| b.notional_sum >= v);
 
         if !should_close {
             return None;
@@ -162,7 +166,7 @@ impl VpinCalculator {
             high: closed.high,
             low: closed.low,
             close: closed.close,
-            // Like the Python version, treat each formed bucket as exactly V for VPIN math.
+            // Treat each formed bucket as exactly V for VPIN math (V is quote-notional).
             v,
             ticks: closed.ticks,
         };
@@ -262,8 +266,7 @@ fn erf(x: f64) -> f64 {
     let x = x.abs();
 
     let t = 1.0 / (1.0 + P * x);
-    let y = 1.0
-        - (((((A5 * t + A4) * t + A3) * t + A2) * t + A1) * t) * (-x * x).exp();
+    let y = 1.0 - (((((A5 * t + A4) * t + A3) * t + A2) * t + A1) * t) * (-x * x).exp();
     sign * y
 }
 
@@ -443,7 +446,8 @@ mod tests {
     #[test]
     fn vpin_streaming_matches_expected_shape() {
         let cfg = VpinConfig {
-            v: 10.0,
+            // V is quote-notional: here we close a bucket after ~$1,000 of notional.
+            v: 1000.0,
             n: 2,
             sigma_window: 2,
             sigma_floor: 1e-12,
@@ -453,19 +457,19 @@ mod tests {
         // Seed with first observed trade price.
         c.seed_prev_close(100.0);
 
-        // Bucket 1: qty 6 + 5 => closes, but no sigma history yet => no VPIN.
+        // Bucket 1: notional 100*6 + 101*5 = 1105 => closes, but no sigma history yet => no VPIN.
         assert!(c.on_trade(1, 100.0, 6.0).is_none());
         assert!(c.on_trade(2, 101.0, 5.0).is_none());
 
         // Bucket 2: closes, dp history reaches sigma_window, but OI window len=1 => no VPIN.
+        // notional 102*10 = 1020 => closes
         assert!(c.on_trade(3, 102.0, 10.0).is_none());
 
         // Bucket 3: closes, OI window len=2 => VPIN defined.
+        // notional 100*10 = 1000 => closes
         let p = c.on_trade(4, 100.0, 10.0).expect("expected VPIN point");
         assert!(p.vpin.is_finite());
         // Hand-computed approx for this toy stream ≈ 0.9082
         assert!((p.vpin - 0.9082).abs() < 1e-3, "got {}", p.vpin);
     }
 }
-
-

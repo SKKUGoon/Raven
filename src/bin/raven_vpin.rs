@@ -9,7 +9,7 @@ use std::collections::HashMap;
 #[command(name = "raven_vpin")]
 #[command(about = "VPIN (Volume-synchronized Probability of Informed Trading) aggregator")]
 struct Cli {
-    /// Volume per bucket (V)
+    /// Notional per bucket in quote currency (V), e.g. USD/USDT
     #[arg(long, default_value_t = 10_000.0)]
     v: f64,
 
