@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Handle commands that don't need a specific client connection first
     match &cli.command {
-        Commands::Status | Commands::Ping => {
+        Commands::Status => {
             check_status(&settings).await;
             return Ok(());
         }

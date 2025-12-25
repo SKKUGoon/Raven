@@ -13,7 +13,7 @@ use tracing::{error, info, warn};
 
 #[derive(Clone)]
 pub struct TimescaleWorker {
-    timebar_upstream: String,
+    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
     schema: String,
@@ -28,7 +28,7 @@ impl StreamWorker for TimescaleWorker {
 
         run_multi_persistence(
             MultiPersistenceArgs {
-                timebar_upstream: self.timebar_upstream.clone(),
+                timebar_upstreams: self.timebar_upstreams.clone(),
                 tibs_upstreams: self.tibs_upstreams.clone(),
                 vibs_upstreams: self.vibs_upstreams.clone(),
                 symbol,
@@ -45,7 +45,7 @@ impl StreamWorker for TimescaleWorker {
 pub type PersistenceService = StreamManager<TimescaleWorker>;
 
 pub async fn new(
-    timebar_upstream: String,
+    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
     config: TimescaleConfig,
@@ -79,7 +79,7 @@ pub async fn new(
     }
 
     let worker = TimescaleWorker {
-        timebar_upstream,
+        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         schema,
@@ -327,7 +327,7 @@ async fn run_persistence_loop(
 }
 
 struct MultiPersistenceArgs {
-    timebar_upstream: String,
+    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
     symbol: String,
@@ -339,7 +339,7 @@ struct MultiPersistenceArgs {
 
 async fn run_multi_persistence(args: MultiPersistenceArgs) {
     let MultiPersistenceArgs {
-        timebar_upstream,
+        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         symbol,
@@ -350,23 +350,22 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
     } = args;
     info!("Bar Persistence task started for {}", key);
 
-    let t_key = key.clone();
-    let t_schema = schema.clone();
-    let t_pool = pool.clone();
-    let t_symbol = symbol.clone();
-    let t_venue = venue.clone();
-    let timebar_task = tokio::spawn(async move {
-        run_persistence_loop(
-            timebar_upstream,
-            t_symbol,
-            t_venue,
-            t_key,
-            t_schema,
-            t_pool,
-            "Timebar",
-        )
-        .await;
-    });
+    let mut timebar_tasks = Vec::with_capacity(timebar_upstreams.len());
+    for (i, upstream) in timebar_upstreams.into_iter().enumerate() {
+        let t_key = key.clone();
+        let t_schema = schema.clone();
+        let t_pool = pool.clone();
+        let t_symbol = symbol.clone();
+        let t_venue = venue.clone();
+        let label: &'static str = match i {
+            0 => "Timebar(60s)",
+            1 => "Timebar(1s)",
+            _ => "Timebar",
+        };
+        timebar_tasks.push(tokio::spawn(async move {
+            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+        }));
+    }
 
     let mut tib_tasks = Vec::with_capacity(tibs_upstreams.len());
     for (i, upstream) in tibs_upstreams.into_iter().enumerate() {
@@ -404,7 +403,9 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         }));
     }
 
-    let _ = timebar_task.await;
+    for t in timebar_tasks {
+        let _ = t.await;
+    }
     for t in tib_tasks {
         let _ = t.await;
     }

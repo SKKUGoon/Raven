@@ -93,8 +93,6 @@ pub enum Commands {
     List,
     /// Check status of all services
     Status,
-    /// Alias for Status
-    Ping,
     /// Show service users/subscriptions tree
     User,
 
