@@ -1,15 +1,18 @@
+#[path = "../common/mod.rs"]
+mod common;
+
 use clap::Parser;
 use raven::config::{Settings, TibsConfig};
-use raven::features::tibs;
+use raven::features::trbs;
 use raven::service::RavenService;
 use std::collections::HashMap;
 
 #[derive(Parser, Debug)]
-#[command(name = "raven_tibs")]
-#[command(about = "Tick imbalance bars (TIBS) aggregator", long_about = None)]
+#[command(name = "raven_trbs")]
+#[command(about = "Tick run bars (TRBS) aggregator", long_about = None)]
 struct Cli {
-    /// Candle interval label (e.g. tib_small)
-    #[arg(long, default_value = "tib")]
+    /// Candle interval label (e.g. trb_small)
+    #[arg(long, default_value = "trb")]
     interval: String,
 
     /// Override listening port
@@ -39,15 +42,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let settings = Settings::new()?;
 
-    let log_level = match settings.logging.level.to_lowercase().as_str() {
-        "debug" => tracing::Level::DEBUG,
-        "error" => tracing::Level::ERROR,
-        "warn" => tracing::Level::WARN,
-        _ => tracing::Level::INFO,
-    };
-    tracing_subscriber::fmt().with_max_level(log_level).init();
+    common::init_logging(&settings);
 
-    let port = cli.port.unwrap_or(settings.server.port_tibs_small);
+    let port = cli.port.unwrap_or(settings.server.port_trbs_small);
     let addr = format!("{}:{}", settings.server.host, port).parse()?;
 
     let interval = cli.interval;
@@ -81,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         profiles: Default::default(),
     };
 
-    let service_impl = tibs::new(upstreams, config, interval.clone());
-    let service_name = format!("RavenTibs_{interval}");
+    let service_impl = trbs::new(upstreams, config, interval.clone());
+    let service_name = format!("RavenTrbs_{interval}");
     let raven = RavenService::new(&service_name, service_impl.clone());
     raven.serve_with_market_data(addr, service_impl).await?;
     Ok(())

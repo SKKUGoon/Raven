@@ -1,3 +1,6 @@
+#[path = "../common/mod.rs"]
+mod common;
+
 use clap::Parser;
 use raven::config::Settings;
 use raven::features::vpin;
@@ -35,13 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let settings = Settings::new()?;
 
-    let log_level = match settings.logging.level.to_lowercase().as_str() {
-        "debug" => tracing::Level::DEBUG,
-        "error" => tracing::Level::ERROR,
-        "warn" => tracing::Level::WARN,
-        _ => tracing::Level::INFO,
-    };
-    tracing_subscriber::fmt().with_max_level(log_level).init();
+    common::init_logging(&settings);
 
     let port = cli.port.unwrap_or(settings.server.port_vpin);
     let addr = format!("{}:{}", settings.server.host, port).parse()?;
@@ -78,5 +75,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-

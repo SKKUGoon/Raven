@@ -1,3 +1,6 @@
+#[path = "../common/mod.rs"]
+mod common;
+
 use raven::config::Settings;
 use raven::db::timescale;
 use raven::service::RavenService;
@@ -6,14 +9,7 @@ use raven::service::RavenService;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings = Settings::new()?;
 
-    let log_level = match settings.logging.level.to_lowercase().as_str() {
-        "debug" => tracing::Level::DEBUG,
-        "error" => tracing::Level::ERROR,
-        "warn" => tracing::Level::WARN,
-        _ => tracing::Level::INFO,
-    };
-
-    tracing_subscriber::fmt().with_max_level(log_level).init();
+    common::init_logging(&settings);
 
     let addr = format!(
         "{}:{}",

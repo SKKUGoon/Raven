@@ -2,6 +2,7 @@
 host = "0.0.0.0"
 port_binance_spot = 50001
 port_binance_futures = 50002
+port_binance_futures_klines = 50003
 port_timebar_minutes = 50051
 port_timebar_seconds = 50052
 port_tibs_large = 50053
@@ -13,6 +14,7 @@ port_vibs_large = 50058
 port_vpin = 50059
 port_tick_persistence = 50091
 port_bar_persistence = 50092
+port_kline_persistence = 50093
 
 
 [influx]
@@ -40,3 +42,7 @@ venue_exclude = []
 [routing.symbol_map]
 "PEPE/USDT" = { BINANCE_FUTURES = "1000PEPEUSDT" }
 
+[binance_klines]
+interval = "5m"
+shard_size = 50
+connections = 10

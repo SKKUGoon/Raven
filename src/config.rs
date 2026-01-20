@@ -18,6 +18,8 @@ pub struct Settings {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub routing: RoutingConfig,
+    #[serde(default)]
+    pub binance_klines: BinanceKlinesConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -25,8 +27,12 @@ pub struct ServerConfig {
     pub host: String,
     pub port_binance_spot: u16,
     pub port_binance_futures: u16,
+    #[serde(default = "default_port_binance_futures_klines")]
+    pub port_binance_futures_klines: u16,
     pub port_tick_persistence: u16,
     pub port_bar_persistence: u16,
+    #[serde(default = "default_port_kline_persistence")]
+    pub port_kline_persistence: u16,
     pub port_timebar_minutes: u16,
     #[serde(default = "default_port_timebar_seconds")]
     pub port_timebar_seconds: u16,
@@ -137,6 +143,46 @@ pub struct TimescaleConfig {
     pub schema: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct BinanceKlinesConfig {
+    /// Futures kline websocket base URL (expects JSON SUBSCRIBE messages).
+    #[serde(default = "default_binance_futures_ws_url")]
+    pub ws_url: String,
+    /// Kline interval (e.g. "1m", "5m", "1h").
+    #[serde(default = "default_binance_kline_interval")]
+    pub interval: String,
+    /// Number of symbols per connection (shard size).
+    #[serde(default = "default_binance_kline_shard_size")]
+    pub shard_size: usize,
+    /// Number of websocket connections (shards) to spawn.
+    #[serde(default = "default_binance_kline_connections")]
+    pub connections: usize,
+    /// Binance hard limit is 1024 streams per connection.
+    #[serde(default = "default_binance_kline_max_streams")]
+    pub max_streams_per_connection: usize,
+    /// Broadcast channel capacity for outgoing gRPC subscribers.
+    #[serde(default = "default_binance_kline_channel_capacity")]
+    pub channel_capacity: usize,
+    /// Optional explicit list of venue symbols to subscribe to (e.g. ["BTCUSDT","ETHUSDT"]).
+    /// If omitted/empty, Raven falls back to futures entries in `routing.symbol_map`.
+    #[serde(default)]
+    pub symbols: Vec<String>,
+}
+
+impl Default for BinanceKlinesConfig {
+    fn default() -> Self {
+        Self {
+            ws_url: default_binance_futures_ws_url(),
+            interval: default_binance_kline_interval(),
+            shard_size: default_binance_kline_shard_size(),
+            connections: default_binance_kline_connections(),
+            max_streams_per_connection: default_binance_kline_max_streams(),
+            channel_capacity: default_binance_kline_channel_capacity(),
+            symbols: Vec::new(),
+        }
+    }
+}
+
 fn default_batch_size() -> usize {
     1000
 }
@@ -147,6 +193,14 @@ fn default_batch_interval() -> u64 {
 
 fn default_port_timebar_seconds() -> u16 {
     50053
+}
+
+fn default_port_binance_futures_klines() -> u16 {
+    50003
+}
+
+fn default_port_kline_persistence() -> u16 {
+    50093
 }
 
 fn default_port_vpin() -> u16 {
@@ -179,6 +233,30 @@ fn default_port_vibs_large() -> u16 {
 
 fn default_timescale_schema() -> String {
     "warehouse".to_string()
+}
+
+fn default_binance_futures_ws_url() -> String {
+    "wss://fstream.binance.com/ws".to_string()
+}
+
+fn default_binance_kline_interval() -> String {
+    "5m".to_string()
+}
+
+fn default_binance_kline_shard_size() -> usize {
+    50
+}
+
+fn default_binance_kline_connections() -> usize {
+    10
+}
+
+fn default_binance_kline_max_streams() -> usize {
+    1024
+}
+
+fn default_binance_kline_channel_capacity() -> usize {
+    10_000
 }
 
 #[derive(Debug, Deserialize, Clone)]
