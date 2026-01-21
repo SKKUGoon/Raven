@@ -2,34 +2,42 @@ use raven::config::Settings;
 use raven::pipeline::spec::PipelineSpec;
 use raven::routing::symbol_resolver::SymbolResolver;
 use raven::utils::grpc::wait_for_control_ready;
-use raven::utils::process::start_all_services_with_settings;
+use raven::utils::process::{running_services, start_all_services_with_settings};
 use std::io::{Error as IoError, ErrorKind};
 use std::time::Duration;
 
 use super::util::{build_instrument, resolve_venues, service_addr, start_stream, stop_stream};
 
-pub async fn handle_start(
+pub async fn handle_start_services(settings: &Settings) -> Result<(), IoError> {
+    let running = running_services(settings);
+    if !running.is_empty() {
+        println!("Services already running:");
+        for svc in running {
+            println!("- {svc}");
+        }
+        return Ok(());
+    }
+    start_all_services_with_settings(settings);
+    Ok(())
+}
+
+pub async fn handle_collect(
     settings: &Settings,
-    symbol: &Option<String>,
+    symbol: &str,
     base: &Option<String>,
     venue: &Option<String>,
     venue_include: &[String],
     venue_exclude: &[String],
 ) -> Result<(), IoError> {
-    // Case 1: No symbol provided -> Start Infrastructure ONLY
-    if symbol.is_none() {
-        start_all_services_with_settings(settings);
-        return Ok(());
+    if running_services(settings).is_empty() {
+        return Err(IoError::new(
+            ErrorKind::Other,
+            "Services are not running. Run `ravenctl start` first.",
+        ));
     }
 
-    // Case 2: Symbol provided -> Start Infrastructure AND Start Collection
-    // First, ensure services are running
-    start_all_services_with_settings(settings);
-
-    let sym_raw = symbol.as_ref().unwrap();
-
     // Build instrument if base is provided; otherwise treat --symbol as a venue symbol.
-    let instrument = build_instrument(sym_raw, base)?;
+    let instrument = build_instrument(symbol, base)?;
 
     let resolver = SymbolResolver::from_config(&settings.routing);
 
@@ -50,7 +58,7 @@ pub async fn handle_start(
         let venue_wire = venue.as_wire();
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue),
-            None => sym_raw.clone(),
+            None => symbol.to_string(),
         };
 
         println!(
@@ -58,7 +66,7 @@ pub async fn handle_start(
             instrument
                 .as_ref()
                 .map(|i| i.to_string())
-                .unwrap_or_else(|| sym_raw.clone()),
+                .unwrap_or_else(|| symbol.to_string()),
             venue_wire,
             venue_symbol
         );
@@ -166,5 +174,3 @@ pub async fn handle_stop(
 
     Ok(())
 }
-
-
