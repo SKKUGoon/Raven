@@ -45,7 +45,8 @@ pub(super) async fn ensure_schema_and_tables(
             buy_ticks   BIGINT NOT NULL DEFAULT 0,
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            UNIQUE (time, symbol, exchange, interval)
         );
         "#
     ))
@@ -56,6 +57,12 @@ pub(super) async fn ensure_schema_and_tables(
     // (Callers treat this as best-effort setup.)
     sqlx::query(&format!(
         "SELECT create_hypertable('{tib_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS {schema}_tib_symbol_exchange_interval_time_idx ON {tib_table} (symbol, exchange, interval, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -75,7 +82,8 @@ pub(super) async fn ensure_schema_and_tables(
             buy_ticks   BIGINT NOT NULL DEFAULT 0,
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            UNIQUE (time, symbol, exchange, interval)
         );
         "#
     ))
@@ -84,6 +92,12 @@ pub(super) async fn ensure_schema_and_tables(
 
     sqlx::query(&format!(
         "SELECT create_hypertable('{vib_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS {schema}_vib_symbol_exchange_interval_time_idx ON {vib_table} (symbol, exchange, interval, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -103,7 +117,8 @@ pub(super) async fn ensure_schema_and_tables(
             buy_ticks   BIGINT NOT NULL DEFAULT 0,
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            UNIQUE (time, symbol, exchange, interval)
         );
         "#
     ))
@@ -112,6 +127,12 @@ pub(super) async fn ensure_schema_and_tables(
 
     sqlx::query(&format!(
         "SELECT create_hypertable('{vpin_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS {schema}_vpin_symbol_exchange_interval_time_idx ON {vpin_table} (symbol, exchange, interval, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -131,7 +152,8 @@ pub(super) async fn ensure_schema_and_tables(
             buy_ticks   BIGINT NOT NULL DEFAULT 0,
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            UNIQUE (time, symbol, exchange, interval)
         );
         "#
     ))
@@ -140,6 +162,12 @@ pub(super) async fn ensure_schema_and_tables(
 
     sqlx::query(&format!(
         "SELECT create_hypertable('{time_table}', 'time', if_not_exists => TRUE);"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        "CREATE INDEX IF NOT EXISTS {schema}_time_symbol_exchange_interval_time_idx ON {time_table} (symbol, exchange, interval, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -168,10 +196,7 @@ pub(super) async fn ensure_schema_and_kline_table(
             low         DOUBLE PRECISION NOT NULL,
             close       DOUBLE PRECISION NOT NULL,
             volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+            UNIQUE (time, symbol, exchange, interval)
         );
         "#
     ))

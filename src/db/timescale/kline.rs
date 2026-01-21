@@ -1,7 +1,9 @@
 use crate::config::TimescaleConfig;
 use crate::proto::control_client::ControlClient;
 use crate::proto::market_data_client::MarketDataClient;
-use crate::proto::{market_data_message, ControlRequest, DataType, MarketDataMessage, MarketDataRequest};
+use crate::proto::{
+    market_data_message, ControlRequest, DataType, MarketDataMessage, MarketDataRequest,
+};
 use crate::service::{StreamKey, StreamManager, StreamWorker};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
@@ -77,11 +79,19 @@ pub async fn new_kline(
     Ok(StreamManager::new(Arc::new(worker), 10_000, false))
 }
 
-async fn ensure_upstream_kline_collection(upstream_url: &str, symbol: &str, venue: &str, key: &str) {
+async fn ensure_upstream_kline_collection(
+    upstream_url: &str,
+    symbol: &str,
+    venue: &str,
+    key: &str,
+) {
     let mut client = match ControlClient::connect(upstream_url.to_string()).await {
         Ok(c) => c,
         Err(e) => {
-            warn!("Failed to connect to upstream Control {} for {}: {}", upstream_url, key, e);
+            warn!(
+                "Failed to connect to upstream Control {} for {}: {}",
+                upstream_url, key, e
+            );
             return;
         }
     };
@@ -93,7 +103,10 @@ async fn ensure_upstream_kline_collection(upstream_url: &str, symbol: &str, venu
     });
 
     if let Err(e) = client.start_collection(req).await {
-        warn!("Failed to start upstream kline collection for {}: {}", key, e);
+        warn!(
+            "Failed to start upstream kline collection for {}: {}",
+            key, e
+        );
     }
 }
 
@@ -148,13 +161,15 @@ async fn persist_kline(
     candle: crate::proto::Candle,
 ) {
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
-    let Some(t) = time else { return; };
+    let Some(t) = time else {
+        return;
+    };
 
     let table_name = qualify_table(schema, "bar__kline");
     let query = format!(
         r#"
-        INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         "#,
     );
 
@@ -168,10 +183,6 @@ async fn persist_kline(
         .bind(candle.low)
         .bind(candle.close)
         .bind(candle.volume)
-        .bind(candle.buy_ticks as i64)
-        .bind(candle.sell_ticks as i64)
-        .bind(candle.total_ticks as i64)
-        .bind(candle.theta)
         .execute(pool)
         .await;
 
