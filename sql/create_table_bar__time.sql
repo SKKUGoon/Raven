@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS warehouse.bar__time (
     buy_ticks   BIGINT NOT NULL DEFAULT 0,
     sell_ticks  BIGINT NOT NULL DEFAULT 0,
     total_ticks BIGINT NOT NULL DEFAULT 0,
-    theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0
+    theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    UNIQUE (time, symbol, exchange, interval)
 );
 
 SELECT create_hypertable('warehouse.bar__time', 'time', if_not_exists => TRUE);
+
+CREATE INDEX IF NOT EXISTS bar__time_symbol_exchange_interval_time_idx
+    ON warehouse.bar__time (symbol, exchange, interval, time DESC);

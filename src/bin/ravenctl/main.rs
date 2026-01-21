@@ -1,6 +1,4 @@
-#[path = "ravenctl/cli.rs"]
 mod cli;
-#[path = "ravenctl/ops.rs"]
 mod ops;
 
 use clap::Parser;

@@ -9,43 +9,51 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "binance_spot"
-path = "src/bin/binance_spot.rs"
+path = "src/bin/raw/binance_spot.rs"
 
 [[bin]]
 name = "binance_futures"
-path = "src/bin/binance_futures.rs"
+path = "src/bin/raw/binance_futures.rs"
+
+[[bin]]
+name = "binance_futures_klines"
+path = "src/bin/raw/binance_futures_klines.rs"
 
 [[bin]]
 name = "tick_persistence"
-path = "src/bin/tick_persistence.rs"
+path = "src/bin/persist/tick_persistence.rs"
 
 [[bin]]
 name = "bar_persistence"
-path = "src/bin/bar_persistence.rs"
+path = "src/bin/persist/bar_persistence.rs"
+
+[[bin]]
+name = "kline_persistence"
+path = "src/bin/persist/kline_persistence.rs"
 
 [[bin]]
 name = "raven_timebar"
-path = "src/bin/raven_timebar.rs"
+path = "src/bin/statistics/raven_timebar.rs"
 
 [[bin]]
 name = "raven_tibs"
-path = "src/bin/raven_tibs.rs"
+path = "src/bin/statistics/raven_tibs.rs"
 
 [[bin]]
 name = "raven_trbs"
-path = "src/bin/raven_trbs.rs"
+path = "src/bin/statistics/raven_trbs.rs"
 
 [[bin]]
 name = "raven_vibs"
-path = "src/bin/raven_vibs.rs"
+path = "src/bin/statistics/raven_vibs.rs"
 
 [[bin]]
 name = "raven_vpin"
-path = "src/bin/raven_vpin.rs"
+path = "src/bin/statistics/raven_vpin.rs"
 
 [[bin]]
 name = "ravenctl"
-path = "src/bin/ravenctl.rs"
+path = "src/bin/ravenctl/main.rs"
 
 [dependencies]
 # gRPC and Protocol Buffers
@@ -101,6 +109,7 @@ hyper-util = { version = "0.1.19", features = ["server", "tokio"] }
 http-body-util = "0.1.3"
 bytes = "1.11.0"
 ptree = "0.5.2"
+reqwest = { version = "0.13.1", features = ["json", "rustls-native-certs"] }
 
 [dev-dependencies]
 criterion = { version = "0.8.1", features = ["html_reports"] }

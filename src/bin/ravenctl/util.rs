@@ -1,5 +1,6 @@
 use raven::config::Settings;
-use raven::domain::instrument::{Asset, Instrument};
+use raven::domain::asset::Asset;
+use raven::domain::instrument::Instrument;
 use raven::domain::venue::VenueId;
 use raven::proto::control_client::ControlClient;
 use raven::proto::ControlRequest;
