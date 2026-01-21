@@ -110,11 +110,14 @@ impl MarketData for BinanceFuturesKlinesService {
         }
 
         let symbol = req.symbol.trim().to_uppercase();
-        let key = self.key_for_symbol(&symbol);
-        if !self.is_active(&key) {
-            return Err(Status::failed_precondition(format!(
-                "Stream not started for {key}. Call Control.StartCollection first."
-            )));
+        let wildcard = symbol.is_empty() || symbol == "*";
+        if !wildcard {
+            let key = self.key_for_symbol(&symbol);
+            if !self.is_active(&key) {
+                return Err(Status::failed_precondition(format!(
+                    "Stream not started for {key}. Call Control.StartCollection first."
+                )));
+            }
         }
 
         let rx = self.tx().subscribe();
@@ -122,9 +125,11 @@ impl MarketData for BinanceFuturesKlinesService {
             let symbol = symbol.clone();
             match item {
                 Ok(Ok(m)) => {
-                    // Filter: pass through only candles for this symbol.
+                    // Filter: pass through all candles for wildcard, otherwise match symbol.
                     match &m.data {
-                        Some(market_data_message::Data::Candle(c)) if c.symbol == symbol => {
+                        Some(market_data_message::Data::Candle(c))
+                            if wildcard || c.symbol == symbol =>
+                        {
                             Some(Ok(m))
                         }
                         _ => None,

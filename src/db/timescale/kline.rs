@@ -103,6 +103,7 @@ async fn connect_kline_stream(
     venue: &str,
     key: &str,
 ) -> tonic::Streaming<MarketDataMessage> {
+    let wildcard = symbol.trim().is_empty() || symbol.trim() == "*";
     loop {
         let mut client = match MarketDataClient::connect(upstream_url.to_string()).await {
             Ok(c) => c,
@@ -125,7 +126,7 @@ async fn connect_kline_stream(
         match client.subscribe(request).await {
             Ok(res) => return res.into_inner(),
             Err(e) => {
-                if e.code() == tonic::Code::FailedPrecondition {
+                if e.code() == tonic::Code::FailedPrecondition && !wildcard {
                     ensure_upstream_kline_collection(upstream_url, symbol, venue, key).await;
                 }
                 warn!(

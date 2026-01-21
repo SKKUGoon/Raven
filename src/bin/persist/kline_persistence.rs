@@ -4,6 +4,7 @@ mod common;
 use raven::config::Settings;
 use raven::db::timescale;
 use raven::service::{RavenService, StreamDataType, StreamKey};
+use raven::utils::service_registry;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -94,9 +95,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
+    let client_host = service_registry::client_host(&settings.server.host);
     let upstream_url = format!(
         "http://{}:{}",
-        settings.server.host, settings.server.port_binance_futures_klines
+        client_host, settings.server.port_binance_futures_klines
     );
 
     let symbols = resolve_symbols(&settings).await;
@@ -108,15 +110,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let service_impl = timescale::new_kline(upstream_url, settings.timescale.clone()).await?;
 
-    // Start persistence for all configured symbols immediately.
-    for sym in symbols {
-        let key = StreamKey {
-            symbol: sym,
-            venue: Some("BINANCE_FUTURES".to_string()),
-            data_type: StreamDataType::Candle,
-        };
-        service_impl.ensure_stream(key).await;
-    }
+    // Start a single wildcard stream for all klines.
+    let key = StreamKey {
+        symbol: "*".to_string(),
+        venue: Some("BINANCE_FUTURES".to_string()),
+        data_type: StreamDataType::Candle,
+    };
+    service_impl.ensure_stream(key).await;
 
     let raven = RavenService::new("KlinePersistence", service_impl.clone());
     raven.serve(addr).await?;

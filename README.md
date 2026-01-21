@@ -19,6 +19,7 @@ Your mental model is the right one; here is how it maps to the current code:
   - `ravenctl start --symbol ...` starts infra (if needed) and then starts **collections** in a strict order:
     - downstream first (persistence + feature makers)
     - collectors last (this is when exchange WebSocket subscriptions actually happen)
+  - **Exception**: `binance_futures_klines` + `kline_persistence` are autonomous. If you run those binaries directly, they immediately start collecting/persisting klines for the configured symbols without `ravenctl start`.
 
 - **3) Multi-symbol is “within the same process”**
 - Services like `raven_tibs` / `raven_trbs` / `raven_vibs` are long-lived processes that run **one task per `(symbol, venue, datatype)`**.
@@ -49,14 +50,17 @@ To see the topology and exact calls Raven will make:
 
 - **InfluxDB v2.x**: used by `tick_persistence` (writes trades + orderbook snapshots).
 - **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` (writes `bar__time` and `bar__tick_imbalance`).
+- **PostgreSQL + TimescaleDB extension**: used by `kline_persistence` (writes `bar__kline`).
 
 Notes:
 - **InfluxDB** is schema-on-write, but you must provision:
   - `influx.url`, `influx.org`, `influx.bucket`, and a valid `influx.token` with write permissions.
-- **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` calls `create_hypertable(...)`.
+- **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` and `kline_persistence` call `create_hypertable(...)`.
   - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
     - Schema: `timescale.schema` (default: `warehouse`)
     - Tables: `warehouse.bar__time`, `warehouse.bar__tick_imbalance`, `warehouse.bar__volume_imbalance`
+  - At startup, `kline_persistence` will attempt (best-effort) to create:
+    - Table: `warehouse.bar__kline`
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
   - Reference DDL is also checked into `sql/` (`create_table_bar__time.sql`, `create_table_bar__tick_imbalance.sql`).
 
@@ -126,8 +130,9 @@ venue_exclude = []
 
 - `binance_spot` (default `50001`)
 - `binance_futures` (default `50002`)
+- `binance_futures_klines` (default `50003`) → auto-subscribes to configured kline symbols on startup
 
-Collectors only connect/subscribe when their streams are started via **Control**.
+Collectors only connect/subscribe when their streams are started via **Control**, except for the autonomous kline collector described above.
 
 ### Processors (feature makers)
 
@@ -143,6 +148,7 @@ These services subscribe to sources. With the “wire first” rule, they will k
 
 - `tick_persistence` (default `50091`) → InfluxDB
 - `bar_persistence` (default `50092`) → TimescaleDB
+- `kline_persistence` (default `50093`) → TimescaleDB; auto-starts persistence for configured kline symbols
 
 ## Control plane: `ravenctl`
 
@@ -201,6 +207,27 @@ tar -tzf "raven-v${VERSION}-${TARGET}.tar.gz" | head
 
 ```bash
 cargo build --release
+```
+
+### Run locally (after build)
+
+Run from the repo without installing:
+
+```bash
+./target/release/ravenctl start
+```
+
+Run a specific service directly:
+
+```bash
+./target/release/binance_futures_klines
+./target/release/kline_persistence
+```
+
+Tip: you can also run from source:
+
+```bash
+cargo run --release --bin ravenctl -- start --symbol ETH --base USDC
 ```
 
 ### Start infrastructure (all services)
@@ -297,7 +324,7 @@ Or shutdown a single service process:
 - `venue`: e.g. `BINANCE_SPOT`, `BINANCE_FUTURES`
 - `data_type`: `TRADE`, `ORDERBOOK`, `CANDLE`, ...
 
-And remember: **you must call `Control.StartCollection` before `MarketData.Subscribe` will succeed**.
+And remember: **for most services you must call `Control.StartCollection` before `MarketData.Subscribe` will succeed**. The `binance_futures_klines` service auto-starts streams for configured symbols, so `Subscribe` can succeed without a prior `StartCollection`.
 
 Control requests use the same concept:
 

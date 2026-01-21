@@ -45,4 +45,4 @@ venue_exclude = []
 [binance_klines]
 interval = "5m"
 shard_size = 50
-connections = 10
+connections = 11

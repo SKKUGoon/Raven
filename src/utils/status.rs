@@ -8,7 +8,7 @@ use hyper::Request;
 use hyper::Uri;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 pub async fn check_status(settings: &Settings) {
     let services = service_registry::all_services(settings);
@@ -18,14 +18,38 @@ pub async fn check_status(settings: &Settings) {
     println!("{:-<20}-|-{:-<10}-|-{:-<10}", "", "", "");
 
     let mut kline_port: Option<u16> = None;
-    let mut kline_healthy: Option<bool> = None;
+    let mut kline_collections: Option<usize> = None;
+    let mut kline_list_ok: Option<bool> = None;
+    let mut kline_metrics_parsed: Option<(BTreeMap<usize, i64>, BTreeMap<usize, i64>)> = None;
 
     for svc in services {
         let addr = svc.addr(host);
-        let healthy = match ControlClient::connect(addr).await {
-            Ok(mut client) => client.list_collections(ListRequest {}).await.is_ok(),
+        let mut list_ok = false;
+        let mut list_count = None;
+        let mut healthy = match ControlClient::connect(addr).await {
+            Ok(mut client) => match client.list_collections(ListRequest {}).await {
+                Ok(resp) => {
+                    list_ok = true;
+                    list_count = Some(resp.into_inner().collections.len());
+                    true
+                }
+                Err(_) => false,
+            },
             Err(_) => false,
         };
+
+        if svc.id == "binance_futures_klines" {
+            let metrics_port = svc.port.saturating_add(1000);
+            let metrics = fetch_metrics(host, metrics_port).await;
+            if let Some(metrics) = metrics {
+                let parsed = parse_kline_shard_metrics(&metrics);
+                let shard_connected = parsed.0.values().any(|v| *v > 0);
+                if shard_connected {
+                    healthy = true;
+                }
+                kline_metrics_parsed = Some(parsed);
+            }
+        }
         let status = if healthy {
             "\x1b[32mHEALTHY\x1b[0m" // Green
         } else {
@@ -35,46 +59,53 @@ pub async fn check_status(settings: &Settings) {
 
         if svc.id == "binance_futures_klines" {
             kline_port = Some(svc.port);
-            kline_healthy = Some(healthy);
+            kline_collections = list_count;
+            kline_list_ok = Some(list_ok);
         }
     }
 
     if let Some(port) = kline_port {
         println!();
-        println!("Binance Futures Kline Shards");
-        println!("{:-<36}", "");
+        println!("BINANCE FUTURES KLINES");
 
-        if kline_healthy == Some(true) {
-            let metrics_port = port.saturating_add(1000);
-            match fetch_metrics(host, metrics_port).await {
-                Some(metrics) => {
-                    let (connected, streams) = parse_kline_shard_metrics(&metrics);
-                    if connected.is_empty() && streams.is_empty() {
-                        println!("No shard metrics found (scraped {host}:{metrics_port})");
-                    } else {
-                        let mut shard_ids: BTreeSet<usize> = connected.keys().copied().collect();
-                        shard_ids.extend(streams.keys().copied());
-
-                        println!("{:<8} | {:<10} | {:<10}", "Shard", "Status", "Streams");
-                        println!("{:-<8}-|-{:-<10}-|-{:-<10}", "", "", "");
-                        for shard_idx in shard_ids {
-                            let is_up = connected.get(&shard_idx).copied().unwrap_or(0) > 0;
-                            let status = if is_up {
-                                "\x1b[32mHEALTHY\x1b[0m"
-                            } else {
-                                "\x1b[31mUNHEALTHY\x1b[0m"
-                            };
-                            let stream_count = streams.get(&shard_idx).copied().unwrap_or(0);
-                            println!("{shard_idx:<8} | {status:<10} | {stream_count:<10}");
-                        }
+        let metrics_port = port.saturating_add(1000);
+        let shard_count = settings.binance_klines.connections.max(1);
+        let shard_size = settings.binance_klines.shard_size.max(1);
+        let capacity = shard_count.saturating_mul(shard_size);
+        if let Some(count) = kline_collections {
+            if count >= capacity {
+                println!(
+                    "Active collections: {count} (at capacity: connections={shard_count} * shard_size={shard_size})"
+                );
+            } else {
+                println!(
+                    "Active collections: {count} (capacity: connections={shard_count} * shard_size={shard_size})"
+                );
+            }
+        }
+        if kline_list_ok == Some(false) {
+            println!("Control API check failed; attempting metrics scrape anyway.");
+        }
+        match kline_metrics_parsed {
+            Some((connected, streams)) => {
+                if connected.is_empty() && streams.is_empty() {
+                    println!("No shard metrics found (scraped {host}:{metrics_port})");
+                } else {
+                    for shard_idx in 0..shard_count {
+                        let is_up = connected.get(&shard_idx).copied().unwrap_or(0) > 0;
+                        let status = if is_up {
+                            "\x1b[32mHEALTHY\x1b[0m"
+                        } else {
+                            "\x1b[31mUNHEALTHY\x1b[0m"
+                        };
+                        let display_idx = shard_idx + 1;
+                        println!("    {display_idx}. SHARD {display_idx:<26}: {status}");
                     }
                 }
-                None => {
-                    println!("Failed to scrape shard metrics from {host}:{metrics_port}");
-                }
             }
-        } else {
-            println!("Service unhealthy; skipping shard health.");
+            None => {
+                println!("Failed to scrape shard metrics from {host}:{metrics_port}");
+            }
         }
     }
 }
