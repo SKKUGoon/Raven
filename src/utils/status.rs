@@ -14,8 +14,26 @@ pub async fn check_status(settings: &Settings) {
     let services = service_registry::all_services(settings);
     let host = service_registry::client_host(&settings.server.host);
 
-    println!("{:<20} | {:<10} | {:<10}", "Service", "Port", "Status");
-    println!("{:-<20}-|-{:-<10}-|-{:-<10}", "", "", "");
+    let service_width = services
+        .iter()
+        .map(|svc| svc.display_name.len())
+        .max()
+        .unwrap_or(0)
+        .max("Service".len());
+    println!(
+        "{:<service_width$} | {:<10} | {:<10}",
+        "Service",
+        "Port",
+        "Status",
+        service_width = service_width
+    );
+    println!(
+        "{:-<service_width$}-|-{:-<10}-|-{:-<10}",
+        "",
+        "",
+        "",
+        service_width = service_width
+    );
 
     let mut kline_port: Option<u16> = None;
     let mut kline_collections: Option<usize> = None;
@@ -55,7 +73,13 @@ pub async fn check_status(settings: &Settings) {
         } else {
             "\x1b[31mUNHEALTHY\x1b[0m" // Red
         };
-        println!("{:<20} | {:<10} | {}", svc.display_name, svc.port, status);
+        println!(
+            "{:<service_width$} | {:<10} | {}",
+            svc.display_name,
+            svc.port,
+            status,
+            service_width = service_width
+        );
 
         if svc.id == "binance_futures_klines" {
             kline_port = Some(svc.port);
@@ -99,7 +123,8 @@ pub async fn check_status(settings: &Settings) {
                             "\x1b[31mUNHEALTHY\x1b[0m"
                         };
                         let display_idx = shard_idx + 1;
-                        println!("    {display_idx}. SHARD {display_idx:<26}: {status}");
+                        let display_label = format!("{display_idx:02}");
+                        println!("    {display_label}. SHARD {display_label:<26}: {status}");
                     }
                 }
             }
