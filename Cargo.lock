@@ -2775,7 +2775,7 @@ dependencies = [
 
 [[package]]
 name = "raven"
-version = "2.6.2"
+version = "2.6.3"
 dependencies = [
  "async-stream",
  "async-trait",
