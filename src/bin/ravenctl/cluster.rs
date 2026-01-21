@@ -42,7 +42,7 @@ pub async fn list_collections_cluster(settings: &Settings) {
 
     println!("Active collections across services (excluding klines):");
     for svc in services {
-        if excluded.iter().any(|id| *id == svc.id) {
+        if excluded.contains(&svc.id) {
             continue;
         }
         let addr = svc.addr(host_ip);
@@ -62,7 +62,10 @@ pub async fn list_collections_cluster(settings: &Settings) {
                         }
                     }
                 }
-                Err(e) => println!("- {} ({}) @ {} -> ERROR: {e}", svc.display_name, svc.id, addr),
+                Err(e) => println!(
+                    "- {} ({}) @ {} -> ERROR: {e}",
+                    svc.display_name, svc.id, addr
+                ),
             },
             Err(e) => println!(
                 "- {} ({}) @ {} -> UNREACHABLE: {e}",
@@ -71,5 +74,3 @@ pub async fn list_collections_cluster(settings: &Settings) {
         }
     }
 }
-
-

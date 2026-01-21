@@ -30,8 +30,7 @@ pub async fn handle_collect(
     venue_exclude: &[String],
 ) -> Result<(), IoError> {
     if running_services(settings).is_empty() {
-        return Err(IoError::new(
-            ErrorKind::Other,
+        return Err(IoError::other(
             "Services are not running. Run `ravenctl start` first.",
         ));
     }
