@@ -31,31 +31,8 @@ pub enum Commands {
         run_mode: Option<String>,
     },
 
-    /// Start services (no args) OR Start data collection for a symbol (with args)
-    Start {
-        /// Symbol or base asset to collect.
-        ///
-        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
-        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
-        #[arg(short, long)]
-        symbol: Option<String>,
-        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
-        #[arg(long)]
-        base: Option<String>,
-        /// Target venue (single-venue selector).
-        #[arg(short, long)]
-        venue: Option<String>,
-        /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
-        #[arg(long = "venue-include")]
-        venue_include: Vec<String>,
-        /// Optional denylist of venues (may be repeated). Overrides config denylist.
-        #[arg(long = "venue-exclude")]
-        venue_exclude: Vec<String>,
-
-        /// Print the pipeline graph before executing.
-        #[arg(long)]
-        print_graph: bool,
-    },
+    /// Start services only (no data collection).
+    Start,
 
     /// Print the execution plan for starting a symbol (no execution).
     Plan {
@@ -77,6 +54,30 @@ pub enum Commands {
         /// Optional denylist of venues (may be repeated). Overrides config denylist.
         #[arg(long = "venue-exclude")]
         venue_exclude: Vec<String>,
+    },
+    /// Collect data for a symbol (starts services if needed).
+    Collect {
+        /// Symbol or base asset to collect.
+        ///
+        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
+        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
+        #[arg(short, long)]
+        symbol: String,
+        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
+        #[arg(long)]
+        base: Option<String>,
+        /// Target venue (single-venue selector).
+        #[arg(short, long)]
+        venue: Option<String>,
+        /// Optional allowlist of venues (may be repeated). Overrides config allowlist.
+        #[arg(long = "venue-include")]
+        venue_include: Vec<String>,
+        /// Optional denylist of venues (may be repeated). Overrides config denylist.
+        #[arg(long = "venue-exclude")]
+        venue_exclude: Vec<String>,
+        /// Print the pipeline graph before executing.
+        #[arg(long)]
+        print_graph: bool,
     },
     /// Stop data collection for a symbol
     Stop {
@@ -103,7 +104,7 @@ pub enum Commands {
     StopAll,
     /// Shutdown Raven services (all services, unless --service is set)
     Shutdown,
-    /// List active collections
+    /// List active collections (excluding klines)
     List,
     /// Check status of all services
     Status,

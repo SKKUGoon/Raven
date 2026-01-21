@@ -103,6 +103,30 @@ pub fn start_all_services_with_settings(settings: &Settings) {
     println!("Check logs in {log_dir:?}/ for output.");
 }
 
+pub fn running_services(settings: &Settings) -> Vec<String> {
+    let log_dir = get_log_dir();
+    let services = service_registry::all_services(settings);
+    let mut out = Vec::new();
+
+    for svc in services {
+        let pid_path = log_dir.join(format!("{}.pid", svc.log_name));
+        if !pid_path.exists() {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&pid_path) else {
+            continue;
+        };
+        let Ok(pid) = content.trim().parse::<i32>() else {
+            continue;
+        };
+        if is_pid_running(pid) {
+            out.push(format!("{} ({})", svc.display_name, svc.log_name));
+        }
+    }
+
+    out
+}
+
 fn is_pid_running(pid: i32) -> bool {
     Command::new("kill")
         .arg("-0")

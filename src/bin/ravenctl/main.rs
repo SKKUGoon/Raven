@@ -130,7 +130,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             print!("{s}");
             return Ok(());
         }
-        Commands::Start {
+        Commands::Start => {
+            ops::handle_start_services(&settings).await?;
+            return Ok(());
+        }
+        Commands::Collect {
             symbol,
             base,
             venue,
@@ -142,7 +146,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let spec = PipelineSpec::default();
                 print!("{}", render::render_ascii(&spec));
             }
-            ops::handle_start(&settings, symbol, base, venue, venue_include, venue_exclude).await?;
+            ops::handle_collect(&settings, symbol, base, venue, venue_include, venue_exclude)
+                .await?;
             return Ok(());
         }
         Commands::StopAll => {
@@ -156,6 +161,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             ops::shutdown(&settings, &service_opt);
             return Ok(());
         }
+        Commands::List => {
+            if service_opt.is_none() {
+                ops::list_collections_cluster(&settings).await;
+                return Ok(());
+            }
+            if matches!(
+                service_opt.as_deref(),
+                Some("binance_futures_klines" | "kline_persistence")
+            ) {
+                println!("List excludes kline collections; choose another service.");
+                return Ok(());
+            }
+        }
         _ => {}
     }
 
@@ -167,8 +185,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ControlClient::connect(host).await?;
 
     match cli.command {
-        // Start is handled above
-        Commands::Start { .. } => unreachable!(),
+        // Start/Collect are handled above
+        Commands::Start => unreachable!(),
+        Commands::Collect { .. } => unreachable!(),
         Commands::Plan { .. } => unreachable!(),
         Commands::Setup { .. } => unreachable!(),
 
