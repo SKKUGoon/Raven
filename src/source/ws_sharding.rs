@@ -34,8 +34,10 @@ pub struct RunShardArgs {
     pub build_control_message: fn(ControlKind, &[String], u64) -> String,
     pub handle_text: fn(&str) -> Option<market_data_message::Data>,
     pub on_data: Option<fn(&market_data_message::Data)>,
-    pub on_connect: Option<fn()>,
-    pub on_disconnect: Option<fn()>,
+    pub on_connect: Option<fn(usize)>,
+    pub on_disconnect: Option<fn(usize)>,
+    pub on_streams_seeded: Option<fn(usize, usize)>,
+    pub on_connect_tx: Option<mpsc::Sender<usize>>,
     pub connection_lifetime: Duration,
     pub retry_interval: Duration,
 }
@@ -58,6 +60,8 @@ pub async fn run_shard(args: RunShardArgs) {
         on_data,
         on_connect,
         on_disconnect,
+        on_streams_seeded,
+        on_connect_tx,
         connection_lifetime,
         retry_interval,
     } = args;
@@ -76,6 +80,9 @@ pub async fn run_shard(args: RunShardArgs) {
     for sym in initial_symbols.into_iter().take(shard_size) {
         streams_set.insert(stream_name_for_symbol(&sym, &interval));
     }
+    if let Some(callback) = on_streams_seeded {
+        callback(shard_idx, streams_set.len());
+    }
 
     let next_id = AtomicU64::new((shard_idx as u64) * 10_000);
 
@@ -84,7 +91,10 @@ pub async fn run_shard(args: RunShardArgs) {
         match tokio_tungstenite::connect_async(url.to_string()).await {
             Ok((ws_stream, _)) => {
                 if let Some(callback) = on_connect {
-                    callback();
+                    callback(shard_idx);
+                }
+                if let Some(tx) = &on_connect_tx {
+                    let _ = tx.send(shard_idx).await;
                 }
                 let (mut write, mut read) = ws_stream.split();
 
@@ -174,7 +184,7 @@ pub async fn run_shard(args: RunShardArgs) {
 
                 let should_reconnect = shard_loop.await;
                 if let Some(callback) = on_disconnect {
-                    callback();
+                    callback(shard_idx);
                 }
                 if !should_reconnect {
                     break;

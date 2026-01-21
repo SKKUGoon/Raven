@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    let service_impl = BinanceFuturesKlinesService::new(&settings);
+    let service_impl = BinanceFuturesKlinesService::new(&settings).await;
     let raven = RavenService::new("BinanceFuturesKlines", service_impl.clone());
     raven.serve_with_market_data(addr, service_impl).await?;
 

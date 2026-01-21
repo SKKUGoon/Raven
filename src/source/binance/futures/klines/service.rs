@@ -2,16 +2,21 @@ use crate::config::{BinanceKlinesConfig, Settings};
 use crate::proto::{market_data_message, MarketDataMessage};
 use crate::service::{StreamDataType, StreamKey};
 use crate::telemetry::{BINANCE_FUTURES_KLINES_CONNECTIONS, BINANCE_FUTURES_KLINES_PROCESSED};
+use crate::telemetry::binance::{
+    BINANCE_FUTURES_KLINES_SHARD_CONNECTIONS, BINANCE_FUTURES_KLINES_SHARD_STREAMS,
+};
 use crate::source::ws_sharding::{ControlKind, RunShardArgs, ShardCommand, run_shard};
 use dashmap::DashSet;
 use serde_json::json;
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tonic::Status;
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::symbols::resolve_symbols;
 
@@ -23,6 +28,7 @@ use super::symbols::resolve_symbols;
 #[derive(Clone)]
 pub struct BinanceFuturesKlinesService {
     pub(super) cfg: BinanceKlinesConfig,
+    pub(super) settings: Settings,
     pub(super) venue: String,
     pub(super) producer: String,
     pub(super) symbols: Arc<Vec<String>>,
@@ -37,12 +43,13 @@ pub struct BinanceFuturesKlinesService {
 }
 
 impl BinanceFuturesKlinesService {
-    pub fn new(settings: &Settings) -> Self {
+    pub async fn new(settings: &Settings) -> Self {
         let cfg = settings.binance_klines.clone();
+        let settings = settings.clone();
         let venue = "BINANCE_FUTURES".to_string();
         let producer = "binance_futures_klines".to_string();
 
-        let mut symbols = resolve_symbols(settings);
+        let mut symbols = resolve_symbols(&settings).await;
         if symbols.is_empty() {
             warn!(
                 "Binance futures klines: no symbols configured. Set `binance_klines.symbols` or add futures entries to `routing.symbol_map`."
@@ -85,6 +92,7 @@ impl BinanceFuturesKlinesService {
 
         let service = Self {
             cfg,
+            settings,
             venue,
             producer,
             symbols: Arc::new(symbols),
@@ -94,11 +102,17 @@ impl BinanceFuturesKlinesService {
             shard_streams: Arc::new(shard_streams),
         };
 
-        service.spawn_shards(shard_rxs);
+        let (refresh_tx, refresh_rx) = mpsc::channel::<usize>(16);
+        service.spawn_shards(shard_rxs, refresh_tx);
+        service.spawn_symbol_refresh(refresh_rx);
         service
     }
 
-    fn spawn_shards(&self, shard_rxs: Vec<mpsc::Receiver<ShardCommand>>) {
+    fn spawn_shards(
+        &self,
+        shard_rxs: Vec<mpsc::Receiver<ShardCommand>>,
+        refresh_tx: mpsc::Sender<usize>,
+    ) {
         let base_url = self.cfg.ws_url.clone();
         let interval = self.cfg.interval.clone();
         let shard_size = self.cfg.shard_size.max(1);
@@ -139,6 +153,7 @@ impl BinanceFuturesKlinesService {
             let producer = self.producer.clone();
             let ws_url = base_url.clone();
             let ws_interval = interval.clone();
+            let refresh_tx = refresh_tx.clone();
 
             tokio::spawn(async move {
                 run_shard(RunShardArgs {
@@ -156,13 +171,56 @@ impl BinanceFuturesKlinesService {
                     build_control_message,
                     handle_text: handle_kline_text,
                     on_data: Some(on_kline_data),
-                    on_connect: Some(|| BINANCE_FUTURES_KLINES_CONNECTIONS.inc()),
-                    on_disconnect: Some(|| BINANCE_FUTURES_KLINES_CONNECTIONS.dec()),
+                    on_connect: Some(on_kline_shard_connect),
+                    on_disconnect: Some(on_kline_shard_disconnect),
+                    on_streams_seeded: Some(on_kline_shard_streams_seeded),
+                    on_connect_tx: Some(refresh_tx),
                     connection_lifetime: std::time::Duration::from_secs(23 * 3600 + 30 * 60),
                     retry_interval: std::time::Duration::from_secs(5),
                 })
                 .await
             });
+        }
+    }
+
+    fn spawn_symbol_refresh(&self, mut refresh_rx: mpsc::Receiver<usize>) {
+        let service = self.clone();
+        tokio::spawn(async move {
+            let mut last_refresh = Instant::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap_or_else(Instant::now);
+            while let Some(shard_idx) = refresh_rx.recv().await {
+                if last_refresh.elapsed() < Duration::from_secs(30) {
+                    continue;
+                }
+                last_refresh = Instant::now();
+                info!("Klines shard {shard_idx} connected; refreshing symbol list");
+                service.refresh_symbols().await;
+            }
+        });
+    }
+
+    async fn refresh_symbols(&self) {
+        let desired = resolve_symbols(&self.settings).await;
+        if desired.is_empty() {
+            warn!("Binance futures klines: symbol refresh returned empty list.");
+            return;
+        }
+
+        let desired_set: HashSet<String> = desired.into_iter().collect();
+        let current_set: HashSet<String> =
+            self.active.iter().map(|k| k.key().symbol.clone()).collect();
+
+        for sym in desired_set.difference(&current_set) {
+            if let Err(e) = self.start_symbol(sym).await {
+                warn!("Failed to subscribe symbol {sym}: {e}");
+            }
+        }
+
+        for sym in current_set.difference(&desired_set) {
+            if let Err(e) = self.stop_symbol(sym).await {
+                warn!("Failed to unsubscribe symbol {sym}: {e}");
+            }
         }
     }
 
@@ -210,6 +268,7 @@ impl BinanceFuturesKlinesService {
                 .await
                 .map_err(|_| Status::unavailable("Shard command channel closed"))?;
         }
+        set_kline_shard_streams(shard_idx, self.shard_streams[shard_idx].len());
 
         Ok(())
     }
@@ -228,6 +287,7 @@ impl BinanceFuturesKlinesService {
                 .await
                 .map_err(|_| Status::unavailable("Shard command channel closed"))?;
         }
+        set_kline_shard_streams(shard_idx, self.shard_streams[shard_idx].len());
 
         Ok(())
     }
@@ -274,4 +334,32 @@ fn on_kline_data(data: &market_data_message::Data) {
     if let market_data_message::Data::Candle(c) = data {
         BINANCE_FUTURES_KLINES_PROCESSED.with_label_values(&[&c.symbol]).inc();
     }
+}
+
+fn on_kline_shard_connect(shard_idx: usize) {
+    BINANCE_FUTURES_KLINES_CONNECTIONS.inc();
+    set_kline_shard_connection(shard_idx, true);
+}
+
+fn on_kline_shard_disconnect(shard_idx: usize) {
+    BINANCE_FUTURES_KLINES_CONNECTIONS.dec();
+    set_kline_shard_connection(shard_idx, false);
+}
+
+fn on_kline_shard_streams_seeded(shard_idx: usize, count: usize) {
+    set_kline_shard_streams(shard_idx, count);
+}
+
+fn set_kline_shard_connection(shard_idx: usize, connected: bool) {
+    let shard_label = shard_idx.to_string();
+    BINANCE_FUTURES_KLINES_SHARD_CONNECTIONS
+        .with_label_values(&[shard_label.as_str()])
+        .set(if connected { 1 } else { 0 });
+}
+
+fn set_kline_shard_streams(shard_idx: usize, count: usize) {
+    let shard_label = shard_idx.to_string();
+    BINANCE_FUTURES_KLINES_SHARD_STREAMS
+        .with_label_values(&[shard_label.as_str()])
+        .set(count as i64);
 }
