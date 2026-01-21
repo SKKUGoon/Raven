@@ -101,8 +101,14 @@ pub async fn run_shard(args: RunShardArgs) {
                 // Initial subscribe (one message per shard to respect incoming-message limits).
                 if !streams_set.is_empty() {
                     let params: Vec<String> = streams_set.iter().map(|s| s.key().clone()).collect();
-                    if let Err(e) =
-                        send_control(&mut write, ControlKind::Subscribe, &params, &next_id, build_control_message).await
+                    if let Err(e) = send_control(
+                        &mut write,
+                        ControlKind::Subscribe,
+                        &params,
+                        &next_id,
+                        build_control_message,
+                    )
+                    .await
                     {
                         warn!("Shard {shard_idx}: initial subscribe failed: {e}");
                     }
