@@ -3,14 +3,12 @@ pub mod proto {
 }
 
 pub mod config;
-pub mod domain;
-pub mod routing;
 pub mod db;
-pub mod source;
+pub mod domain;
 pub mod features;
+pub mod pipeline;
+pub mod routing;
 pub mod service;
+pub mod source;
 pub mod telemetry;
 pub mod utils;
-pub mod pipeline;
-// pub mod config; // To be implemented
-// pub mod utils; // To be implemented
