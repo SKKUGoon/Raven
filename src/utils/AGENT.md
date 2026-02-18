@@ -18,3 +18,4 @@ Common helpers used across the crate: gRPC clients, process management, retry, t
 - Keep utils generic and side-effect-free where possible; I/O (process, gRPC) in dedicated modules.
 - **Process**: ravenctl uses these to start bins and track PIDs; ensure behavior is consistent on the target OS (macOS/Linux).
 - **Retry**: use for WS reconnect, DB write retries, and gRPC calls that may transiently fail.
+- Keep `service_registry` aligned with `src/bin/persist/dependency_check.rs` whenever port-bearing services are added/removed/renumbered, so `raven_init` preflight checks are accurate.

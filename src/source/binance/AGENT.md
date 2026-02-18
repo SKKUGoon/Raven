@@ -32,3 +32,4 @@ Binance Spot, Futures, and Futures Klines WebSocket clients and parsing.
 
 - Keep parsing pure where possible (in → out); side effects (logging, metrics) in worker or service layer.
 - Binance URLs and stream naming are documented in Binance API docs; keep stream names and subscription logic in one place (worker or service).
+- If adding/removing/changing a Binance collector port, update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks cover the current port set.

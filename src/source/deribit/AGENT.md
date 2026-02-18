@@ -42,3 +42,4 @@ Each binary runs its own WebSocket connection and gRPC server. They can be deplo
 - Venue id: `DERIBIT`. Symbol = Deribit instrument name (e.g. `BTC-29MAR24-50000-C`) or `BTC_USD` for price index.
 - Reconnect with backoff on disconnect; same channel resubscribed after connect.
 - Parsing: best-effort; log and skip on parse failure.
+- If Deribit service ports change, also update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks remain correct.

@@ -24,3 +24,4 @@ Shared vocabulary for instruments, assets, and venues. Used by config, routing, 
 - **Instrument** = canonical pair (ETH/USDC). **Venue symbol** = exchange-specific (ETHUSDC, 1000PEPEUSDT, BTC-29MAR24-50000-C). Conversion is in `crate::routing::symbol_resolver`, not here.
 - Keep domain types small and serializable where needed; no I/O or external calls.
 - Venue and symbol enums/constants should match what proto and config use (string venue ids).
+- If new venues imply new port-bearing services, ensure service/docs updates also include `src/bin/persist/dependency_check.rs` so `raven_init` preflight stays aligned.

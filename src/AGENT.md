@@ -28,5 +28,6 @@ All binaries live under `src/bin/`; see `src/bin/AGENT.md`. They depend on this 
 - **Config**: use `crate::config::Settings` (or injected config); see `config.rs` for structs and env override rules.
 - **Errors**: prefer `thiserror`; propagate with `?`; log at boundaries with `tracing`.
 - **Async**: Tokio; avoid blocking in async paths.
+- **Port-bearing service changes**: when adding/removing/changing a configured service port, also update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks remain accurate.
 
 Adding a new binary: add `[[bin]]` in `Cargo.toml` and implement under `src/bin/`; reuse `service`, `source`, `features`, or `db` as appropriate.

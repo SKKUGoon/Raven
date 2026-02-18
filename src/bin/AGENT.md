@@ -7,7 +7,7 @@ All Raven executables live here. Each binary is a separate process; `ravenctl` s
 | Subdir | Binaries | Purpose |
 |--------|----------|--------|
 | `raw/` | `binance_spot`, `binance_futures`, `binance_futures_klines`, `binance_futures_funding`, `binance_futures_liquidations`, `binance_futures_oi`, `binance_options`, `deribit_option`, `deribit_trades`, `deribit_index` | Exchange data collectors (WebSocket/REST → gRPC streams). |
-| `persist/` | `tick_persistence`, `bar_persistence`, `kline_persistence` | Subscribe to streams and write to InfluxDB or TimescaleDB. |
+| `persist/` | `tick_persistence`, `bar_persistence`, `kline_persistence`, `raven_init` | Subscribe to streams and write to InfluxDB or TimescaleDB; `raven_init` runs one-shot dependency preflight + dimension seeding. |
 | `statistics/` | `raven_tibs`, `raven_trbs`, `raven_vibs`, `raven_vpin` | Feature/bar makers; consume TRADE and emit CANDLE. |
 | `ravenctl/` | `ravenctl` | CLI and control plane: start/stop services and collections. |
 | `common/` | (shared code) | Helpers used by multiple binaries (e.g. service setup). |
@@ -58,5 +58,6 @@ Collectors (raw/)
 - Each binary typically: loads config, builds a `RavenService` (or equivalent) with Control + MarketData impl, binds to port from config, runs `serve_with_market_data`.
 - Metrics: each service exposes Prometheus on **gRPC port + 1000** (see `crate::service`).
 - Reuse library types from `crate::domain`, `crate::config`, `crate::service`, `crate::features`, `crate::db`; avoid duplicating logic in bin code.
+- If a port-bearing service is added/removed/renumbered, update `src/bin/persist/dependency_check.rs` so `raven_init` catches missing dependencies and port conflicts correctly.
 
 See per-subdir `AGENT.md` for raw, persist, statistics, and ravenctl.

@@ -11,6 +11,7 @@ use tonic::Request;
 use tonic::Status;
 use tracing::{error, info, warn};
 
+use super::dim_cache::DimCache;
 use super::schema::{ensure_schema_and_tables, qualify_table, validate_pg_ident};
 
 #[derive(Clone)]
@@ -20,6 +21,7 @@ pub struct TimescaleWorker {
     vpin_upstreams: Vec<String>,
     schema: String,
     pool: Pool<Postgres>,
+    dim_cache: Arc<DimCache>,
 }
 
 #[tonic::async_trait]
@@ -37,6 +39,7 @@ impl StreamWorker for TimescaleWorker {
             key: key.to_string(),
             schema: self.schema.clone(),
             pool: self.pool.clone(),
+            dim_cache: self.dim_cache.clone(),
         })
         .await
     }
@@ -53,7 +56,7 @@ pub async fn new(
     let schema = validate_pg_ident(&config.schema)
         .unwrap_or_else(|| {
             warn!(
-                "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `warehouse`",
+                "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `mart`",
                 config.schema
             );
             "mart"
@@ -90,6 +93,7 @@ pub async fn new(
         vpin_upstreams,
         schema,
         pool,
+        dim_cache: Arc::new(DimCache::new()),
     };
 
     Ok(StreamManager::new(Arc::new(worker), 10000, false))
@@ -136,6 +140,7 @@ async fn connect_candle_stream(
 }
 
 async fn persist_candle(
+    dim_cache: &DimCache,
     pool: &Pool<Postgres>,
     schema: &str,
     venue: &str,
@@ -156,18 +161,43 @@ async fn persist_candle(
             return;
         };
 
+        let symbol_id = match dim_cache.resolve_symbol(pool, schema, &candle.symbol).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to resolve symbol dimension for {}: {}", key, e);
+                return;
+            }
+        };
+        let exchange_id = match dim_cache.resolve_exchange(pool, schema, venue).await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to resolve exchange dimension for {}: {}", key, e);
+                return;
+            }
+        };
+        let interval_id = match dim_cache
+            .resolve_interval(pool, schema, &candle.interval)
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to resolve interval dimension for {}: {}", key, e);
+                return;
+            }
+        };
+
         let query = format!(
             r#"
-            INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
+            INSERT INTO {table_name} (time, symbol_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
         );
 
         let result = sqlx::query(&query)
             .bind(t)
-            .bind(&candle.symbol)
-            .bind(venue)
-            .bind(&candle.interval)
+            .bind(symbol_id)
+            .bind(exchange_id)
+            .bind(interval_id)
             .bind(candle.open)
             .bind(candle.high)
             .bind(candle.low)
@@ -186,38 +216,54 @@ async fn persist_candle(
     }
 }
 
-async fn run_persistence_loop(
+struct PersistenceLoopConfig {
     upstream_url: String,
     symbol: String,
     venue: String,
-    key: String, // For logging
+    key: String,
     schema: String,
     pool: Pool<Postgres>,
+    dim_cache: Arc<DimCache>,
     stream_name: &'static str,
-) {
-    let mut stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
-    loop {
-        match stream.message().await {
-            Ok(Some(m)) => {
-                if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                    persist_candle(&pool, &schema, &venue, &key, candle).await;
+}
+
+impl PersistenceLoopConfig {
+    async fn run(self) {
+        let Self {
+            upstream_url,
+            symbol,
+            venue,
+            key,
+            schema,
+            pool,
+            dim_cache,
+            stream_name,
+        } = self;
+
+        let mut stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+        loop {
+            match stream.message().await {
+                Ok(Some(m)) => {
+                    if let Some(market_data_message::Data::Candle(candle)) = m.data {
+                        persist_candle(&dim_cache, &pool, &schema, &venue, &key, candle).await;
+                    }
                 }
-            }
-            Ok(None) => {
-                warn!(
-                    "{stream_name} stream ended for {}. Reconnecting in 2s...",
-                    key
-                );
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
-            }
-            Err(e) => {
-                warn!(
-                    "{stream_name} stream error for {}: {}. Reconnecting in 2s...",
-                    key, e
-                );
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+                Ok(None) => {
+                    warn!(
+                        "{stream_name} stream ended for {}. Reconnecting in 2s...",
+                        key
+                    );
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+                }
+                Err(e) => {
+                    warn!(
+                        "{stream_name} stream error for {}: {}. Reconnecting in 2s...",
+                        key, e
+                    );
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    stream = connect_candle_stream(&upstream_url, &symbol, &venue, &key).await;
+                }
             }
         }
     }
@@ -232,6 +278,7 @@ struct MultiPersistenceArgs {
     key: String,
     schema: String,
     pool: Pool<Postgres>,
+    dim_cache: Arc<DimCache>,
 }
 
 async fn run_multi_persistence(args: MultiPersistenceArgs) {
@@ -244,6 +291,7 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         key,
         schema,
         pool,
+        dim_cache,
     } = args;
     info!("Bar Persistence task started for {}", key);
 
@@ -252,6 +300,7 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         let t_key = key.clone();
         let t_schema = schema.clone();
         let t_pool = pool.clone();
+        let t_dim = dim_cache.clone();
         let t_symbol = symbol.clone();
         let t_venue = venue.clone();
         let label: &'static str = match i {
@@ -261,7 +310,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "Tibs",
         };
         tib_tasks.push(tokio::spawn(async move {
-            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+            PersistenceLoopConfig {
+                upstream_url: upstream,
+                symbol: t_symbol,
+                venue: t_venue,
+                key: t_key,
+                schema: t_schema,
+                pool: t_pool,
+                dim_cache: t_dim,
+                stream_name: label,
+            }
+            .run()
+            .await;
         }));
     }
 
@@ -270,6 +330,7 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         let t_key = key.clone();
         let t_schema = schema.clone();
         let t_pool = pool.clone();
+        let t_dim = dim_cache.clone();
         let t_symbol = symbol.clone();
         let t_venue = venue.clone();
         let label: &'static str = match i {
@@ -279,7 +340,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "Vibs",
         };
         vib_tasks.push(tokio::spawn(async move {
-            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+            PersistenceLoopConfig {
+                upstream_url: upstream,
+                symbol: t_symbol,
+                venue: t_venue,
+                key: t_key,
+                schema: t_schema,
+                pool: t_pool,
+                dim_cache: t_dim,
+                stream_name: label,
+            }
+            .run()
+            .await;
         }));
     }
 
@@ -288,6 +360,7 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         let t_key = key.clone();
         let t_schema = schema.clone();
         let t_pool = pool.clone();
+        let t_dim = dim_cache.clone();
         let t_symbol = symbol.clone();
         let t_venue = venue.clone();
         let label: &'static str = match i {
@@ -295,7 +368,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "VPIN",
         };
         vpin_tasks.push(tokio::spawn(async move {
-            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
+            PersistenceLoopConfig {
+                upstream_url: upstream,
+                symbol: t_symbol,
+                venue: t_venue,
+                key: t_key,
+                schema: t_schema,
+                pool: t_pool,
+                dim_cache: t_dim,
+                stream_name: label,
+            }
+            .run()
+            .await;
         }));
     }
 

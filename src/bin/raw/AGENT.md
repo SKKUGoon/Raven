@@ -24,4 +24,4 @@ Binaries that connect to exchange WebSockets and expose market data via gRPC. Th
 - **Venue symbol**: requests use the exchange symbol (e.g. `ETHUSDC`, `1000PEPEUSDT`). Routing/symbol_map (used by ravenctl) maps instrument → venue symbol per venue.
 - Klines: symbols and intervals come from config `binance_klines`; see `src/source/binance/futures/klines/`.
 
-When adding a new exchange collector: add a bin here, implement or reuse a worker in `crate::source`, and register the service/port in config and in ravenctl’s service registry.
+When adding a new exchange collector: add a bin here, implement or reuse a worker in `crate::source`, register the service/port in config and in ravenctl’s service registry, and update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks include the new/changed port.

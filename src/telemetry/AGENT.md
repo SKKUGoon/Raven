@@ -16,3 +16,4 @@ Prometheus metrics for sources (exchange), persistence, and bar emission. Each s
 - Use `prometheus` crate; prefer counters and histograms with clear names and labels (venue, symbol, data_type as appropriate).
 - Do not create new global registries in telemetry; use the same registry the server exposes.
 - High-cardinality labels (e.g. per-symbol) can be expensive; use sparingly or aggregate.
+- Metrics endpoints bind on `service_port + 1000`; when service ports change, also sync `src/bin/persist/dependency_check.rs` so `raven_init` preflight tracks the updated port-bearing services.

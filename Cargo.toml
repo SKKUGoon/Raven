@@ -60,6 +60,10 @@ name = "kline_persistence"
 path = "src/bin/persist/kline_persistence.rs"
 
 [[bin]]
+name = "raven_init"
+path = "src/bin/persist/raven_init.rs"
+
+[[bin]]
 name = "raven_tibs"
 path = "src/bin/statistics/raven_tibs.rs"
 

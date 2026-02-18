@@ -1,6 +1,6 @@
 # src/db/ – Database writers
 
-Persistence layer for **InfluxDB v2** (raw market data warehouse) and **TimescaleDB** (derived data mart: bars, klines). Used by the binaries in `src/bin/persist/`.
+Persistence layer for **InfluxDB v2** (staging buffer) and **TimescaleDB** (warehouse + mart for derived analytics: bars, klines). Used by the binaries in `src/bin/persist/`.
 
 ## Layout
 
@@ -9,7 +9,7 @@ Persistence layer for **InfluxDB v2** (raw market data warehouse) and **Timescal
 | `influx` | InfluxDB client and write logic; all raw data types (trades, orderbook, funding, liquidation, OI, options ticker, price index). |
 | `timescale` | PostgreSQL/TimescaleDB: schema, bar tables, kline table. |
 
-## InfluxDB (data warehouse — raw data)
+## InfluxDB (staging buffer)
 
 - **Config**: `config::InfluxConfig` (url, org, bucket, token).
 - **Worker / persistence**: `influx/worker.rs`, `influx/persistence.rs` – batch and write points; handle retries and errors.
@@ -31,11 +31,15 @@ Persistence layer for **InfluxDB v2** (raw market data warehouse) and **Timescal
 
 The `InfluxWorker` selects upstream by composite key `"VENUE:DATA_TYPE"` (e.g. `BINANCE_FUTURES:FUNDING`), falling back to `"VENUE"` for generic trade/orderbook streams.
 
-## TimescaleDB (data mart — derived data)
+## TimescaleDB (warehouse + mart)
 
 - **Config**: `config::TimescaleConfig` (connection, schema name, default `mart`).
-- **Schema**: `timescale/schema.rs` – table/schema creation; `create_hypertable` for time-series tables.
-- **Tables**: `bar__tick_imbalance`, `bar__volume_imbalance`, `bar__vpin`, `bar__kline` (see `timescale/bars.rs`, `timescale/kline.rs`).
+- **Schema**: `timescale/schema.rs` – creates dimension tables and fact hypertables (`create_hypertable`).
+- **Dimensions**: `dim_symbol`, `dim_exchange`, `dim_interval` (regular PostgreSQL tables).
+- **Symbol lifecycle**: `dim_symbol` supports soft-deletion with `is_deleted` and `deleted_date`.
+- **Fact tables**: `bar__tick_imbalance`, `bar__volume_imbalance`, `bar__vpin`, `bar__kline` with `*_id` foreign keys to dimensions.
+- **Writer path**: `timescale/dim_cache.rs` resolves and caches dimension IDs before fact inserts.
+- **Init path**: `timescale/init.rs` seeds dimensions at startup and logs added/existing/reactivated/soft-deleted symbols.
 - **Reference DDL**: `sql/create_table_bar__*.sql`; keep in sync with code when changing schema.
 
 ## Conventions
@@ -43,3 +47,4 @@ The `InfluxWorker` selects upstream by composite key `"VENUE:DATA_TYPE"` (e.g. `
 - **Errors**: use `thiserror`; retry transient failures; log and surface permanent failures.
 - **Batching**: prefer batching writes for throughput; respect Influx/Timescale limits.
 - **Schema changes**: update both Rust code and `sql/` DDL; consider migrations if needed for production.
+- `raven_init` startup dependency preflight lives in `src/bin/persist/dependency_check.rs`; if DB requirements or port-bearing services change, keep that check logic consistent.

@@ -2,8 +2,9 @@ use raven::config::Settings;
 use raven::pipeline::spec::PipelineSpec;
 use raven::routing::symbol_resolver::SymbolResolver;
 use raven::utils::grpc::wait_for_control_ready;
-use raven::utils::process::{running_services, start_all_services_with_settings};
+use raven::utils::process::{find_binary, running_services, start_all_services_with_settings};
 use std::io::{Error as IoError, ErrorKind};
+use std::process::Command;
 use std::time::Duration;
 
 use super::util::{build_instrument, resolve_venues, service_addr, start_stream, stop_stream};
@@ -17,7 +18,28 @@ pub async fn handle_start_services(settings: &Settings) -> Result<(), IoError> {
         }
         return Ok(());
     }
+
+    run_raven_init_once()?;
     start_all_services_with_settings(settings);
+    Ok(())
+}
+
+fn run_raven_init_once() -> Result<(), IoError> {
+    let bin = find_binary("raven_init").ok_or_else(|| {
+        IoError::new(
+            ErrorKind::NotFound,
+            "raven_init binary not found; build/install it before `ravenctl start`",
+        )
+    })?;
+
+    println!("Running one-shot init: raven_init");
+    let status = Command::new(bin).status()?;
+    if !status.success() {
+        return Err(IoError::other(format!(
+            "raven_init failed with status: {status}"
+        )));
+    }
+    println!("raven_init completed.");
     Ok(())
 }
 

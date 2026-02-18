@@ -15,7 +15,7 @@ Your mental model is the right one; here is how it maps to the current code:
   - Venue symbol differences (e.g. spot `PEPEUSDT` vs futures `1000PEPEUSDT`) are handled via `routing.symbol_map`.
 
 - **2) Start = spin up services, then wire, then subscribe**
-  - `ravenctl start` (no symbol) starts all service processes (collectors, feature makers, persistence).
+  - `ravenctl start` (no symbol) first runs one-shot `raven_init` (dimension seeding), then starts all long-lived service processes.
   - `ravenctl start --symbol ...` starts infra (if needed) and then starts **collections** in a strict order:
     - downstream first (persistence + feature makers)
     - collectors last (this is when exchange WebSocket subscriptions actually happen)
@@ -48,8 +48,8 @@ To see the topology and exact calls Raven will make:
 
 ### Databases
 
-- **InfluxDB v2.x**: used by `tick_persistence` as the raw data warehouse (writes trades, orderbook, funding rates, liquidations, open interest, options tickers, price index).
-- **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` and `kline_persistence` as the derived data mart (writes bars and klines).
+- **InfluxDB v2.x**: used by `tick_persistence` as a staging buffer for raw stream data (trades, orderbook, funding rates, liquidations, open interest, options tickers, price index).
+- **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` and `kline_persistence` as warehouse + mart storage for derived bars and klines.
 
 Notes:
 - **InfluxDB** is schema-on-write, but you must provision:
@@ -57,11 +57,15 @@ Notes:
 - **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` and `kline_persistence` call `create_hypertable(...)`.
   - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
     - Schema: `timescale.schema` (default: `mart`)
-    - Tables: `mart.bar__tick_imbalance`, `mart.bar__volume_imbalance`, `mart.bar__vpin`
+    - Dimension tables: `mart.dim_symbol`, `mart.dim_exchange`, `mart.dim_interval`
+    - Fact tables: `mart.bar__tick_imbalance`, `mart.bar__volume_imbalance`, `mart.bar__vpin`
   - At startup, `kline_persistence` will attempt (best-effort) to create:
-    - Table: `mart.bar__kline`
+    - Fact table: `mart.bar__kline`
+  - `dim_symbol` tracks symbol lifecycle with `is_deleted` and nullable `deleted_date` for discontinued symbols.
+  - Fact tables use NOT NULL foreign keys (`symbol_id`, `exchange_id`, `interval_id`) into the dimension tables.
+  - Use `raven_init` to run dimension seeding explicitly; persistence services also run this init step at startup.
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
-  - Reference DDL is also checked into `sql/` (`create_table_bar__time.sql`, `create_table_bar__tick_imbalance.sql`).
+  - Reference DDL is also checked into `sql/` (`create_table_bar__tick_imbalance.sql`).
 
 ### Network
 
@@ -147,6 +151,7 @@ These services subscribe to sources. With the “wire first” rule, they will k
 - `tick_persistence` (default `50091`) → InfluxDB
 - `bar_persistence` (default `50092`) → TimescaleDB
 - `kline_persistence` (default `50093`) → TimescaleDB; auto-starts persistence for configured kline symbols
+- `raven_init` (no port) → runs startup dimension seeding for TimescaleDB (`mart.dim_*`)
 
 ## Control plane: `ravenctl`
 
@@ -185,6 +190,7 @@ sudo install -m 0755 "${DIR}/binance_spot"      /usr/local/bin/
 sudo install -m 0755 "${DIR}/binance_futures"   /usr/local/bin/
 sudo install -m 0755 "${DIR}/tick_persistence"  /usr/local/bin/
 sudo install -m 0755 "${DIR}/bar_persistence"   /usr/local/bin/
+sudo install -m 0755 "${DIR}/raven_init"        /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_tibs"        /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_trbs"        /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_vibs"        /usr/local/bin/
@@ -219,6 +225,7 @@ Run a specific service directly:
 ```bash
 ./target/release/binance_futures_klines
 ./target/release/kline_persistence
+./target/release/raven_init
 ```
 
 Tip: you can also run from source:
@@ -268,7 +275,7 @@ What this does (per venue):
    - `raven_tibs` (CANDLE)
    - `raven_trbs` (CANDLE)
    - `raven_vibs` (CANDLE)
-   - `raven_vpin` (CANDLE; streamed, not persisted by default)
+   - `raven_vpin` (CANDLE)
 2. Starts collectors last:
    - source TRADE + ORDERBOOK streams
 
@@ -334,7 +341,7 @@ Raven exposes bar/feature streams as `DataType.CANDLE` via the `MarketData.Subsc
 Important notes:
 
 - You typically **start the pipeline** with `ravenctl start ...` first (this will call `Control.StartCollection` for you).
-- Then your client connects to the **feature service port** (e.g. timebar `50051`) and subscribes to `CANDLE`.
+- Then your client connects to a **feature service port** (for example `raven_tibs` on `50054`) and subscribes to `CANDLE`.
 
 ### 1) Generate Python gRPC stubs
 

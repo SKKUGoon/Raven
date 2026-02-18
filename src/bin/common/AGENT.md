@@ -11,3 +11,4 @@ Code shared by multiple binaries under `src/bin/`. Used to avoid duplication of 
 
 - Keep `common` minimal; prefer putting reusable logic in the main library (`crate::service`, `crate::config`, etc.) and use `common` only for bin-specific glue.
 - Do not put exchange-specific or feature-specific logic here.
+- Keep startup/dependency policy centralized: `raven_init` preflight logic belongs in `src/bin/persist/dependency_check.rs`, not in generic `common` helpers.

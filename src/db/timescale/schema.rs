@@ -16,6 +16,71 @@ pub(super) fn qualify_table(schema: &str, table: &str) -> String {
     format!("{schema}.{table}")
 }
 
+async fn ensure_dimension_tables(pool: &Pool<Postgres>, schema: &str) -> Result<(), sqlx::Error> {
+    let dim_symbol = qualify_table(schema, "dim_symbol");
+    let dim_exchange = qualify_table(schema, "dim_exchange");
+    let dim_interval = qualify_table(schema, "dim_interval");
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {dim_symbol} (
+            symbol_id   SERIAL PRIMARY KEY,
+            symbol      TEXT NOT NULL UNIQUE,
+            is_deleted  BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_date TIMESTAMPTZ NULL
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    // Backward-compatible column adds for existing databases.
+    sqlx::query(&format!(
+        "ALTER TABLE {dim_symbol} ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE;"
+    ))
+    .execute(pool)
+    .await?;
+    sqlx::query(&format!(
+        "ALTER TABLE {dim_symbol} ADD COLUMN IF NOT EXISTS deleted_date TIMESTAMPTZ NULL;"
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {dim_exchange} (
+            exchange_id SERIAL PRIMARY KEY,
+            exchange    TEXT NOT NULL UNIQUE
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    sqlx::query(&format!(
+        r#"
+        CREATE TABLE IF NOT EXISTS {dim_interval} (
+            interval_id SERIAL PRIMARY KEY,
+            interval    TEXT NOT NULL UNIQUE
+        );
+        "#
+    ))
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub(super) async fn ensure_schema_and_dimensions(
+    pool: &Pool<Postgres>,
+    schema: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
+        .execute(pool)
+        .await?;
+    ensure_dimension_tables(pool, schema).await
+}
+
 pub(super) async fn ensure_schema_and_tables(
     pool: &Pool<Postgres>,
     schema: &str,
@@ -25,17 +90,15 @@ pub(super) async fn ensure_schema_and_tables(
 ) -> Result<(), sqlx::Error> {
     // Postgres drivers generally disallow multiple statements in a single prepared statement,
     // so keep this strictly one statement per execute().
-    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
-        .execute(pool)
-        .await?;
+    ensure_schema_and_dimensions(pool, schema).await?;
 
     sqlx::query(&format!(
         r#"
         CREATE TABLE IF NOT EXISTS {tib_table} (
             time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
+            symbol_id   INTEGER NOT NULL REFERENCES {schema}.dim_symbol(symbol_id),
+            exchange_id INTEGER NOT NULL REFERENCES {schema}.dim_exchange(exchange_id),
+            interval_id INTEGER NOT NULL REFERENCES {schema}.dim_interval(interval_id),
             open        DOUBLE PRECISION NOT NULL,
             high        DOUBLE PRECISION NOT NULL,
             low         DOUBLE PRECISION NOT NULL,
@@ -45,7 +108,7 @@ pub(super) async fn ensure_schema_and_tables(
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
             theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
+            UNIQUE (time, symbol_id, exchange_id, interval_id)
         );
         "#
     ))
@@ -61,7 +124,7 @@ pub(super) async fn ensure_schema_and_tables(
     .await?;
 
     sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_tib_symbol_exchange_interval_time_idx ON {tib_table} (symbol, exchange, interval, time DESC);"
+        "CREATE INDEX IF NOT EXISTS {schema}_tib_sid_eid_iid_time_idx ON {tib_table} (symbol_id, exchange_id, interval_id, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -70,9 +133,9 @@ pub(super) async fn ensure_schema_and_tables(
         r#"
         CREATE TABLE IF NOT EXISTS {vib_table} (
             time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
+            symbol_id   INTEGER NOT NULL REFERENCES {schema}.dim_symbol(symbol_id),
+            exchange_id INTEGER NOT NULL REFERENCES {schema}.dim_exchange(exchange_id),
+            interval_id INTEGER NOT NULL REFERENCES {schema}.dim_interval(interval_id),
             open        DOUBLE PRECISION NOT NULL,
             high        DOUBLE PRECISION NOT NULL,
             low         DOUBLE PRECISION NOT NULL,
@@ -82,7 +145,7 @@ pub(super) async fn ensure_schema_and_tables(
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
             theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
+            UNIQUE (time, symbol_id, exchange_id, interval_id)
         );
         "#
     ))
@@ -96,7 +159,7 @@ pub(super) async fn ensure_schema_and_tables(
     .await?;
 
     sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_vib_symbol_exchange_interval_time_idx ON {vib_table} (symbol, exchange, interval, time DESC);"
+        "CREATE INDEX IF NOT EXISTS {schema}_vib_sid_eid_iid_time_idx ON {vib_table} (symbol_id, exchange_id, interval_id, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -105,9 +168,9 @@ pub(super) async fn ensure_schema_and_tables(
         r#"
         CREATE TABLE IF NOT EXISTS {vpin_table} (
             time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
+            symbol_id   INTEGER NOT NULL REFERENCES {schema}.dim_symbol(symbol_id),
+            exchange_id INTEGER NOT NULL REFERENCES {schema}.dim_exchange(exchange_id),
+            interval_id INTEGER NOT NULL REFERENCES {schema}.dim_interval(interval_id),
             open        DOUBLE PRECISION NOT NULL,
             high        DOUBLE PRECISION NOT NULL,
             low         DOUBLE PRECISION NOT NULL,
@@ -117,7 +180,7 @@ pub(super) async fn ensure_schema_and_tables(
             sell_ticks  BIGINT NOT NULL DEFAULT 0,
             total_ticks BIGINT NOT NULL DEFAULT 0,
             theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
+            UNIQUE (time, symbol_id, exchange_id, interval_id)
         );
         "#
     ))
@@ -131,7 +194,7 @@ pub(super) async fn ensure_schema_and_tables(
     .await?;
 
     sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_vpin_symbol_exchange_interval_time_idx ON {vpin_table} (symbol, exchange, interval, time DESC);"
+        "CREATE INDEX IF NOT EXISTS {schema}_vpin_sid_eid_iid_time_idx ON {vpin_table} (symbol_id, exchange_id, interval_id, time DESC);"
     ))
     .execute(pool)
     .await?;
@@ -144,23 +207,21 @@ pub(super) async fn ensure_schema_and_kline_table(
     schema: &str,
     table: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
-        .execute(pool)
-        .await?;
+    ensure_schema_and_dimensions(pool, schema).await?;
 
     sqlx::query(&format!(
         r#"
         CREATE TABLE IF NOT EXISTS {table} (
             time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
+            symbol_id   INTEGER NOT NULL REFERENCES {schema}.dim_symbol(symbol_id),
+            exchange_id INTEGER NOT NULL REFERENCES {schema}.dim_exchange(exchange_id),
+            interval_id INTEGER NOT NULL REFERENCES {schema}.dim_interval(interval_id),
             open        DOUBLE PRECISION NOT NULL,
             high        DOUBLE PRECISION NOT NULL,
             low         DOUBLE PRECISION NOT NULL,
             close       DOUBLE PRECISION NOT NULL,
             volume      DOUBLE PRECISION NOT NULL,
-            UNIQUE (time, symbol, exchange, interval)
+            UNIQUE (time, symbol_id, exchange_id, interval_id)
         );
         "#
     ))

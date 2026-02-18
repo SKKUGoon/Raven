@@ -1,9 +1,11 @@
 #[path = "../common/mod.rs"]
 mod common;
+mod init_seed;
 
 use raven::config::Settings;
 use raven::db::timescale;
 use raven::service::RavenService;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,6 +53,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "http://{}:{}",
         settings.server.host, settings.server.port_vpin
     )];
+
+    let init_seed = init_seed::collect_raven_init_seed(&settings).await;
+    if let Err(e) = timescale::run_raven_init(&settings.timescale, init_seed).await {
+        warn!("Raven init failed before bar persistence startup: {}", e);
+    } else {
+        info!("Raven init completed before bar persistence startup");
+    }
 
     let service_impl = timescale::new(
         tibs_upstreams,

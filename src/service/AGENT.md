@@ -21,3 +21,4 @@ Server wiring for **Control** and **MarketData** gRPC services, plus stream life
 - **MarketData**: `Subscribe` returns a stream of `MarketDataMessage`; the implementation pushes trade/orderbook/candle/funding/liquidation/ticker/etc. from the appropriate worker or feature.
 - **Metrics**: each service binds metrics HTTP on gRPC port + 1000; use `crate::telemetry` for labels and counters.
 - Do not put exchange-specific or bar-algorithm logic here; keep this layer to wiring and stream keys/specs.
+- Any service-spec port additions/removals must be mirrored in `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks catch conflicts and missing dependencies.

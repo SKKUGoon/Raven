@@ -21,3 +21,4 @@ Time-based candles are no longer aggregated here — use **Binance Klines** (1m)
 - **Wire-first**: these services subscribe to source(s); if the source stream is not started yet, they retry until it is (or config timeout).
 
 When adding a new bar type: implement the feature in `crate::features`, add a bin here that subscribes to the right upstream and exposes CANDLE, and register ports/specs in config and ravenctl.
+Also update `src/bin/persist/dependency_check.rs` when adding/changing a statistics service port so `raven_init` preflight checks stay accurate.

@@ -23,5 +23,6 @@ See `docs/` subdirectory for detailed explanations (English + Korean) of each de
 - **Config**: TIBS (and possibly others) use `config::TibsConfig`; bar parameters come from config or from `ServiceSpec` (small/large) in the statistics bin.
 - **Metrics**: bar emission and latency may be instrumented via `crate::telemetry::bars` or similar.
 - **Idempotence**: bar logic should be deterministic for the same trade stream; no external I/O inside the core bar computation.
+- If a new feature service introduces or changes a configured port, update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks remain accurate.
 
 When adding a new bar type: add a module here, keep the same "stream in → bars out" pattern, and wire it in `src/bin/statistics/` with the right upstream subscription and config.

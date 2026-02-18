@@ -6,7 +6,7 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
 
 - **Sources (collectors)** → ingest exchange data (TRADE, ORDERBOOK, CANDLE, FUNDING, LIQUIDATION, OPEN_INTEREST, TICKER, PRICE_INDEX) over WebSockets and REST APIs.
 - **Processors (feature makers)** → consume TRADE and emit bar/feature streams (imbalance bars, VPIN, etc.) as CANDLE.
-- **Persistence** → subscribe to streams and write to InfluxDB (ticks) or TimescaleDB (bars/klines).
+- **Persistence** → subscribe to streams and write to InfluxDB (staging buffer) or TimescaleDB (warehouse + mart for bars/klines).
 - **Control plane** → `ravenctl` starts/stops services and collections via gRPC; start order is downstream-first, then collectors.
 
 ## Data flow diagram
@@ -86,7 +86,8 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
             ▼                      ▼                      ▼
      ┌─────────────┐       ┌──────────────┐       ┌──────────────┐
      │  InfluxDB   │       │ TimescaleDB  │       │ TimescaleDB  │
-     │  (warehouse)│       │  (mart)      │       │  (mart)      │
+     │ (staging    │       │ (warehouse + │       │ (warehouse + │
+     │  buffer)    │       │  mart)       │       │  mart)       │
      │  trades     │       │ bar__tick_*  │       │ bar__kline   │
      │  orderbook  │       │ bar__vol_*   │       │              │
      │  funding    │       │ bar__vpin    │       │              │
@@ -129,9 +130,10 @@ See `src/features/docs/` for detailed English + Korean documentation on each bar
 
 | Binary | Port | Subscribes to | Writes to |
 |--------|------|---------------|-----------|
-| `tick_persistence` | 50091 | All raw data (see below) | InfluxDB (data warehouse) |
-| `bar_persistence` | 50092 | CANDLE from `raven_tibs`, `raven_trbs`, `raven_vibs`, `raven_vpin` | TimescaleDB `mart.*` (data mart) |
-| `kline_persistence` | 50093 | CANDLE from `binance_futures_klines` | TimescaleDB `mart.bar__kline` |
+| `tick_persistence` | 50091 | All raw data (see below) | InfluxDB (staging buffer) |
+| `bar_persistence` | 50092 | CANDLE from `raven_tibs`, `raven_trbs`, `raven_vibs`, `raven_vpin` | TimescaleDB `mart.*` (warehouse + mart facts) |
+| `kline_persistence` | 50093 | CANDLE from `binance_futures_klines` | TimescaleDB `mart.bar__kline` (warehouse + mart fact) |
+| `raven_init` | n/a | Startup seed process | TimescaleDB dimensions (`dim_symbol`, `dim_exchange`, `dim_interval`) |
 
 `tick_persistence` auto-starts wildcard streams for all-market services and writes these InfluxDB measurements:
 
@@ -145,6 +147,13 @@ See `src/features/docs/` for detailed English + Korean documentation on each bar
 | `options_ticker` | `binance_options`, `deribit_option` | symbol, exchange | OI, IV, mark, bid/ask prices, underlying |
 | `price_index` | `deribit_index` | index_name, exchange | price |
 
+TimescaleDB `mart` uses a star schema:
+
+| Table type | Tables | Notes |
+|------------|--------|-------|
+| Dimensions | `dim_symbol`, `dim_exchange`, `dim_interval` | Regular PostgreSQL tables (`dim_symbol` has `is_deleted`, `deleted_date`) |
+| Facts (hypertables) | `bar__tick_imbalance`, `bar__volume_imbalance`, `bar__vpin`, `bar__kline` | `symbol_id`, `exchange_id`, `interval_id` are NOT NULL foreign keys |
+
 ### Control plane
 
 | Binary | Purpose |
@@ -155,6 +164,7 @@ See `src/features/docs/` for detailed English + Korean documentation on each bar
 
 ```
 ravenctl start
+  0. one-shot init (raven_init; seeds mart.dim_* then exits)
   1. persistence   (tick_persistence, bar_persistence, kline_persistence)
   2. statistics    (raven_tibs, raven_trbs, raven_vibs, raven_vpin)
   3. collectors    (binance_spot, binance_futures, binance_futures_klines)
@@ -194,5 +204,6 @@ ravenctl start
 - **Config**: `Settings` in `src/config.rs`; override via TOML and `RAVEN__*` env vars.
 - **gRPC**: types live in `crate::proto` (generated from `proto/`). Do not hand-edit generated code.
 - **Tests**: unit tests in modules; integration-style tests in `tests/`; some binaries have `#[cfg(test)]` or dedicated test binaries.
+- **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
 
 When editing a subsystem, read the `AGENT.md` in that directory first.

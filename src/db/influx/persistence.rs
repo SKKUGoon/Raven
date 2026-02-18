@@ -14,19 +14,33 @@ impl Drop for InfluxActiveGuard {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) async fn run_persistence(
-    upstream_url: String,
-    symbol: String,
-    exchange: String,
-    key: String, // For logging
-    data_type: DataType,
-    influx_client: Client,
-    bucket: String,
-    batch_size: usize,
-    batch_interval_ms: u64,
-) {
-    let key_clone = key.clone();
+pub(super) struct PersistenceRunConfig {
+    pub upstream_url: String,
+    pub symbol: String,
+    pub exchange: String,
+    pub key: String,
+    pub data_type: DataType,
+    pub influx_client: Client,
+    pub bucket: String,
+    pub batch_size: usize,
+    pub batch_interval_ms: u64,
+}
+
+impl PersistenceRunConfig {
+    pub async fn run(self) {
+        let Self {
+            upstream_url,
+            symbol,
+            exchange,
+            key,
+            data_type,
+            influx_client,
+            bucket,
+            batch_size,
+            batch_interval_ms,
+        } = self;
+
+        let key_clone = key.clone();
     INFLUX_ACTIVE_TASKS.inc();
     let _active_guard = InfluxActiveGuard;
 
@@ -133,6 +147,7 @@ pub(super) async fn run_persistence(
                 }
             }
         }
+    }
     }
 }
 

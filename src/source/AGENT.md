@@ -36,5 +36,6 @@ Abstraction and implementations for **exchange data ingestion**: WebSocket clien
 - **Venue symbol**: sources use the exchange's symbol (e.g. `ETHUSDC`). No instrument parsing here; that is in `routing` and ravenctl.
 - **Errors**: parse failures should be logged and either skipped or surfaced so the stream can recover; avoid panics in hot paths.
 - **Reconnect**: typical pattern is reconnect with backoff (see `utils::retry` or similar) and re-subscribe to the same streams.
+- If source-level changes add/remove a port-bearing collector, update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks stay synchronized.
 
 See `src/source/binance/AGENT.md` for Binance-specific layout and `src/source/deribit/AGENT.md` for Deribit details.

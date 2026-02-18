@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::Status;
 
-use super::persistence::run_persistence;
+use super::persistence::PersistenceRunConfig;
 
 #[derive(Clone)]
 pub struct InfluxWorker {
@@ -44,17 +44,18 @@ impl StreamWorker for InfluxWorker {
             self.default_upstream.clone()
         };
 
-        run_persistence(
+        PersistenceRunConfig {
             upstream_url,
             symbol,
             exchange,
-            key.to_string(),
+            key: key.to_string(),
             data_type,
-            self.client.clone(),
-            self.bucket.clone(),
-            self.batch_size,
-            self.batch_interval_ms,
-        )
+            influx_client: self.client.clone(),
+            bucket: self.bucket.clone(),
+            batch_size: self.batch_size,
+            batch_interval_ms: self.batch_interval_ms,
+        }
+        .run()
         .await;
     }
 }

@@ -1,5 +1,6 @@
 #[path = "../common/mod.rs"]
 mod common;
+mod init_seed;
 
 use raven::config::Settings;
 use raven::db::timescale;
@@ -106,6 +107,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::warn!(
             "kline_persistence: no symbols configured (set `binance_klines.symbols` or add futures entries to `routing.symbol_map`)."
         );
+    }
+
+    let init_seed = init_seed::collect_raven_init_seed(&settings).await;
+    if let Err(e) = timescale::run_raven_init(&settings.timescale, init_seed).await {
+        tracing::warn!("Raven init failed before kline persistence startup: {}", e);
+    } else {
+        tracing::info!("Raven init completed before kline persistence startup");
     }
 
     let service_impl = timescale::new_kline(upstream_url, settings.timescale.clone()).await?;
