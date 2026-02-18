@@ -160,7 +160,6 @@ pub async fn run_shard(args: RunShardArgs) {
                                                 callback(&data);
                                             }
                                             let m = MarketDataMessage {
-                                                exchange: String::new(),
                                                 venue: venue.clone(),
                                                 producer: producer.clone(),
                                                 data: Some(data),

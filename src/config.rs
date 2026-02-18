@@ -89,15 +89,6 @@ pub struct TibsConfig {
     pub initial_p_buy: f64,
     pub alpha_size: f64,
     pub alpha_imbl: f64,
-    /// Absolute lower bound for expected bar size (ticks per bar).
-    /// Deprecated in favor of `size_min_pct` / `size_max_pct`.
-    #[serde(default)]
-    pub size_min: Option<f64>,
-    /// Absolute upper bound for expected bar size (ticks per bar).
-    /// Deprecated in favor of `size_min_pct` / `size_max_pct`.
-    #[serde(default)]
-    pub size_max: Option<f64>,
-
     /// Percentage band (relative to `initial_size`) to clamp expected bar size.
     /// If set, bounds are:
     /// - min = initial_size * (1 - size_min_pct)
@@ -120,8 +111,6 @@ impl Default for TibsConfig {
             initial_p_buy: 0.7,
             alpha_size: 0.1,
             alpha_imbl: 0.1,
-            size_min: None,
-            size_max: None,
             size_min_pct: Some(0.1),
             size_max_pct: Some(0.1),
             profiles: HashMap::new(),
@@ -139,10 +128,6 @@ pub struct TibsProfileConfig {
     pub alpha_size: Option<f64>,
     #[serde(default)]
     pub alpha_imbl: Option<f64>,
-    #[serde(default)]
-    pub size_min: Option<f64>,
-    #[serde(default)]
-    pub size_max: Option<f64>,
     #[serde(default)]
     pub size_min_pct: Option<f64>,
     #[serde(default)]
@@ -454,10 +439,6 @@ impl Settings {
         if let Ok(path) = env::var("RAVEN_CONFIG_FILE") {
             builder = builder.add_source(File::from(PathBuf::from(path)).required(true));
         } else {
-            // Backward compatibility: in repo/dev workflows, allow a local `./test.toml` to
-            // override the compiled-in defaults (best-effort).
-            builder = builder.add_source(File::with_name("test").required(false));
-
             // 1) CWD: `${RUN_MODE}.toml` (e.g. ./prod.toml)
             builder = builder.add_source(File::with_name(&run_mode).required(false));
 

@@ -127,9 +127,8 @@ message Balance {
 }
 
 message MarketDataMessage {
-    // Backwards-compatibility field (historically used inconsistently).
-    // We keep emitting this as the producer service name for older consumers.
-    string exchange = 6;
+    reserved 6;
+    reserved "exchange";
     // Trading venue (e.g. BINANCE_SPOT, BINANCE_FUTURES).
     string venue = 7;
     // Producer service name (e.g. binance_spot, raven_timebar).

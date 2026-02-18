@@ -8,7 +8,7 @@ Time-based candles are sourced from **Binance Klines** (1m) via `binance_futures
 
 | Module | Bar type | Input | Notes |
 |--------|----------|--------|--------|
-| `tibs` | Tick imbalance bars | TRADE | Config: `tibs.initial_size`, `initial_p_buy`, alpha, size bounds. |
+| `tibs` | Tick imbalance bars | TRADE | Config: `tibs.initial_size`, `initial_p_buy`, alpha, and percentage bounds (`size_min_pct`, `size_max_pct`). |
 | `trbs` | Tick run bars | TRADE | Run-based bar sizing. |
 | `vibs` | Volume imbalance bars | TRADE | Volume-based bar sizing. |
 | `vpin` | VPIN | TRADE | Volume-synchronized probability of informed trading. |
@@ -20,7 +20,7 @@ See `docs/` subdirectory for detailed explanations (English + Korean) of each de
 ## Conventions
 
 - Each feature module typically: consumes a stream of trades (and maybe orderbook), maintains bar state, emits `proto::Candle` (or equivalent) when a bar is complete.
-- **Config**: TIBS (and possibly others) use `config::TibsConfig`; bar parameters come from config or from `ServiceSpec` (small/large) in the statistics bin.
+- **Config**: TIBS/TRBS/VIBS use `config::TibsConfig`; bounds are percentage-based only (`size_min_pct`, `size_max_pct`). Absolute bounds (`size_min`, `size_max`) were removed in v3.
 - **Metrics**: bar emission and latency may be instrumented via `crate::telemetry::bars` or similar.
 - **Idempotence**: bar logic should be deterministic for the same trade stream; no external I/O inside the core bar computation.
 - If a new feature service introduces or changes a configured port, update `src/bin/persist/dependency_check.rs` so `raven_init` preflight checks remain accurate.

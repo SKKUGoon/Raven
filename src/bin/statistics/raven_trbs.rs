@@ -28,10 +28,6 @@ struct Cli {
     #[arg(long)]
     alpha_imbl: Option<f64>,
     #[arg(long)]
-    size_min: Option<f64>,
-    #[arg(long)]
-    size_max: Option<f64>,
-    #[arg(long)]
     size_min_pct: Option<f64>,
     #[arg(long)]
     size_max_pct: Option<f64>,
@@ -71,8 +67,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         initial_p_buy: cli.initial_p_buy.unwrap_or(base.initial_p_buy),
         alpha_size: cli.alpha_size.unwrap_or(base.alpha_size),
         alpha_imbl: cli.alpha_imbl.unwrap_or(base.alpha_imbl),
-        size_min: cli.size_min.or(base.size_min),
-        size_max: cli.size_max.or(base.size_max),
         size_min_pct: cli.size_min_pct.or(base.size_min_pct),
         size_max_pct: cli.size_max_pct.or(base.size_max_pct),
         profiles: Default::default(),

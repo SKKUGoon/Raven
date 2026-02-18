@@ -177,13 +177,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => {}
     }
 
-    // For other commands (Stop, StopAll, List), connect to the target host
-    let host = ops::resolve_control_host(cli.host, &cli.service, &settings);
-
-    println!("Connecting to {host}");
-    // We connect lazily or just try to connect now
-    let mut client = ControlClient::connect(host).await?;
-
     match cli.command {
         // Start/Collect are handled above
         Commands::Start => unreachable!(),
@@ -198,12 +191,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             venue_include,
             venue_exclude,
         } => {
-            // Keep the initial control-plane connect (above) for backwards compat,
-            // even though Stop is implemented via per-service control endpoints.
-            let _ = &mut client;
             ops::handle_stop(&settings, symbol, base, venue, venue_include, venue_exclude).await?;
         }
         Commands::StopAll => {
+            let host = ops::resolve_control_host(cli.host, &cli.service, &settings);
+            println!("Connecting to {host}");
+            let mut client = ControlClient::connect(host).await?;
             let response = client
                 .stop_all_collections(StopAllRequest {})
                 .await?
@@ -212,6 +205,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Message: {}", response.message);
         }
         Commands::List => {
+            let host = ops::resolve_control_host(cli.host, &cli.service, &settings);
+            println!("Connecting to {host}");
+            let mut client = ControlClient::connect(host).await?;
             let response = client.list_collections(ListRequest {}).await?.into_inner();
             println!("Active Collections:");
             for collection in response.collections {

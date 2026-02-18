@@ -2,6 +2,11 @@
 
 Raven is a **modular market-data platform** in Rust. Use this file and per-directory `AGENT.md` files to navigate and change the codebase safely.
 
+## v3 breaking-change notes
+
+- `MarketDataMessage.exchange` was removed from `proto/market_data.proto` and reserved. Use `venue` and `producer` instead.
+- TIBS/TRBS/VIBS size bounds are percentage-only (`size_min_pct`, `size_max_pct`). Legacy absolute bounds (`size_min`, `size_max`) were removed.
+
 ## Mental model
 
 - **Sources (collectors)** → ingest exchange data (TRADE, ORDERBOOK, CANDLE, FUNDING, LIQUIDATION, OPEN_INTEREST, TICKER, PRICE_INDEX) over WebSockets and REST APIs.
@@ -208,6 +213,7 @@ ravenctl start
 - **Rust 2021**. Use existing patterns: `thiserror` for errors, `tracing` for logs, `serde` for config.
 - **Config**: `Settings` in `src/config.rs`; override via TOML and `RAVEN__*` env vars.
 - **gRPC**: types live in `crate::proto` (generated from `proto/`). Do not hand-edit generated code.
+- **v3 proto compatibility**: do not reuse reserved protobuf field numbers/names (notably `MarketDataMessage` field `6` / `exchange`).
 - **Tests**: unit tests in modules; integration-style tests in `tests/`; some binaries have `#[cfg(test)]` or dedicated test binaries.
 - **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
 

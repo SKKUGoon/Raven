@@ -73,7 +73,6 @@ pub async fn run(
                             {
                                 for data in on_notification(channel.as_str(), data_str.as_str()) {
                                     let msg = MarketDataMessage {
-                                        exchange: String::new(),
                                         venue: VENUE_DERIBIT.to_string(),
                                         producer: PRODUCER_DERIBIT.to_string(),
                                         data: Some(data),

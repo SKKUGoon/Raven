@@ -4,8 +4,6 @@ use crate::proto::MarketDataMessage;
 #[inline]
 pub(crate) fn new_market_data_message(venue: &str, producer: &str, data: Data) -> MarketDataMessage {
     MarketDataMessage {
-        // Legacy proto field; intentionally kept empty for Binance producers.
-        exchange: String::new(),
         venue: venue.to_string(),
         producer: producer.to_string(),
         data: Some(data),

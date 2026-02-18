@@ -18,6 +18,7 @@ Time-based candles are no longer aggregated here — use **Binance Klines** (1m)
 - Entrypoints: `raven_tibs.rs`, `raven_trbs.rs`, `raven_vibs.rs`, `raven_vpin.rs`.
 - Bar logic lives in `crate::features` (`tibs`, `trbs`, `vibs`, `vpin`). Bins wire upstream gRPC subscriptions to the feature implementation and expose CANDLE via `MarketData.Subscribe`.
 - **ServiceSpec**: TIBS/TRBS/VIBS use small/large specs (different bar params); ports and specs come from `config` and `service::spec`.
+- **Bounds config**: `raven_tibs`, `raven_trbs`, and `raven_vibs` use percentage bounds flags/config only (`size_min_pct`, `size_max_pct`). The legacy absolute bounds (`size_min`, `size_max`) were removed in v3.
 - **Wire-first**: these services subscribe to source(s); if the source stream is not started yet, they retry until it is (or config timeout).
 
 When adding a new bar type: implement the feature in `crate::features`, add a bin here that subscribes to the right upstream and exposes CANDLE, and register ports/specs in config and ravenctl.

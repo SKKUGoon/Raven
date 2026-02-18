@@ -224,21 +224,6 @@ impl VolumeImbalanceState {
     }
 }
 
-fn bounds_from_config(config: &TibsConfig, initial_size: f64) -> (f64, f64) {
-    // Preferred: percentage bounds relative to initial_size
-    if let (Some(min_pct), Some(max_pct)) = (config.size_min_pct, config.size_max_pct) {
-        let min = initial_size * (1.0 - min_pct);
-        let max = initial_size * (1.0 + max_pct);
-        return (min, max);
-    }
-    // Back-compat: absolute bounds
-    if let (Some(min), Some(max)) = (config.size_min, config.size_max) {
-        return (min, max);
-    }
-    // Sensible default: +/- 10%
-    (initial_size * 0.9, initial_size * 1.1)
-}
-
 #[derive(Clone)]
 pub struct VibsWorker {
     upstreams: HashMap<String, String>,
@@ -320,7 +305,7 @@ async fn run_vib_aggregation(
         config.initial_p_buy,
         config.alpha_size,
         config.alpha_imbl,
-        bounds_from_config(&config, config.initial_size),
+        super::imbalance_bounds_from_config(&config, config.initial_size),
     );
 
     loop {
@@ -361,8 +346,6 @@ async fn run_vib_aggregation(
                         ) {
                             VIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                             let msg = MarketDataMessage {
-                                // Legacy proto field; prefer `producer` + `venue`.
-                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_vibs".to_string(),
                                 data: Some(market_data_message::Data::Candle(
