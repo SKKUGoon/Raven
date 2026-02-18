@@ -15,10 +15,9 @@ use super::schema::{ensure_schema_and_tables, qualify_table, validate_pg_ident};
 
 #[derive(Clone)]
 pub struct TimescaleWorker {
-    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
-    vpin_upstreams: Vec<String>, // Not a bar, but its bucket like feature is similar to bars
+    vpin_upstreams: Vec<String>,
     schema: String,
     pool: Pool<Postgres>,
 }
@@ -30,7 +29,6 @@ impl StreamWorker for TimescaleWorker {
         let venue = key.venue.clone().unwrap_or_default();
 
         run_multi_persistence(MultiPersistenceArgs {
-            timebar_upstreams: self.timebar_upstreams.clone(),
             tibs_upstreams: self.tibs_upstreams.clone(),
             vibs_upstreams: self.vibs_upstreams.clone(),
             vpin_upstreams: self.vpin_upstreams.clone(),
@@ -47,7 +45,6 @@ impl StreamWorker for TimescaleWorker {
 pub type PersistenceService = StreamManager<TimescaleWorker>;
 
 pub async fn new(
-    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
     vpin_upstreams: Vec<String>,
@@ -68,17 +65,13 @@ pub async fn new(
         .connect(&config.url)
         .await?;
 
-    let time_table = qualify_table(&schema, "bar__time");
     let tib_table = qualify_table(&schema, "bar__tick_imbalance");
     let vib_table = qualify_table(&schema, "bar__volume_imbalance");
     let vpin_table = qualify_table(&schema, "bar__vpin");
 
-    // Ensure the table exists (basic migration)
-    // In a production env, use proper migrations.
     if let Err(e) = ensure_schema_and_tables(
         &pool,
         &schema,
-        &time_table,
         &tib_table,
         &vib_table,
         &vpin_table,
@@ -92,7 +85,6 @@ pub async fn new(
     }
 
     let worker = TimescaleWorker {
-        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         vpin_upstreams,
@@ -160,7 +152,8 @@ async fn persist_candle(
         } else if candle.interval.starts_with("vib") {
             qualify_table(schema, "bar__volume_imbalance")
         } else {
-            qualify_table(schema, "bar__time")
+            warn!("Unknown candle interval prefix '{}'; skipping persistence", candle.interval);
+            return;
         };
 
         let query = format!(
@@ -231,20 +224,18 @@ async fn run_persistence_loop(
 }
 
 struct MultiPersistenceArgs {
-    timebar_upstreams: Vec<String>,
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
     vpin_upstreams: Vec<String>,
     symbol: String,
     venue: String,
-    key: String, // For logging
+    key: String,
     schema: String,
     pool: Pool<Postgres>,
 }
 
 async fn run_multi_persistence(args: MultiPersistenceArgs) {
     let MultiPersistenceArgs {
-        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         vpin_upstreams,
@@ -255,23 +246,6 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         pool,
     } = args;
     info!("Bar Persistence task started for {}", key);
-
-    let mut timebar_tasks = Vec::with_capacity(timebar_upstreams.len());
-    for (i, upstream) in timebar_upstreams.into_iter().enumerate() {
-        let t_key = key.clone();
-        let t_schema = schema.clone();
-        let t_pool = pool.clone();
-        let t_symbol = symbol.clone();
-        let t_venue = venue.clone();
-        let label: &'static str = match i {
-            0 => "Timebar(60s)",
-            1 => "Timebar(1s)",
-            _ => "Timebar",
-        };
-        timebar_tasks.push(tokio::spawn(async move {
-            run_persistence_loop(upstream, t_symbol, t_venue, t_key, t_schema, t_pool, label).await;
-        }));
-    }
 
     let mut tib_tasks = Vec::with_capacity(tibs_upstreams.len());
     for (i, upstream) in tibs_upstreams.into_iter().enumerate() {
@@ -325,9 +299,6 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
         }));
     }
 
-    for t in timebar_tasks {
-        let _ = t.await;
-    }
     for t in tib_tasks {
         let _ = t.await;
     }

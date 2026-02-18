@@ -20,6 +20,34 @@ name = "binance_futures_klines"
 path = "src/bin/raw/binance_futures_klines.rs"
 
 [[bin]]
+name = "binance_futures_liquidations"
+path = "src/bin/raw/binance_futures_liquidations.rs"
+
+[[bin]]
+name = "binance_futures_funding"
+path = "src/bin/raw/binance_futures_funding.rs"
+
+[[bin]]
+name = "binance_futures_oi"
+path = "src/bin/raw/binance_futures_oi.rs"
+
+[[bin]]
+name = "binance_options"
+path = "src/bin/raw/binance_options.rs"
+
+[[bin]]
+name = "deribit_option"
+path = "src/bin/raw/deribit_option.rs"
+
+[[bin]]
+name = "deribit_trades"
+path = "src/bin/raw/deribit_trades.rs"
+
+[[bin]]
+name = "deribit_index"
+path = "src/bin/raw/deribit_index.rs"
+
+[[bin]]
 name = "tick_persistence"
 path = "src/bin/persist/tick_persistence.rs"
 
@@ -30,10 +58,6 @@ path = "src/bin/persist/bar_persistence.rs"
 [[bin]]
 name = "kline_persistence"
 path = "src/bin/persist/kline_persistence.rs"
-
-[[bin]]
-name = "raven_timebar"
-path = "src/bin/statistics/raven_timebar.rs"
 
 [[bin]]
 name = "raven_tibs"

@@ -5,8 +5,8 @@ use crate::proto::{
     ListResponse, MarketDataMessage, MarketDataRequest, StopAllRequest, StopAllResponse,
 };
 use crate::service::StreamKey;
+use crate::source::binance::subscribe::filtered_broadcast_stream;
 use async_trait::async_trait;
-use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
 
@@ -120,26 +120,12 @@ impl MarketData for BinanceFuturesKlinesService {
             }
         }
 
-        let rx = self.tx().subscribe();
-        let stream = tokio_stream::StreamExt::filter_map(BroadcastStream::new(rx), move |item| {
-            let symbol = symbol.clone();
-            match item {
-                Ok(Ok(m)) => {
-                    // Filter: pass through all candles for wildcard, otherwise match symbol.
-                    match &m.data {
-                        Some(market_data_message::Data::Candle(c))
-                            if wildcard || c.symbol == symbol =>
-                        {
-                            Some(Ok(m))
-                        }
-                        _ => None,
-                    }
-                }
-                Ok(Err(e)) => Some(Err(e)),
-                Err(_) => Some(Err(Status::internal("Stream lagged"))),
-            }
+        let stream = filtered_broadcast_stream(&self.tx(), symbol, |m, symbol, wildcard| {
+            matches!(
+                &m.data,
+                Some(market_data_message::Data::Candle(c)) if wildcard || c.symbol == symbol
+            )
         });
-
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(stream))
     }
 }

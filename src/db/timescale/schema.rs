@@ -19,7 +19,6 @@ pub(super) fn qualify_table(schema: &str, table: &str) -> String {
 pub(super) async fn ensure_schema_and_tables(
     pool: &Pool<Postgres>,
     schema: &str,
-    time_table: &str,
     tib_table: &str,
     vib_table: &str,
     vpin_table: &str,
@@ -133,41 +132,6 @@ pub(super) async fn ensure_schema_and_tables(
 
     sqlx::query(&format!(
         "CREATE INDEX IF NOT EXISTS {schema}_vpin_symbol_exchange_interval_time_idx ON {vpin_table} (symbol, exchange, interval, time DESC);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {time_table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{time_table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_time_symbol_exchange_interval_time_idx ON {time_table} (symbol, exchange, interval, time DESC);"
     ))
     .execute(pool)
     .await?;

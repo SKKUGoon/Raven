@@ -22,6 +22,10 @@ enum DataType {
     TRADE = 2;
     CANDLE = 3;
     FUNDING = 4;
+    TICKER = 5;           // Options ticker (OI, IV, mark, etc.)
+    PRICE_INDEX = 6;      // Underlying index (e.g. btc_usd)
+    LIQUIDATION = 7;      // Forced liquidation event
+    OPEN_INTEREST = 8;    // Futures open interest snapshot
 }
 
 // Market data types
@@ -67,6 +71,47 @@ message FundingRate {
     int64 timestamp = 2;
     double rate = 3;
     int64 next_funding_time = 4;
+    double mark_price = 5;
+    double index_price = 6;
+}
+
+// Forced liquidation event (Binance Futures forceOrder).
+message Liquidation {
+    string symbol = 1;
+    int64 timestamp = 2;
+    string side = 3;        // "buy" or "sell" (liquidated side)
+    double price = 4;       // average fill price
+    double quantity = 5;    // original quantity
+}
+
+// Futures open interest snapshot.
+message OpenInterest {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double open_interest = 3;       // in contracts
+    double open_interest_value = 4; // notional in quote currency
+}
+
+// Options ticker from Deribit (open interest, IV, mark, best bid/ask).
+message OptionsTicker {
+    string symbol = 1;
+    int64 timestamp = 2;
+    double open_interest = 3;
+    double mark_iv = 4;
+    double best_bid_price = 5;
+    double best_ask_price = 6;
+    double mark_price = 7;
+    double underlying_price = 8;
+    double last_price = 9;
+    double bid_iv = 10;
+    double ask_iv = 11;
+}
+
+// Underlying price index (e.g. deribit_price_index.btc_usd).
+message PriceIndex {
+    string index_name = 1;
+    double price = 2;
+    int64 timestamp = 3;
 }
 
 message WalletUpdate {
@@ -95,5 +140,9 @@ message MarketDataMessage {
         Candle candle = 3;
         FundingRate funding = 4;
         WalletUpdate wallet = 5;
+        OptionsTicker options_ticker = 9;
+        PriceIndex price_index = 10;
+        Liquidation liquidation = 11;
+        OpenInterest open_interest = 12;
     }
 }

@@ -1,16 +1,16 @@
 use raven::config::Settings;
-use raven::utils::process::{stop_all_services, stop_service};
+use raven::utils::process::{stop_all_services_with_settings, stop_service_by_port_or_pid};
 use raven::utils::service_registry;
 
 pub fn shutdown(settings: &Settings, service_opt: &Option<String>) {
     if let Some(svc_id) = service_opt.as_deref() {
         let services = service_registry::all_services(settings);
         if let Some(spec) = services.iter().find(|svc| svc.id == svc_id) {
-            if stop_service(spec.log_name) {
+            if stop_service_by_port_or_pid(spec.log_name, spec.port) {
                 println!("Shutdown requested for {}", spec.display_name);
             } else {
                 eprintln!(
-                    "No pid file found for {} ({}). Did you start it via `ravenctl start`?",
+                    "No live process/pid file found for {} ({}). Did you start it via `ravenctl start`?",
                     spec.display_name, spec.log_name
                 );
             }
@@ -18,7 +18,7 @@ pub fn shutdown(settings: &Settings, service_opt: &Option<String>) {
             eprintln!("Unknown service id: {svc_id}");
         }
     } else {
-        stop_all_services();
+        stop_all_services_with_settings(settings);
     }
 }
 
@@ -39,18 +39,6 @@ pub fn resolve_control_host(
                     "http://{}:{}",
                     host_ip, settings.server.port_tick_persistence
                 ),
-                "timebar" | "timebar_minutes" => {
-                    format!(
-                        "http://{}:{}",
-                        host_ip, settings.server.port_timebar_minutes
-                    )
-                }
-                "timebar_seconds" => {
-                    format!(
-                        "http://{}:{}",
-                        host_ip, settings.server.port_timebar_seconds
-                    )
-                }
                 _ => {
                     eprintln!("Unknown service: {s}. Using default host.");
                     cli_host

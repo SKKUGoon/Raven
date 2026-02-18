@@ -1,6 +1,6 @@
 use crate::config::InfluxConfig;
-use crate::proto::{DataType, MarketDataMessage};
-use crate::service::{StreamDataType, StreamKey, StreamManager, StreamWorker};
+use crate::proto::MarketDataMessage;
+use crate::service::{StreamKey, StreamManager, StreamWorker};
 use influxdb2::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -24,13 +24,7 @@ impl StreamWorker for InfluxWorker {
     async fn run(&self, key: StreamKey, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
         let symbol = key.symbol.clone();
         let exchange = key.venue.clone().unwrap_or_default();
-        let data_type = match key.data_type {
-            StreamDataType::Trade => DataType::Trade,
-            StreamDataType::Orderbook => DataType::Orderbook,
-            StreamDataType::Candle => DataType::Candle,
-            StreamDataType::Funding => DataType::Funding,
-            StreamDataType::Unknown(_) => DataType::Unknown,
-        };
+        let data_type = key.data_type.to_proto();
 
         // Select upstream
         let upstream_url = if !exchange.is_empty() {

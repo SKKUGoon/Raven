@@ -17,19 +17,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    // This service connects to aggregators (timebar, tibs)
-    let timebar_upstreams = vec![
-        format!(
-            "http://{}:{}",
-            settings.server.host, settings.server.port_timebar_minutes
-        ),
-        format!(
-            "http://{}:{}",
-            settings.server.host, settings.server.port_timebar_seconds
-        ),
-    ];
-
-    // This service connects to aggregators (timebar, tibs, trbs)
     let tibs_upstreams = vec![
         format!(
             "http://{}:{}",
@@ -66,7 +53,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )];
 
     let service_impl = timescale::new(
-        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         vpin_upstreams,

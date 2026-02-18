@@ -15,7 +15,13 @@ port_vpin = 50059
 port_tick_persistence = 50091
 port_bar_persistence = 50092
 port_kline_persistence = 50093
-
+port_binance_futures_liquidations = 50004
+port_binance_futures_funding = 50005
+port_binance_futures_oi = 50006
+port_binance_options = 50007
+port_deribit_ticker = 50094
+port_deribit_trades = 50095
+port_deribit_index = 50096
 
 [influx]
 url = "http://localhost:8086"
@@ -43,6 +49,19 @@ venue_exclude = []
 "PEPE/USDT" = { BINANCE_FUTURES = "1000PEPEUSDT" }
 
 [binance_klines]
-interval = "5m"
+interval = "1m"
 shard_size = 50
 connections = 11
+
+[deribit]
+# ws_url = "wss://test.deribit.com/ws/api/v2"  # testnet
+# ws_url = "wss://www.deribit.com/ws/api/v2"   # production (default)
+# channel_capacity = 10000
+
+[binance_rest]
+# futures_rest_url = "https://fapi.binance.com"
+# options_rest_url = "https://eapi.binance.com"
+# funding_poll_secs = 60
+# oi_poll_secs = 5
+# options_poll_secs = 10
+symbols = ["BTCUSDT"]

@@ -152,6 +152,31 @@ fn pid_command_name(pid: i32) -> Option<String> {
     }
 }
 
+fn pids_listening_on_port(port: u16) -> Option<Vec<i32>> {
+    let out = Command::new("lsof")
+        .args([
+            "-nP",
+            &format!("-iTCP:{port}"),
+            "-sTCP:LISTEN",
+            "-t",
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return Some(Vec::new());
+    }
+
+    let mut pids = Vec::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        if let Ok(pid) = line.trim().parse::<i32>() {
+            if !pids.contains(&pid) {
+                pids.push(pid);
+            }
+        }
+    }
+    Some(pids)
+}
+
 fn kill_pid_gracefully(pid: i32, name: &str) {
     if !is_pid_running(pid) {
         println!("{name} (PID: {pid}) is not running. Cleaning up.");
@@ -204,6 +229,30 @@ pub fn stop_service(log_name: &str) -> bool {
     true
 }
 
+/// Stop a single service by resolving PID from control port first; falls back to pid file.
+pub fn stop_service_by_port_or_pid(log_name: &str, port: u16) -> bool {
+    match pids_listening_on_port(port) {
+        Some(mut pids) => {
+            if let Some(pid) = pids.pop() {
+                if !pids.is_empty() {
+                    eprintln!(
+                        "Multiple pids found listening on port {port}; using pid {pid} for {log_name}."
+                    );
+                }
+                kill_pid_gracefully(pid, log_name);
+                let pid_path = get_log_dir().join(format!("{log_name}.pid"));
+                let _ = fs::remove_file(&pid_path);
+                return true;
+            }
+        }
+        None => {
+            // lsof is unavailable or failed to execute; fallback to pid file behavior below.
+        }
+    }
+
+    stop_service(log_name)
+}
+
 pub fn stop_all_services() {
     let log_dir = get_log_dir();
     if !log_dir.exists() {
@@ -234,6 +283,22 @@ pub fn stop_all_services() {
 
     if !found_pid {
         println!("No running services found (no .pid files).");
+    } else {
+        println!("All services stopped.");
+    }
+}
+
+pub fn stop_all_services_with_settings(settings: &Settings) {
+    println!("Stopping Raven services...");
+    let mut found_any = false;
+    for svc in service_registry::all_services(settings) {
+        if stop_service_by_port_or_pid(svc.log_name, svc.port) {
+            found_any = true;
+        }
+    }
+
+    if !found_any {
+        println!("No running services found.");
     } else {
         println!("All services stopped.");
     }
