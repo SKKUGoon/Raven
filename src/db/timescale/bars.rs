@@ -68,9 +68,9 @@ pub async fn new(
         .connect(&config.url)
         .await?;
 
-    let tib_table = qualify_table(&schema, "bar__tick_imbalance");
-    let vib_table = qualify_table(&schema, "bar__volume_imbalance");
-    let vpin_table = qualify_table(&schema, "bar__vpin");
+    let tib_table = qualify_table(&schema, "fact__tick_imbalance");
+    let vib_table = qualify_table(&schema, "fact__volume_imbalance");
+    let vpin_table = qualify_table(&schema, "fact__vpin");
 
     if let Err(e) = ensure_schema_and_tables(
         &pool,
@@ -151,20 +151,21 @@ async fn persist_candle(
 
     if let Some(t) = time {
         let table_name = if candle.interval.starts_with("vpin") {
-            qualify_table(schema, "bar__vpin")
+            qualify_table(schema, "fact__vpin")
         } else if candle.interval.starts_with("tib") || candle.interval.starts_with("trb") {
-            qualify_table(schema, "bar__tick_imbalance")
+            qualify_table(schema, "fact__tick_imbalance")
         } else if candle.interval.starts_with("vib") {
-            qualify_table(schema, "bar__volume_imbalance")
+            qualify_table(schema, "fact__volume_imbalance")
         } else {
             warn!("Unknown candle interval prefix '{}'; skipping persistence", candle.interval);
             return;
         };
 
-        let symbol_id = match dim_cache.resolve_symbol(pool, schema, &candle.symbol).await {
+        let (coin_id, quote_id) = match dim_cache.resolve_coin_quote(pool, schema, &candle.symbol).await
+        {
             Ok(v) => v,
             Err(e) => {
-                error!("Failed to resolve symbol dimension for {}: {}", key, e);
+                error!("Failed to resolve coin/quote dimensions for {}: {}", key, e);
                 return;
             }
         };
@@ -188,14 +189,15 @@ async fn persist_candle(
 
         let query = format!(
             r#"
-            INSERT INTO {table_name} (time, symbol_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO {table_name} (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             "#,
         );
 
         let result = sqlx::query(&query)
             .bind(t)
-            .bind(symbol_id)
+            .bind(coin_id)
+            .bind(quote_id)
             .bind(exchange_id)
             .bind(interval_id)
             .bind(candle.open)

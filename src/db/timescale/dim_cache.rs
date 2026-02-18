@@ -2,9 +2,12 @@ use sqlx::{Pool, Postgres};
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 
+use super::symbol_pair::parse_coin_quote;
+
 #[derive(Default)]
 pub struct DimCache {
-    symbols: RwLock<HashMap<String, i32>>,
+    coins: RwLock<HashMap<String, i32>>,
+    quotes: RwLock<HashMap<String, i32>>,
     exchanges: RwLock<HashMap<String, i32>>,
     intervals: RwLock<HashMap<String, i32>>,
 }
@@ -14,13 +17,37 @@ impl DimCache {
         Self::default()
     }
 
-    pub async fn resolve_symbol(
+    pub async fn resolve_coin_quote(
         &self,
         pool: &Pool<Postgres>,
         schema: &str,
         value: &str,
-    ) -> Result<i32, sqlx::Error> {
-        resolve_dim_id(&self.symbols, pool, schema, "dim_symbol", "symbol_id", "symbol", value).await
+    ) -> Result<(i32, i32), sqlx::Error> {
+        let (coin, quote) = parse_coin_quote(value).ok_or_else(|| {
+            sqlx::Error::Protocol(format!("failed to parse coin/quote from symbol '{value}'"))
+        })?;
+
+        let coin_id = resolve_soft_dim_id(
+            &self.coins,
+            pool,
+            schema,
+            "dim__coin",
+            "coin_id",
+            "coin",
+            &coin,
+        )
+        .await?;
+        let quote_id = resolve_soft_dim_id(
+            &self.quotes,
+            pool,
+            schema,
+            "dim__quote",
+            "quote_id",
+            "quote",
+            &quote,
+        )
+        .await?;
+        Ok((coin_id, quote_id))
     }
 
     pub async fn resolve_exchange(
@@ -29,11 +56,11 @@ impl DimCache {
         schema: &str,
         value: &str,
     ) -> Result<i32, sqlx::Error> {
-        resolve_dim_id(
+        resolve_soft_dim_id(
             &self.exchanges,
             pool,
             schema,
-            "dim_exchange",
+            "dim__exchange",
             "exchange_id",
             "exchange",
             value,
@@ -47,11 +74,11 @@ impl DimCache {
         schema: &str,
         value: &str,
     ) -> Result<i32, sqlx::Error> {
-        resolve_dim_id(
+        resolve_soft_dim_id(
             &self.intervals,
             pool,
             schema,
-            "dim_interval",
+            "dim__interval",
             "interval_id",
             "interval",
             value,
@@ -60,7 +87,7 @@ impl DimCache {
     }
 }
 
-async fn resolve_dim_id(
+async fn resolve_soft_dim_id(
     cache: &RwLock<HashMap<String, i32>>,
     pool: &Pool<Postgres>,
     schema: &str,
@@ -73,25 +100,12 @@ async fn resolve_dim_id(
         return Ok(id);
     }
 
-    let (extra_cols, extra_vals, on_conflict_set) = if table == "dim_symbol" {
-        (
-            ", is_deleted, deleted_date",
-            ", FALSE, NULL",
-            format!("{value_col} = EXCLUDED.{value_col}, is_deleted = FALSE, deleted_date = NULL"),
-        )
-    } else {
-        (
-            "",
-            "",
-            format!("{value_col} = EXCLUDED.{value_col}"),
-        )
-    };
-
     let query = format!(
         r#"
-        INSERT INTO {schema}.{table} ({value_col}{extra_cols})
-        VALUES ($1{extra_vals})
-        ON CONFLICT ({value_col}) DO UPDATE SET {on_conflict_set}
+        INSERT INTO {schema}.{table} ({value_col}, is_deleted, deleted_date)
+        VALUES ($1, FALSE, NULL)
+        ON CONFLICT ({value_col}) DO UPDATE
+        SET is_deleted = FALSE, deleted_date = NULL
         RETURNING {id_col}
         "#
     );

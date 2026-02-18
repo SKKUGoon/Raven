@@ -88,9 +88,9 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
      │  InfluxDB   │       │ TimescaleDB  │       │ TimescaleDB  │
      │ (staging    │       │ (warehouse + │       │ (warehouse + │
      │  buffer)    │       │  mart)       │       │  mart)       │
-     │  trades     │       │ bar__tick_*  │       │ bar__kline   │
-     │  orderbook  │       │ bar__vol_*   │       │              │
-     │  funding    │       │ bar__vpin    │       │              │
+     │  trades     │       │ fact__tick_* │       │ fact__kline  │
+     │  orderbook  │       │ fact__vol_*  │       │              │
+     │  funding    │       │ fact__vpin   │       │              │
      │  liquidation│       └──────────────┘       └──────────────┘
      │  open_intst │
      │  options_tkr│
@@ -119,10 +119,10 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
 
 | Binary | Port(s) | Input | Output | Persisted to |
 |--------|---------|-------|--------|-------------|
-| `raven_tibs` | 50054 (small), 50053 (large) | TRADE from collectors | CANDLE (tick imbalance bars) | `mart.bar__tick_imbalance` |
-| `raven_trbs` | 50055 (small), 50056 (large) | TRADE from collectors | CANDLE (tick run bars) | `mart.bar__tick_imbalance` |
-| `raven_vibs` | 50057 (small), 50058 (large) | TRADE from collectors | CANDLE (volume imbalance bars) | `mart.bar__volume_imbalance` |
-| `raven_vpin` | 50059 | TRADE from collectors | CANDLE (VPIN buckets) | `mart.bar__vpin` |
+| `raven_tibs` | 50054 (small), 50053 (large) | TRADE from collectors | CANDLE (tick imbalance bars) | `mart.fact__tick_imbalance` |
+| `raven_trbs` | 50055 (small), 50056 (large) | TRADE from collectors | CANDLE (tick run bars) | `mart.fact__tick_imbalance` |
+| `raven_vibs` | 50057 (small), 50058 (large) | TRADE from collectors | CANDLE (volume imbalance bars) | `mart.fact__volume_imbalance` |
+| `raven_vpin` | 50059 | TRADE from collectors | CANDLE (VPIN buckets) | `mart.fact__vpin` |
 
 See `src/features/docs/` for detailed English + Korean documentation on each bar type's logic, hyperparameters, and math.
 
@@ -132,8 +132,8 @@ See `src/features/docs/` for detailed English + Korean documentation on each bar
 |--------|------|---------------|-----------|
 | `tick_persistence` | 50091 | All raw data (see below) | InfluxDB (staging buffer) |
 | `bar_persistence` | 50092 | CANDLE from `raven_tibs`, `raven_trbs`, `raven_vibs`, `raven_vpin` | TimescaleDB `mart.*` (warehouse + mart facts) |
-| `kline_persistence` | 50093 | CANDLE from `binance_futures_klines` | TimescaleDB `mart.bar__kline` (warehouse + mart fact) |
-| `raven_init` | n/a | Startup seed process | TimescaleDB dimensions (`dim_symbol`, `dim_exchange`, `dim_interval`) |
+| `kline_persistence` | 50093 | CANDLE from `binance_futures_klines` | TimescaleDB `mart.fact__kline` (warehouse + mart fact) |
+| `raven_init` | n/a | Startup seed process | TimescaleDB dimensions (`dim__coin`, `dim__quote`, `dim__exchange`, `dim__interval`) |
 
 `tick_persistence` auto-starts wildcard streams for all-market services and writes these InfluxDB measurements:
 
@@ -151,8 +151,8 @@ TimescaleDB `mart` uses a star schema:
 
 | Table type | Tables | Notes |
 |------------|--------|-------|
-| Dimensions | `dim_symbol`, `dim_exchange`, `dim_interval` | Regular PostgreSQL tables (`dim_symbol` has `is_deleted`, `deleted_date`) |
-| Facts (hypertables) | `bar__tick_imbalance`, `bar__volume_imbalance`, `bar__vpin`, `bar__kline` | `symbol_id`, `exchange_id`, `interval_id` are NOT NULL foreign keys |
+| Dimensions | `dim__coin`, `dim__quote`, `dim__exchange`, `dim__interval` | Regular PostgreSQL tables with `is_deleted` + `deleted_date` soft-delete columns |
+| Facts (hypertables) | `fact__tick_imbalance`, `fact__volume_imbalance`, `fact__vpin`, `fact__kline` | `coin_id`, `quote_id`, `exchange_id`, `interval_id` are NOT NULL foreign keys |
 
 ### Control plane
 
@@ -175,6 +175,11 @@ ravenctl start
 
 ## Key concepts
 
+- **Terminology**
+  - Coin: base asset (`BTC`, `ETH`, `XRP`).
+  - Quote: quoting asset (`USDT`, `USD`, `USDC`, `BTC`).
+  - Symbol: exchange lookup token composed from coin+quote with venue-specific formatting (e.g. `BTCUSDT`, `btc_usd`).
+  - Exchange and venue are equivalent in Raven terminology.
 - **Instrument** = base/quote (e.g. ETH/USDC). **Venue symbol** = exchange-specific (e.g. `ETHUSDC`, `1000PEPEUSDT`). Routing and `routing.symbol_map` resolve instrument → venue symbols.
 - **Venues**: `BINANCE_SPOT`, `BINANCE_FUTURES`, `BINANCE_OPTIONS`, `DERIBIT`.
 - **Collections** are started by `Control.StartCollection` (symbol, venue, data_type). Most services only stream after a collection is started; exceptions: `binance_futures_klines` (auto-starts all USDT perps), `binance_futures_funding` and `binance_futures_liquidations` (all-market WS, always streaming).
@@ -188,7 +193,7 @@ ravenctl start
 | `src/` | Library and binary entrypoints; see `src/AGENT.md`. |
 | `src/bin/` | All executables: raw collectors, persist, statistics, ravenctl. |
 | `proto/` | gRPC definitions (`market_data.proto`, `control.proto`). |
-| `sql/` | Reference DDL for TimescaleDB bar tables. |
+| `sql/` | Optional SQL utilities/migrations (runtime schema is in Rust code). |
 | `*.toml` | Config (see README); `test.toml` is compiled-in default. |
 
 ## Build & run

@@ -1,9 +1,11 @@
 use crate::config::TimescaleConfig;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres};
+use std::collections::BTreeSet;
 use tracing::info;
 
 use super::schema::{ensure_schema_and_dimensions, validate_pg_ident};
+use super::symbol_pair::parse_coin_quote;
 
 #[derive(Debug, Clone, Default)]
 pub struct RavenInitSeed {
@@ -40,12 +42,47 @@ pub async fn run_raven_init(
 
     ensure_schema_and_dimensions(&pool, &schema).await?;
 
-    let exch = seed_exchange_dimensions(&pool, &schema, &seed.exchanges).await?;
-    log_stats("dim_exchange", exch);
-    let intr = seed_interval_dimensions(&pool, &schema, &seed.intervals).await?;
-    log_stats("dim_interval", intr);
-    let sym = seed_symbol_dimensions(&pool, &schema, &seed.symbols).await?;
-    log_stats("dim_symbol", sym);
+    let (coins, quotes) = split_coin_quote(&seed.symbols);
+    let coin_stats = seed_simple_dimensions(
+        &pool,
+        &schema,
+        "dim__coin",
+        "coin_id",
+        "coin",
+        &coins,
+    )
+    .await?;
+    log_stats("dim__coin", coin_stats);
+    let quote_stats = seed_simple_dimensions(
+        &pool,
+        &schema,
+        "dim__quote",
+        "quote_id",
+        "quote",
+        &quotes,
+    )
+    .await?;
+    log_stats("dim__quote", quote_stats);
+    let exch = seed_simple_dimensions(
+        &pool,
+        &schema,
+        "dim__exchange",
+        "exchange_id",
+        "exchange",
+        &seed.exchanges,
+    )
+    .await?;
+    log_stats("dim__exchange", exch);
+    let intr = seed_simple_dimensions(
+        &pool,
+        &schema,
+        "dim__interval",
+        "interval_id",
+        "interval",
+        &seed.intervals,
+    )
+    .await?;
+    log_stats("dim__interval", intr);
 
     Ok(())
 }
@@ -64,119 +101,69 @@ fn log_stats(name: &str, stats: SeedStats) {
     }
 }
 
-async fn seed_exchange_dimensions(
+async fn seed_simple_dimensions(
     pool: &Pool<Postgres>,
     schema: &str,
-    exchanges: &[String],
+    table: &str,
+    id_col: &str,
+    value_col: &str,
+    values: &[String],
 ) -> Result<SeedStats, sqlx::Error> {
     let mut stats = SeedStats::default();
-    for exchange in exchanges {
-        if insert_simple_dim(pool, schema, "dim_exchange", "exchange_id", "exchange", exchange).await?
-        {
+    let active_values: BTreeSet<String> = values
+        .iter()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .collect();
+
+    for value in &active_values {
+        if insert_soft_dim(pool, schema, table, id_col, value_col, value).await? {
             stats.added += 1;
-            info!("DIMENSION_ADDED dim_exchange exchange={exchange}");
+            info!("DIMENSION_ADDED {table} {value_col}={value}");
         } else {
-            stats.existing += 1;
-        }
-    }
-    Ok(stats)
-}
-
-async fn seed_interval_dimensions(
-    pool: &Pool<Postgres>,
-    schema: &str,
-    intervals: &[String],
-) -> Result<SeedStats, sqlx::Error> {
-    let mut stats = SeedStats::default();
-    for interval in intervals {
-        if insert_simple_dim(pool, schema, "dim_interval", "interval_id", "interval", interval).await?
-        {
-            stats.added += 1;
-            info!("DIMENSION_ADDED dim_interval interval={interval}");
-        } else {
-            stats.existing += 1;
-        }
-    }
-    Ok(stats)
-}
-
-async fn seed_symbol_dimensions(
-    pool: &Pool<Postgres>,
-    schema: &str,
-    symbols: &[String],
-) -> Result<SeedStats, sqlx::Error> {
-    let mut stats = SeedStats::default();
-    for symbol in symbols {
-        let table = format!("{schema}.dim_symbol");
-        let inserted = sqlx::query_scalar::<_, i32>(&format!(
-            r#"
-            INSERT INTO {table} (symbol, is_deleted, deleted_date)
-            VALUES ($1, FALSE, NULL)
-            ON CONFLICT (symbol) DO NOTHING
-            RETURNING symbol_id
-            "#
-        ))
-        .bind(symbol)
-        .fetch_optional(pool)
-        .await?;
-
-        if inserted.is_some() {
-            stats.added += 1;
-            info!("DIMENSION_ADDED dim_symbol symbol={symbol}");
-            continue;
-        }
-
-        let was_deleted = sqlx::query_scalar::<_, bool>(&format!(
-            "SELECT is_deleted FROM {table} WHERE symbol = $1"
-        ))
-        .bind(symbol)
-        .fetch_one(pool)
-        .await?;
-
-        if was_deleted {
-            sqlx::query(&format!(
-                "UPDATE {table} SET is_deleted = FALSE, deleted_date = NULL WHERE symbol = $1"
+            let was_deleted: bool = sqlx::query_scalar(&format!(
+                "SELECT is_deleted FROM {schema}.{table} WHERE {value_col} = $1"
             ))
-            .bind(symbol)
-            .execute(pool)
+            .bind(value)
+            .fetch_one(pool)
             .await?;
-            stats.reactivated += 1;
-            info!("DIMENSION_REACTIVATED dim_symbol symbol={symbol}");
-        } else {
-            stats.existing += 1;
+            if was_deleted {
+                stats.reactivated += 1;
+                info!("DIMENSION_REACTIVATED {table} {value_col}={value}");
+            } else {
+                stats.existing += 1;
+            }
         }
     }
 
-    if !symbols.is_empty() {
-        let table = format!("{schema}.dim_symbol");
-        let active_symbols: Vec<String> = symbols.to_vec();
-        let discontinued: Vec<String> = sqlx::query_scalar(&format!(
+    if !active_values.is_empty() {
+        let existing_active: Vec<String> = sqlx::query_scalar(&format!(
             r#"
-            SELECT symbol
-            FROM {table}
+            SELECT {value_col}
+            FROM {schema}.{table}
             WHERE is_deleted = FALSE
-              AND NOT (symbol = ANY($1))
             "#
         ))
-        .bind(&active_symbols)
         .fetch_all(pool)
         .await?;
-
-        for symbol in discontinued {
+        for value in existing_active {
+            if active_values.contains(&value) {
+                continue;
+            }
             sqlx::query(&format!(
-                "UPDATE {table} SET is_deleted = TRUE, deleted_date = NOW() WHERE symbol = $1"
+                "UPDATE {schema}.{table} SET is_deleted = TRUE, deleted_date = NOW() WHERE {value_col} = $1"
             ))
-            .bind(&symbol)
+            .bind(&value)
             .execute(pool)
             .await?;
-            info!("DIMENSION_SOFT_DELETED dim_symbol symbol={symbol}");
+            info!("DIMENSION_SOFT_DELETED {table} {value_col}={value}");
         }
     }
 
     Ok(stats)
 }
 
-async fn insert_simple_dim(
+async fn insert_soft_dim(
     pool: &Pool<Postgres>,
     schema: &str,
     table: &str,
@@ -186,9 +173,10 @@ async fn insert_simple_dim(
 ) -> Result<bool, sqlx::Error> {
     let query = format!(
         r#"
-        INSERT INTO {schema}.{table} ({value_col})
-        VALUES ($1)
-        ON CONFLICT ({value_col}) DO NOTHING
+        INSERT INTO {schema}.{table} ({value_col}, is_deleted, deleted_date)
+        VALUES ($1, FALSE, NULL)
+        ON CONFLICT ({value_col}) DO UPDATE
+        SET is_deleted = FALSE, deleted_date = NULL
         RETURNING {id_col}
         "#
     );
@@ -197,4 +185,16 @@ async fn insert_simple_dim(
         .fetch_optional(pool)
         .await?;
     Ok(inserted.is_some())
+}
+
+fn split_coin_quote(symbols: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut coins = BTreeSet::new();
+    let mut quotes = BTreeSet::new();
+    for symbol in symbols {
+        if let Some((coin, quote)) = parse_coin_quote(symbol) {
+            coins.insert(coin);
+            quotes.insert(quote);
+        }
+    }
+    (coins.into_iter().collect(), quotes.into_iter().collect())
 }

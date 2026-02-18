@@ -65,7 +65,7 @@ pub async fn new_kline(
         .connect(&config.url)
         .await?;
 
-    let kline_table = qualify_table(&schema, "bar__kline");
+    let kline_table = qualify_table(&schema, "fact__kline");
     if let Err(e) = ensure_schema_and_kline_table(&pool, &schema, &kline_table).await {
         warn!(
             "Failed to create/verify kline hypertable (might already exist or not using TimescaleDB): {}",
@@ -170,11 +170,11 @@ async fn persist_kline(
         return;
     };
 
-    let table_name = qualify_table(schema, "bar__kline");
-    let symbol_id = match dim_cache.resolve_symbol(pool, schema, &candle.symbol).await {
+    let table_name = qualify_table(schema, "fact__kline");
+    let (coin_id, quote_id) = match dim_cache.resolve_coin_quote(pool, schema, &candle.symbol).await {
         Ok(v) => v,
         Err(e) => {
-            error!("Failed to resolve symbol dimension for {}: {}", key, e);
+            error!("Failed to resolve coin/quote dimensions for {}: {}", key, e);
             return;
         }
     };
@@ -198,14 +198,15 @@ async fn persist_kline(
 
     let query = format!(
         r#"
-        INSERT INTO {table_name} (time, symbol_id, exchange_id, interval_id, open, high, low, close, volume)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        INSERT INTO {table_name} (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         "#,
     );
 
     let result = sqlx::query(&query)
         .bind(t)
-        .bind(symbol_id)
+        .bind(coin_id)
+        .bind(quote_id)
         .bind(exchange_id)
         .bind(interval_id)
         .bind(candle.open)

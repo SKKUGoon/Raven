@@ -28,7 +28,15 @@ impl SymbolResolver {
             .get(&key)
             .and_then(|m| m.get(&venue_key))
             .cloned()
-            .unwrap_or_else(|| instrument.default_venue_symbol())
+            .unwrap_or_else(|| default_symbol_for_venue(instrument, &venue_key))
+    }
+}
+
+fn default_symbol_for_venue(instrument: &Instrument, venue_wire: &str) -> String {
+    if venue_wire.eq_ignore_ascii_case("DERIBIT") {
+        instrument.deribit_symbol()
+    } else {
+        instrument.binance_symbol()
     }
 }
 

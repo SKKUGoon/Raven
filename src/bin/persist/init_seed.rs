@@ -1,5 +1,6 @@
 use raven::config::Settings;
 use raven::db::timescale::RavenInitSeed;
+use raven::domain::instrument::Instrument;
 use serde::Deserialize;
 use std::collections::BTreeSet;
 
@@ -23,9 +24,14 @@ pub async fn collect_raven_init_seed(settings: &Settings) -> RavenInitSeed {
     let mut exchanges: BTreeSet<String> = BTreeSet::new();
     let mut intervals: BTreeSet<String> = BTreeSet::new();
 
-    for venue_map in settings.routing.symbol_map.values() {
+    for (instrument_key, venue_map) in &settings.routing.symbol_map {
+        if let Ok(instrument) = instrument_key.parse::<Instrument>() {
+            symbols.insert(instrument.binance_symbol());
+            symbols.insert(instrument.deribit_symbol());
+        }
+
         for (venue, sym) in venue_map {
-            let s = sym.trim().to_uppercase();
+            let s = normalize_symbol_for_venue(sym, venue);
             if !s.is_empty() {
                 symbols.insert(s);
             }
@@ -109,4 +115,13 @@ async fn fetch_binance_futures_symbols() -> Option<Vec<String>> {
     out.sort();
     out.dedup();
     Some(out)
+}
+
+fn normalize_symbol_for_venue(symbol: &str, venue: &str) -> String {
+    let t = symbol.trim();
+    if venue.eq_ignore_ascii_case("DERIBIT") {
+        t.to_lowercase()
+    } else {
+        t.to_uppercase()
+    }
 }

@@ -57,15 +57,15 @@ Notes:
 - **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` and `kline_persistence` call `create_hypertable(...)`.
   - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
     - Schema: `timescale.schema` (default: `mart`)
-    - Dimension tables: `mart.dim_symbol`, `mart.dim_exchange`, `mart.dim_interval`
-    - Fact tables: `mart.bar__tick_imbalance`, `mart.bar__volume_imbalance`, `mart.bar__vpin`
+    - Dimension tables: `mart.dim__coin`, `mart.dim__quote`, `mart.dim__exchange`, `mart.dim__interval`
+    - Fact tables: `mart.fact__tick_imbalance`, `mart.fact__volume_imbalance`, `mart.fact__vpin`
   - At startup, `kline_persistence` will attempt (best-effort) to create:
-    - Fact table: `mart.bar__kline`
-  - `dim_symbol` tracks symbol lifecycle with `is_deleted` and nullable `deleted_date` for discontinued symbols.
-  - Fact tables use NOT NULL foreign keys (`symbol_id`, `exchange_id`, `interval_id`) into the dimension tables.
+    - Fact table: `mart.fact__kline`
+  - All dimensions track lifecycle with `is_deleted` and nullable `deleted_date` (soft delete).
+  - Fact tables use NOT NULL foreign keys (`coin_id`, `quote_id`, `exchange_id`, `interval_id`) into the dimension tables.
   - Use `raven_init` to run dimension seeding explicitly; persistence services also run this init step at startup.
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
-  - Reference DDL is also checked into `sql/` (`create_table_bar__tick_imbalance.sql`).
+  - Runtime schema source of truth is `src/db/timescale/schema.rs`.
 
 ### Network
 

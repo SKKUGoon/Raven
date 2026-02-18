@@ -123,7 +123,7 @@ VPIN이 값을 방출하기 전에 워밍업 기간이 필요하다:
 
 ## 영속화
 
-VPIN 버킷은 TimescaleDB의 `mart.bar__vpin` 테이블에 저장된다. `interval` 컬럼에 설정 파라미터가 인코딩되어 식별에 사용된다.
+VPIN 버킷은 TimescaleDB의 `mart.fact__vpin` 테이블에 저장된다. `interval` 컬럼에 설정 파라미터가 인코딩되어 식별에 사용된다.
 
 ## 참고 문헌
 

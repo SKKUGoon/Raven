@@ -35,16 +35,16 @@ The `InfluxWorker` selects upstream by composite key `"VENUE:DATA_TYPE"` (e.g. `
 
 - **Config**: `config::TimescaleConfig` (connection, schema name, default `mart`).
 - **Schema**: `timescale/schema.rs` – creates dimension tables and fact hypertables (`create_hypertable`).
-- **Dimensions**: `dim_symbol`, `dim_exchange`, `dim_interval` (regular PostgreSQL tables).
-- **Symbol lifecycle**: `dim_symbol` supports soft-deletion with `is_deleted` and `deleted_date`.
-- **Fact tables**: `bar__tick_imbalance`, `bar__volume_imbalance`, `bar__vpin`, `bar__kline` with `*_id` foreign keys to dimensions.
+- **Dimensions**: `dim__coin`, `dim__quote`, `dim__exchange`, `dim__interval` (regular PostgreSQL tables).
+- **Soft delete**: all dimensions have `is_deleted` and `deleted_date`.
+- **Fact tables**: `fact__tick_imbalance`, `fact__volume_imbalance`, `fact__vpin`, `fact__kline` with `coin_id`, `quote_id`, `exchange_id`, `interval_id` foreign keys.
 - **Writer path**: `timescale/dim_cache.rs` resolves and caches dimension IDs before fact inserts.
 - **Init path**: `timescale/init.rs` seeds dimensions at startup and logs added/existing/reactivated/soft-deleted symbols.
-- **Reference DDL**: `sql/create_table_bar__*.sql`; keep in sync with code when changing schema.
+- **Schema source of truth**: `src/db/timescale/schema.rs` (runtime-created tables).
 
 ## Conventions
 
 - **Errors**: use `thiserror`; retry transient failures; log and surface permanent failures.
 - **Batching**: prefer batching writes for throughput; respect Influx/Timescale limits.
-- **Schema changes**: update both Rust code and `sql/` DDL; consider migrations if needed for production.
+- **Schema changes**: update Rust schema/writer code; add SQL migration scripts in `sql/` only when you need explicit migration rollout.
 - `raven_init` startup dependency preflight lives in `src/bin/persist/dependency_check.rs`; if DB requirements or port-bearing services change, keep that check logic consistent.

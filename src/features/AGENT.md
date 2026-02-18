@@ -2,7 +2,7 @@
 
 Logic for building **bar** (CANDLE) streams from TRADE (and optionally ORDERBOOK) streams. Used by the binaries in `src/bin/statistics/`.
 
-Time-based candles are sourced from **Binance Klines** (1m) via `binance_futures_klines` and stored in `mart.bar__kline`. TimescaleDB continuous aggregates handle upsampling (5m, 15m, 1h, etc.).
+Time-based candles are sourced from **Binance Klines** (1m) via `binance_futures_klines` and stored in `mart.fact__kline`. TimescaleDB continuous aggregates handle upsampling (5m, 15m, 1h, etc.).
 
 ## Modules
 

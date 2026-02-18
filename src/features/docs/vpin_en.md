@@ -123,7 +123,7 @@ These ranges are approximate and should be calibrated per instrument and market.
 
 ## Persistence
 
-VPIN buckets are persisted to TimescaleDB in the `mart.bar__vpin` table. The `interval` column encodes the config parameters for identification.
+VPIN buckets are persisted to TimescaleDB in the `mart.fact__vpin` table. The `interval` column encodes the config parameters for identification.
 
 ## References
 

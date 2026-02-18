@@ -101,7 +101,7 @@ Each closed bar emits a `Candle` protobuf message:
 
 ## Persistence
 
-TRBS bars are persisted to TimescaleDB in the `mart.bar__tick_imbalance` table (shared with TIBS). The `interval` column (e.g., `trb_small` vs `tib_small`) distinguishes bar types.
+TRBS bars are persisted to TimescaleDB in the `mart.fact__tick_imbalance` table (shared with TIBS). The `interval` column (e.g., `trb_small` vs `tib_small`) distinguishes bar types.
 
 ## Difference from TIBS
 

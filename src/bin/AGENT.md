@@ -46,7 +46,7 @@ Collectors (raw/)
   │                                    (CANDLE: TIBS, TRBS, VIBS, VPIN)
   │
   └──► Kline Persistence ──────────► TimescaleDB
-       (CANDLE from klines, 1m)       (bar__kline)
+       (CANDLE from klines, 1m)       (fact__kline)
 ```
 
 - **Collectors** (raw): connect to exchange WS/REST, parse, expose `MarketData.Subscribe`. Per-symbol collectors require `Control.StartCollection`; all-market streams (`binance_futures_funding`, `binance_futures_liquidations`, `binance_futures_klines`) stream automatically for all symbols.

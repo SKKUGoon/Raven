@@ -104,7 +104,7 @@ VIBS에는 임계값을 거래량 인식으로 만드는 추가 상태 변수 `E
 
 ## 영속화
 
-VIBS 바는 TimescaleDB의 `mart.bar__volume_imbalance` 테이블에 저장된다. `interval` 컬럼으로 small/large 프로필을 구분한다.
+VIBS 바는 TimescaleDB의 `mart.fact__volume_imbalance` 테이블에 저장된다. `interval` 컬럼으로 small/large 프로필을 구분한다.
 
 ## TIBS와의 비교
 
