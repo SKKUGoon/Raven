@@ -40,11 +40,34 @@ The `InfluxWorker` selects upstream by composite key `"VENUE:DATA_TYPE"` (e.g. `
 - **Fact tables**: `fact__tick_imbalance`, `fact__volume_imbalance`, `fact__vpin`, `fact__kline` with `coin_id`, `quote_id`, `exchange_id`, `interval_id` foreign keys.
 - **Writer path**: `timescale/dim_cache.rs` resolves and caches dimension IDs before fact inserts.
 - **Init path**: `timescale/init.rs` seeds dimensions at startup and logs added/existing/reactivated/soft-deleted symbols.
-- **Schema source of truth**: `src/db/timescale/schema.rs` (runtime-created tables).
+- **Schema source of truth**: `sql/timescale_schema.sql` (executed by `src/db/timescale/schema.rs`).
 
 ## Conventions
 
 - **Errors**: use `thiserror`; retry transient failures; log and surface permanent failures.
 - **Batching**: prefer batching writes for throughput; respect Influx/Timescale limits.
-- **Schema changes**: update Rust schema/writer code; add SQL migration scripts in `sql/` only when you need explicit migration rollout.
+- **Schema changes**: update `sql/timescale_schema.sql` and keep writer bindings in sync.
 - `raven_init` startup dependency preflight lives in `src/bin/persist/dependency_check.rs`; if DB requirements or port-bearing services change, keep that check logic consistent.
+
+## Table add/delete checklist
+
+When adding or deleting a Timescale table, keep model/schema/writer aligned in one pass:
+
+1) **Define SQL + writer**
+- Add/update DDL in `sql/timescale_schema.sql` (table, FKs, hypertable, indexes).
+- Add/update corresponding insert SQL in writers (`bars.rs`, `kline.rs`) and keep bind order aligned.
+
+2) **Wire schema creation**
+- Register the new table in `src/db/timescale/schema.rs` so startup creates it (or remove it when deleting).
+- If deleting a table, decide whether to keep backward compatibility (ignore old table) or add explicit drop/migration script.
+
+3) **Wire persistence path**
+- Update writers (`bars.rs`, `kline.rs`, or other worker) to use the new profile for insert SQL and binding order.
+- Ensure `dim_cache.rs` / `init.rs` still provide required dimension IDs.
+
+4) **Update docs and runtime checks**
+- Update `AGENT.md`/`README.md` names and semantics.
+- If startup assumptions changed, update `src/bin/persist/dependency_check.rs`.
+
+5) **Verify**
+- Run `cargo check` (and relevant runtime smoke checks) before finishing.

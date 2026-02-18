@@ -15,7 +15,7 @@ use tonic::Status;
 use tracing::{error, info, warn};
 
 use super::dim_cache::DimCache;
-use super::schema::{ensure_schema_and_kline_table, qualify_table, validate_pg_ident};
+use super::schema::{ensure_schema_and_kline_table, validate_pg_ident};
 
 #[derive(Clone)]
 pub struct TimescaleKlineWorker {
@@ -65,7 +65,7 @@ pub async fn new_kline(
         .connect(&config.url)
         .await?;
 
-    let kline_table = qualify_table(&schema, "fact__kline");
+    let kline_table = format!("{schema}.fact__kline");
     if let Err(e) = ensure_schema_and_kline_table(&pool, &schema, &kline_table).await {
         warn!(
             "Failed to create/verify kline hypertable (might already exist or not using TimescaleDB): {}",
@@ -170,7 +170,6 @@ async fn persist_kline(
         return;
     };
 
-    let table_name = qualify_table(schema, "fact__kline");
     let (coin_id, quote_id) = match dim_cache.resolve_coin_quote(pool, schema, &candle.symbol).await {
         Ok(v) => v,
         Err(e) => {
@@ -196,12 +195,7 @@ async fn persist_kline(
         }
     };
 
-    let query = format!(
-        r#"
-        INSERT INTO {table_name} (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        "#,
-    );
+    let query = insert_sql_kline(schema);
 
     let result = sqlx::query(&query)
         .bind(t)
@@ -220,6 +214,12 @@ async fn persist_kline(
     if let Err(e) = result {
         error!("Failed to insert kline for {}: {}", key, e);
     }
+}
+
+fn insert_sql_kline(schema: &str) -> String {
+    format!(
+        "INSERT INTO {schema}.fact__kline (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+    )
 }
 
 async fn run_kline_persistence_loop(

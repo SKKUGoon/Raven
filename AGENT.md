@@ -193,7 +193,7 @@ ravenctl start
 | `src/` | Library and binary entrypoints; see `src/AGENT.md`. |
 | `src/bin/` | All executables: raw collectors, persist, statistics, ravenctl. |
 | `proto/` | gRPC definitions (`market_data.proto`, `control.proto`). |
-| `sql/` | Optional SQL utilities/migrations (runtime schema is in Rust code). |
+| `sql/` | Timescale schema SQL and optional migration utilities. |
 | `*.toml` | Config (see README); `test.toml` is compiled-in default. |
 
 ## Build & run
@@ -210,5 +210,13 @@ ravenctl start
 - **gRPC**: types live in `crate::proto` (generated from `proto/`). Do not hand-edit generated code.
 - **Tests**: unit tests in modules; integration-style tests in `tests/`; some binaries have `#[cfg(test)]` or dedicated test binaries.
 - **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
+
+### When adding or deleting DB tables
+
+- Define or remove table DDL and insert SQL together (no separate model profile layer currently).
+- Update DDL in `sql/timescale_schema.sql` and keep executor wiring in `src/db/timescale/schema.rs`.
+- Wire corresponding insert/read usage in writers (`src/db/timescale/bars.rs`, `src/db/timescale/kline.rs`, etc.).
+- Keep dimensions/facts naming and FK columns consistent (`dim__*`, `fact__*`).
+- Update docs (`README.md`, `src/db/AGENT.md`) and run `cargo check`.
 
 When editing a subsystem, read the `AGENT.md` in that directory first.

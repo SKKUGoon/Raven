@@ -12,7 +12,7 @@ use tonic::Status;
 use tracing::{error, info, warn};
 
 use super::dim_cache::DimCache;
-use super::schema::{ensure_schema_and_tables, qualify_table, validate_pg_ident};
+use super::schema::{ensure_schema_and_tables, validate_pg_ident};
 
 #[derive(Clone)]
 pub struct TimescaleWorker {
@@ -68,9 +68,9 @@ pub async fn new(
         .connect(&config.url)
         .await?;
 
-    let tib_table = qualify_table(&schema, "fact__tick_imbalance");
-    let vib_table = qualify_table(&schema, "fact__volume_imbalance");
-    let vpin_table = qualify_table(&schema, "fact__vpin");
+    let tib_table = format!("{schema}.fact__tick_imbalance");
+    let vib_table = format!("{schema}.fact__volume_imbalance");
+    let vpin_table = format!("{schema}.fact__vpin");
 
     if let Err(e) = ensure_schema_and_tables(
         &pool,
@@ -150,12 +150,12 @@ async fn persist_candle(
     let time = chrono::DateTime::from_timestamp_millis(candle.timestamp);
 
     if let Some(t) = time {
-        let table_name = if candle.interval.starts_with("vpin") {
-            qualify_table(schema, "fact__vpin")
+        let query = if candle.interval.starts_with("vpin") {
+            insert_sql_vpin(schema)
         } else if candle.interval.starts_with("tib") || candle.interval.starts_with("trb") {
-            qualify_table(schema, "fact__tick_imbalance")
+            insert_sql_tick_imbalance(schema)
         } else if candle.interval.starts_with("vib") {
-            qualify_table(schema, "fact__volume_imbalance")
+            insert_sql_volume_imbalance(schema)
         } else {
             warn!("Unknown candle interval prefix '{}'; skipping persistence", candle.interval);
             return;
@@ -187,13 +187,6 @@ async fn persist_candle(
             }
         };
 
-        let query = format!(
-            r#"
-            INSERT INTO {table_name} (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            "#,
-        );
-
         let result = sqlx::query(&query)
             .bind(t)
             .bind(coin_id)
@@ -216,6 +209,24 @@ async fn persist_candle(
             error!("Failed to insert candle for {}: {}", key, e);
         }
     }
+}
+
+fn insert_sql_tick_imbalance(schema: &str) -> String {
+    format!(
+        "INSERT INTO {schema}.fact__tick_imbalance (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
+    )
+}
+
+fn insert_sql_volume_imbalance(schema: &str) -> String {
+    format!(
+        "INSERT INTO {schema}.fact__volume_imbalance (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
+    )
+}
+
+fn insert_sql_vpin(schema: &str) -> String {
+    format!(
+        "INSERT INTO {schema}.fact__vpin (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume, buy_ticks, sell_ticks, total_ticks, theta) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
+    )
 }
 
 struct PersistenceLoopConfig {

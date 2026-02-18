@@ -65,7 +65,7 @@ Notes:
   - Fact tables use NOT NULL foreign keys (`coin_id`, `quote_id`, `exchange_id`, `interval_id`) into the dimension tables.
   - Use `raven_init` to run dimension seeding explicitly; persistence services also run this init step at startup.
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
-  - Runtime schema source of truth is `src/db/timescale/schema.rs`.
+  - Runtime schema source of truth is `sql/timescale_schema.sql` (executed by `src/db/timescale/schema.rs`).
 
 ### Network
 
