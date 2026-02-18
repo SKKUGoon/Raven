@@ -104,7 +104,7 @@ Raven은 기본적으로 두 가지 TIBS 프로필을 실행한다:
 
 ## 영속화
 
-TIBS 바는 TimescaleDB의 `warehouse.bar__tick_imbalance` 테이블에 저장된다. `interval` 컬럼으로 small/large 프로필과 TIBS/TRBS를 구분한다.
+TIBS 바는 TimescaleDB의 `mart.bar__tick_imbalance` 테이블에 저장된다. `interval` 컬럼으로 small/large 프로필과 TIBS/TRBS를 구분한다.
 
 ## 참고 문헌
 

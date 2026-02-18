@@ -104,7 +104,7 @@ Note: Unlike TIBS where theta is an integer (tick count), VIBS theta is a float 
 
 ## Persistence
 
-VIBS bars are persisted to TimescaleDB in the `warehouse.bar__volume_imbalance` table. The `interval` column distinguishes between small/large profiles.
+VIBS bars are persisted to TimescaleDB in the `mart.bar__volume_imbalance` table. The `interval` column distinguishes between small/large profiles.
 
 ## Comparison with TIBS
 

@@ -48,19 +48,18 @@ To see the topology and exact calls Raven will make:
 
 ### Databases
 
-- **InfluxDB v2.x**: used by `tick_persistence` (writes trades + orderbook snapshots).
-- **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` (writes `bar__time` and `bar__tick_imbalance`).
-- **PostgreSQL + TimescaleDB extension**: used by `kline_persistence` (writes `bar__kline`).
+- **InfluxDB v2.x**: used by `tick_persistence` as the raw data warehouse (writes trades, orderbook, funding rates, liquidations, open interest, options tickers, price index).
+- **PostgreSQL + TimescaleDB extension**: used by `bar_persistence` and `kline_persistence` as the derived data mart (writes bars and klines).
 
 Notes:
 - **InfluxDB** is schema-on-write, but you must provision:
   - `influx.url`, `influx.org`, `influx.bucket`, and a valid `influx.token` with write permissions.
 - **TimescaleDB** expects the **TimescaleDB extension** to be installed/enabled in the target database, because `bar_persistence` and `kline_persistence` call `create_hypertable(...)`.
   - At startup, `bar_persistence` will attempt (best-effort) to create the schema + tables:
-    - Schema: `timescale.schema` (default: `warehouse`)
-    - Tables: `warehouse.bar__time`, `warehouse.bar__tick_imbalance`, `warehouse.bar__volume_imbalance`
+    - Schema: `timescale.schema` (default: `mart`)
+    - Tables: `mart.bar__tick_imbalance`, `mart.bar__volume_imbalance`, `mart.bar__vpin`
   - At startup, `kline_persistence` will attempt (best-effort) to create:
-    - Table: `warehouse.bar__kline`
+    - Table: `mart.bar__kline`
   - The connecting DB user must be allowed to `CREATE SCHEMA`, `CREATE TABLE`, and run `create_hypertable`.
   - Reference DDL is also checked into `sql/` (`create_table_bar__time.sql`, `create_table_bar__tick_imbalance.sql`).
 
@@ -136,7 +135,6 @@ Collectors only connect/subscribe when their streams are started via **Control**
 
 ### Processors (feature makers)
 
-- `raven_timebar` (default `50051`)
 - `raven_tibs` (TIBS; configured via `ServiceSpec` entries `tibs_small` / `tibs_large`)
 - `raven_trbs` (TRBS; configured via `ServiceSpec` entries `trbs_small` / `trbs_large`)
 - `raven_vibs` (VIBS; configured via `ServiceSpec` entries `vibs_small` / `vibs_large`)
@@ -187,7 +185,6 @@ sudo install -m 0755 "${DIR}/binance_spot"      /usr/local/bin/
 sudo install -m 0755 "${DIR}/binance_futures"   /usr/local/bin/
 sudo install -m 0755 "${DIR}/tick_persistence"  /usr/local/bin/
 sudo install -m 0755 "${DIR}/bar_persistence"   /usr/local/bin/
-sudo install -m 0755 "${DIR}/raven_timebar"     /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_tibs"        /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_trbs"        /usr/local/bin/
 sudo install -m 0755 "${DIR}/raven_vibs"        /usr/local/bin/
@@ -267,8 +264,7 @@ What this does (per venue):
 
 1. Starts downstream collections first:
    - `tick_persistence` (TRADE + ORDERBOOK)
-   - `bar_persistence` (CANDLE; subscribes to `raven_timebar` + `raven_tibs_*` + `raven_trbs_*` + `raven_vibs_*`)
-   - `raven_timebar` (CANDLE)
+   - `bar_persistence` (CANDLE; subscribes to `raven_tibs` + `raven_trbs` + `raven_vibs` + `raven_vpin`)
    - `raven_tibs` (CANDLE)
    - `raven_trbs` (CANDLE)
    - `raven_vibs` (CANDLE)
@@ -333,7 +329,7 @@ Control requests use the same concept:
 
 ## Python client example: subscribe to bar (CANDLE) streams
 
-Raven exposes bar/feature streams as `DataType.CANDLE` via the `MarketData.Subscribe` gRPC stream on **feature services** (e.g. `raven_timebar`, `raven_tibs_*`, `raven_trbs_*`, `raven_vibs_*`, `raven_vpin`).
+Raven exposes bar/feature streams as `DataType.CANDLE` via the `MarketData.Subscribe` gRPC stream on **feature services** (e.g. `raven_tibs`, `raven_trbs`, `raven_vibs`, `raven_vpin`).
 
 Important notes:
 
@@ -363,9 +359,9 @@ python -m grpc_tools.protoc \
 ./target/release/ravenctl start --symbol ETH --base USDC --venue BINANCE_SPOT
 ```
 
-### 3) Subscribe to candles from `raven_timebar`
+### 3) Subscribe to candles from a feature service
 
-Save as `python_client/subscribe_timebars.py`:
+Save as `python_client/subscribe_bars.py`:
 
 ```python
 import grpc
@@ -376,24 +372,8 @@ import control_pb2
 import control_pb2_grpc
 
 
-def ensure_timebar_collection_started(timebar_addr: str, symbol: str, venue: str) -> None:
-    """
-    Optional: start the CANDLE stream on the timebar service directly.
-    If you used `ravenctl start ...`, you can skip this.
-    """
-    channel = grpc.insecure_channel(timebar_addr)
-    control = control_pb2_grpc.ControlStub(channel)
-    control.StartCollection(
-        control_pb2.ControlRequest(
-            symbol=symbol,
-            venue=venue,
-            data_type=market_data_pb2.CANDLE,
-        )
-    )
-
-
-def subscribe_candles(timebar_addr: str, symbol: str, venue: str) -> None:
-    channel = grpc.insecure_channel(timebar_addr)
+def subscribe_candles(service_addr: str, symbol: str, venue: str) -> None:
+    channel = grpc.insecure_channel(service_addr)
     md = market_data_pb2_grpc.MarketDataStub(channel)
     req = market_data_pb2.MarketDataRequest(
         symbol=symbol,
@@ -405,7 +385,6 @@ def subscribe_candles(timebar_addr: str, symbol: str, venue: str) -> None:
         if msg.WhichOneof("data") != "candle":
             continue
         c = msg.candle
-        # timestamp is bar open time in millis
         print(
             f"{msg.venue} {c.symbol} interval={c.interval} ts={c.timestamp} "
             f"o={c.open} h={c.high} l={c.low} c={c.close} v={c.volume} ticks={c.total_ticks}"
@@ -413,14 +392,11 @@ def subscribe_candles(timebar_addr: str, symbol: str, venue: str) -> None:
 
 
 if __name__ == "__main__":
-    # Timebar default port in this repo is usually 50051 (see config).
-    timebar_addr = "localhost:50051"
+    # TIBS small default port (see config for other services).
+    service_addr = "localhost:50054"
     symbol = "ETHUSDC"        # venue symbol
     venue = "BINANCE_SPOT"
 
-    # If you already ran `ravenctl start ...`, this is optional.
-    # ensure_timebar_collection_started(timebar_addr, symbol, venue)
-
-    subscribe_candles(timebar_addr, symbol, venue)
+    subscribe_candles(service_addr, symbol, venue)
 ```
 

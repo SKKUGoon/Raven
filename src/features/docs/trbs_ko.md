@@ -101,7 +101,7 @@ TRBS는 편의를 위해 동일한 `TibsConfig` 구조체를 재사용한다. `a
 
 ## 영속화
 
-TRBS 바는 TimescaleDB의 `warehouse.bar__tick_imbalance` 테이블에 저장된다 (TIBS와 공유). `interval` 컬럼 (예: `trb_small` vs `tib_small`)으로 바 유형을 구분한다.
+TRBS 바는 TimescaleDB의 `mart.bar__tick_imbalance` 테이블에 저장된다 (TIBS와 공유). `interval` 컬럼 (예: `trb_small` vs `tib_small`)으로 바 유형을 구분한다.
 
 ## TIBS와의 차이점
 

@@ -56,7 +56,7 @@ pub async fn new(
                 "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `warehouse`",
                 config.schema
             );
-            "warehouse"
+            "mart"
         })
         .to_string();
 

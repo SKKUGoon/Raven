@@ -257,7 +257,7 @@ fn default_port_vibs_large() -> u16 {
 }
 
 fn default_timescale_schema() -> String {
-    "warehouse".to_string()
+    "mart".to_string()
 }
 
 fn default_binance_futures_ws_url() -> String {

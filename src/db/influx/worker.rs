@@ -26,15 +26,20 @@ impl StreamWorker for InfluxWorker {
         let exchange = key.venue.clone().unwrap_or_default();
         let data_type = key.data_type.to_proto();
 
-        // Select upstream
         let upstream_url = if !exchange.is_empty() {
-            self.upstreams.get(&exchange).cloned().unwrap_or_else(|| {
-                tracing::warn!(
-                    "No upstream found for exchange '{}', falling back to default",
-                    exchange
-                );
-                self.default_upstream.clone()
-            })
+            let composite = format!("{}{}", exchange, key.data_type.suffix());
+            self.upstreams
+                .get(&composite)
+                .or_else(|| self.upstreams.get(&exchange))
+                .cloned()
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        "No upstream found for '{}' (tried '{}'), falling back to default",
+                        exchange,
+                        composite,
+                    );
+                    self.default_upstream.clone()
+                })
         } else {
             self.default_upstream.clone()
         };

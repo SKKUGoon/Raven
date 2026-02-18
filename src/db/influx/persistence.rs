@@ -108,75 +108,13 @@ pub(super) async fn run_persistence(
         // Reader loop - purely reads and pushes to channel
         loop {
             match stream.message().await {
-                Ok(Some(msg)) => match msg.data {
-                    Some(market_data_message::Data::Trade(trade)) => {
-                        let timestamp_ns = trade.timestamp.saturating_mul(1_000_000);
-
-                        let mut point_builder = DataPoint::builder("trades")
-                            .tag("symbol", &trade.symbol)
-                            .tag("side", &trade.side)
-                            .field("price", trade.price)
-                            .field("quantity", trade.quantity)
-                            .timestamp(timestamp_ns);
-
-                        if !exchange.is_empty() {
-                            point_builder = point_builder.tag("exchange", &exchange);
-                        }
-
-                        if let Ok(point) = point_builder.build() {
-                            if tx.try_send(point).is_err() {
-                                warn!("Persistence buffer full for {}. Dropping point.", key_clone);
-                            }
+                Ok(Some(msg)) => {
+                    if let Some(point) = msg_to_datapoint(&msg, &exchange) {
+                        if tx.try_send(point).is_err() {
+                            warn!("Persistence buffer full for {}. Dropping point.", key_clone);
                         }
                     }
-                    Some(market_data_message::Data::Orderbook(book)) => {
-                        // Store orderbook snapshot (best bid/ask + derived values).
-                        let timestamp_ns = book.timestamp.saturating_mul(1_000_000);
-
-                        let best_bid = book.bids.first();
-                        let best_ask = book.asks.first();
-
-                        let mut point_builder = DataPoint::builder("orderbook")
-                            .tag("symbol", &book.symbol)
-                            .timestamp(timestamp_ns);
-
-                        if !exchange.is_empty() {
-                            point_builder = point_builder.tag("exchange", &exchange);
-                        }
-
-                        if let Some(bid) = best_bid {
-                            point_builder = point_builder
-                                .field("bid_price", bid.price)
-                                .field("bid_qty", bid.quantity);
-                        }
-
-                        if let Some(ask) = best_ask {
-                            point_builder = point_builder
-                                .field("ask_price", ask.price)
-                                .field("ask_qty", ask.quantity);
-                        }
-
-                        // Calculate spread and mid price if both exist
-                        if let (Some(bid), Some(ask)) = (best_bid, best_ask) {
-                            let spread = ask.price - bid.price;
-                            let mid = (ask.price + bid.price) / 2.0;
-                            point_builder = point_builder
-                                .field("spread", spread)
-                                .field("mid_price", mid);
-
-                            // Calculate simple imbalance (Bid Qty / (Bid Qty + Ask Qty))
-                            let imbalance = bid.quantity / (bid.quantity + ask.quantity);
-                            point_builder = point_builder.field("imbalance", imbalance);
-                        }
-
-                        if let Ok(point) = point_builder.build() {
-                            if tx.try_send(point).is_err() {
-                                warn!("Persistence buffer full for {}. Dropping point.", key_clone);
-                            }
-                        }
-                    }
-                    _ => {}
-                },
+                }
                 Ok(None) => {
                     warn!(
                         "Upstream stream ended for {}. Reconnecting in 2s...",
@@ -195,6 +133,122 @@ pub(super) async fn run_persistence(
                 }
             }
         }
+    }
+}
+
+fn msg_to_datapoint(msg: &crate::proto::MarketDataMessage, exchange: &str) -> Option<DataPoint> {
+    match msg.data.as_ref()? {
+        market_data_message::Data::Trade(trade) => {
+            let ts = trade.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("trades")
+                .tag("symbol", &trade.symbol)
+                .tag("side", &trade.side)
+                .field("price", trade.price)
+                .field("quantity", trade.quantity)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::Orderbook(book) => {
+            let ts = book.timestamp.saturating_mul(1_000_000);
+            let best_bid = book.bids.first();
+            let best_ask = book.asks.first();
+
+            let mut pb = DataPoint::builder("orderbook")
+                .tag("symbol", &book.symbol)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            if let Some(bid) = best_bid {
+                pb = pb.field("bid_price", bid.price).field("bid_qty", bid.quantity);
+            }
+            if let Some(ask) = best_ask {
+                pb = pb.field("ask_price", ask.price).field("ask_qty", ask.quantity);
+            }
+            if let (Some(bid), Some(ask)) = (best_bid, best_ask) {
+                let spread = ask.price - bid.price;
+                let mid = (ask.price + bid.price) / 2.0;
+                let imbalance = bid.quantity / (bid.quantity + ask.quantity);
+                pb = pb
+                    .field("spread", spread)
+                    .field("mid_price", mid)
+                    .field("imbalance", imbalance);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::Funding(f) => {
+            let ts = f.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("funding_rate")
+                .tag("symbol", &f.symbol)
+                .field("rate", f.rate)
+                .field("mark_price", f.mark_price)
+                .field("index_price", f.index_price)
+                .field("next_funding_time", f.next_funding_time)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::Liquidation(l) => {
+            let ts = l.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("liquidation")
+                .tag("symbol", &l.symbol)
+                .tag("side", &l.side)
+                .field("price", l.price)
+                .field("quantity", l.quantity)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::OpenInterest(oi) => {
+            let ts = oi.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("open_interest")
+                .tag("symbol", &oi.symbol)
+                .field("open_interest", oi.open_interest)
+                .field("open_interest_value", oi.open_interest_value)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::OptionsTicker(t) => {
+            let ts = t.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("options_ticker")
+                .tag("symbol", &t.symbol)
+                .field("open_interest", t.open_interest)
+                .field("mark_iv", t.mark_iv)
+                .field("best_bid_price", t.best_bid_price)
+                .field("best_ask_price", t.best_ask_price)
+                .field("mark_price", t.mark_price)
+                .field("underlying_price", t.underlying_price)
+                .field("last_price", t.last_price)
+                .field("bid_iv", t.bid_iv)
+                .field("ask_iv", t.ask_iv)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        market_data_message::Data::PriceIndex(p) => {
+            let ts = p.timestamp.saturating_mul(1_000_000);
+            let mut pb = DataPoint::builder("price_index")
+                .tag("index_name", &p.index_name)
+                .field("price", p.price)
+                .timestamp(ts);
+            if !exchange.is_empty() {
+                pb = pb.tag("exchange", exchange);
+            }
+            pb.build().ok()
+        }
+        _ => None,
     }
 }
 

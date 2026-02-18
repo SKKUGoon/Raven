@@ -33,7 +33,7 @@ batch_interval_ms = 1000
 
 [timescale]
 url = "postgres://postgres:postgres@localhost:5432/postgres"
-schema = "warehouse"
+schema = "mart"
 
 [logging]
 level = "info"

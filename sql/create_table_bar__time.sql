@@ -1,7 +1,7 @@
-CREATE SCHEMA IF NOT EXISTS warehouse;
+CREATE SCHEMA IF NOT EXISTS mart;
 
 -- Table for Time Bars (e.g. 1m)
-CREATE TABLE IF NOT EXISTS warehouse.bar__time (
+CREATE TABLE IF NOT EXISTS mart.bar__time (
     time        TIMESTAMPTZ NOT NULL,
     symbol      TEXT NOT NULL,
     exchange    TEXT NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS warehouse.bar__time (
     UNIQUE (time, symbol, exchange, interval)
 );
 
-SELECT create_hypertable('warehouse.bar__time', 'time', if_not_exists => TRUE);
+SELECT create_hypertable('mart.bar__time', 'time', if_not_exists => TRUE);
 
 CREATE INDEX IF NOT EXISTS bar__time_symbol_exchange_interval_time_idx
-    ON warehouse.bar__time (symbol, exchange, interval, time DESC);
+    ON mart.bar__time (symbol, exchange, interval, time DESC);

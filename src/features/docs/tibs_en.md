@@ -104,7 +104,7 @@ Raven runs TIBS with two profiles by default:
 
 ## Persistence
 
-TIBS bars are persisted to TimescaleDB in the `warehouse.bar__tick_imbalance` table. The `interval` column distinguishes between small/large profiles and TIBS vs TRBS.
+TIBS bars are persisted to TimescaleDB in the `mart.bar__tick_imbalance` table. The `interval` column distinguishes between small/large profiles and TIBS vs TRBS.
 
 ## References
 
