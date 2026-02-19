@@ -1,5 +1,6 @@
 use raven::config::Settings;
 use raven::pipeline::spec::PipelineSpec;
+use raven::proto::DataType;
 use raven::routing::symbol_resolver::SymbolResolver;
 use raven::utils::grpc::wait_for_control_ready;
 use raven::utils::process::{find_binary, running_services, start_all_services_with_settings};
@@ -43,6 +44,56 @@ fn run_raven_init_once() -> Result<(), IoError> {
     Ok(())
 }
 
+fn is_deribit_venue(venue_wire: &str) -> bool {
+    venue_wire.eq_ignore_ascii_case("DERIBIT")
+}
+
+async fn handle_collect_deribit(settings: &Settings) {
+    // Deribit source services are all-market streams in Raven.
+    // Use wildcard to ensure persistence receives all symbols emitted upstream.
+    let deribit_symbol = "*";
+    let venue_wire = "DERIBIT";
+    let steps = [
+        ("tick_persistence", DataType::Ticker as i32),
+        ("tick_persistence", DataType::Trade as i32),
+        ("tick_persistence", DataType::PriceIndex as i32),
+        ("deribit_option", DataType::Ticker as i32),
+        ("deribit_trades", DataType::Trade as i32),
+        ("deribit_index", DataType::PriceIndex as i32),
+    ];
+
+    for (service_id, data_type) in steps {
+        if let Some(addr) = service_addr(settings, service_id) {
+            start_stream(&addr, deribit_symbol, venue_wire, data_type).await;
+            println!("  [+] {service_id} started for {deribit_symbol}");
+        } else {
+            eprintln!("Unknown service id in DERIBIT plan: {service_id}");
+        }
+    }
+}
+
+async fn handle_stop_deribit(settings: &Settings) {
+    let deribit_symbol = "*";
+    let venue_wire = "DERIBIT";
+    let steps = [
+        ("deribit_option", DataType::Ticker as i32),
+        ("deribit_trades", DataType::Trade as i32),
+        ("deribit_index", DataType::PriceIndex as i32),
+        ("tick_persistence", DataType::Ticker as i32),
+        ("tick_persistence", DataType::Trade as i32),
+        ("tick_persistence", DataType::PriceIndex as i32),
+    ];
+
+    for (service_id, data_type) in steps {
+        if let Some(addr) = service_addr(settings, service_id) {
+            stop_stream(&addr, deribit_symbol, venue_wire, data_type).await;
+            println!("  [-] {service_id} stopped for {deribit_symbol}");
+        } else {
+            eprintln!("Unknown service id in DERIBIT plan: {service_id}");
+        }
+    }
+}
+
 pub async fn handle_collect(
     settings: &Settings,
     coin: &str,
@@ -77,6 +128,11 @@ pub async fn handle_collect(
 
     for venue in venues {
         let venue_wire = venue.as_wire();
+        if is_deribit_venue(&venue_wire) {
+            println!("Starting collection pipeline for DERIBIT (venue_symbol=*)...");
+            handle_collect_deribit(settings).await;
+            continue;
+        }
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue),
             None => coin.to_string(),
@@ -157,6 +213,11 @@ pub async fn handle_stop(
 
     for venue_id in venues {
         let venue_wire = venue_id.as_wire();
+        if is_deribit_venue(&venue_wire) {
+            println!("Stopping collection pipeline for DERIBIT (venue_symbol=*)...");
+            handle_stop_deribit(settings).await;
+            continue;
+        }
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue_id),
             None => coin.clone(),

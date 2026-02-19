@@ -1,8 +1,8 @@
-//! Generic Deribit single-channel service: one WebSocket, one data type → Control + MarketData.
+//! Generic Deribit service: one WebSocket, one data type → Control + MarketData.
 //!
 //! Instantiated three times as separate microservices:
-//! - `DeribitTickerService`  (ticker.BTC-OPTION.100ms → OptionsTicker)
-//! - `DeribitTradesService`  (trades.BTC-OPTION.100ms → Trade)
+//! - `DeribitTickerService`  (ticker.<instrument>.100ms channels → OptionsTicker)
+//! - `DeribitTradesService`  (trades.option.BTC.100ms → Trade)
 //! - `DeribitIndexService`   (deribit_price_index.btc_usd → PriceIndex)
 
 use crate::proto::market_data_message::Data;
@@ -32,7 +32,7 @@ const VENUE: &str = VENUE_DERIBIT;
 // Generic service
 // ---------------------------------------------------------------------------
 
-/// A Deribit microservice that subscribes to a single channel and produces one data type.
+/// A Deribit microservice that subscribes to one or more channels and produces one data type.
 #[derive(Clone)]
 pub struct DeribitService {
     name: &'static str,
@@ -45,7 +45,7 @@ impl DeribitService {
     fn new(
         name: &'static str,
         ws_url: String,
-        channel: String,
+        channels: Vec<String>,
         data_type: StreamDataType,
         channel_capacity: usize,
         on_notification: OnNotification,
@@ -58,14 +58,14 @@ impl DeribitService {
             active,
             tx,
         };
-        service.spawn_connection(ws_url, channel, on_notification);
+        service.spawn_connection(ws_url, channels, on_notification);
         service
     }
 
-    fn spawn_connection(&self, ws_url: String, channel: String, on_notification: OnNotification) {
+    fn spawn_connection(&self, ws_url: String, channels: Vec<String>, on_notification: OnNotification) {
         let tx = self.tx.clone();
         tokio::spawn(async move {
-            client::run(ws_url, vec![channel], on_notification, tx).await;
+            client::run(ws_url, channels, on_notification, tx).await;
         });
     }
 
@@ -235,7 +235,11 @@ impl MarketData for DeribitService {
 // ---------------------------------------------------------------------------
 
 /// Options **ticker** service (open interest, IV, mark price, best bid/ask).
-pub fn new_ticker_service(ws_url: String, channel_capacity: usize) -> DeribitService {
+pub fn new_ticker_service(
+    ws_url: String,
+    channels: Vec<String>,
+    channel_capacity: usize,
+) -> DeribitService {
     let handler: OnNotification = Box::new(|channel, data_str| {
         let data: serde_json::Value = match serde_json::from_str(data_str) {
             Ok(v) => v,
@@ -246,7 +250,7 @@ pub fn new_ticker_service(ws_url: String, channel_capacity: usize) -> DeribitSer
     DeribitService::new(
         "DeribitTicker",
         ws_url,
-        client::CHANNEL_TICKER.to_string(),
+        channels,
         StreamDataType::Ticker,
         channel_capacity,
         handler,
@@ -265,7 +269,7 @@ pub fn new_trades_service(ws_url: String, channel_capacity: usize) -> DeribitSer
     DeribitService::new(
         "DeribitTrades",
         ws_url,
-        client::CHANNEL_TRADES.to_string(),
+        vec![client::CHANNEL_TRADES.to_string()],
         StreamDataType::Trade,
         channel_capacity,
         handler,
@@ -286,7 +290,7 @@ pub fn new_index_service(ws_url: String, channel_capacity: usize) -> DeribitServ
     DeribitService::new(
         "DeribitIndex",
         ws_url,
-        client::CHANNEL_PRICE_INDEX.to_string(),
+        vec![client::CHANNEL_PRICE_INDEX.to_string()],
         StreamDataType::PriceIndex,
         channel_capacity,
         handler,

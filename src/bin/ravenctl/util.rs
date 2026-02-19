@@ -24,7 +24,11 @@ pub(super) async fn start_stream(addr: &str, venue_symbol: &str, venue_wire: &st
                 venue: venue_wire.to_string(),
                 data_type,
             };
-            let _ = client.start_collection(req).await;
+            if let Err(e) = client.start_collection(req).await {
+                eprintln!(
+                    "  [-] start_collection failed on {addr} (symbol={venue_symbol}, venue={venue_wire}, data_type={data_type}): {e}"
+                );
+            }
         }
         Err(e) => eprintln!("  [-] Failed to connect to {addr}: {e}"),
     }
@@ -38,7 +42,11 @@ pub(super) async fn stop_stream(addr: &str, venue_symbol: &str, venue_wire: &str
                 venue: venue_wire.to_string(),
                 data_type,
             };
-            let _ = client.stop_collection(req).await;
+            if let Err(e) = client.stop_collection(req).await {
+                eprintln!(
+                    "  [!] stop_collection failed on {addr} (symbol={venue_symbol}, venue={venue_wire}, data_type={data_type}): {e}"
+                );
+            }
         }
         Err(e) => eprintln!("  [!] Failed to connect to {addr}: {e}"),
     }

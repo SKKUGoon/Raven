@@ -17,9 +17,9 @@ port_binance_futures_liquidations = 50004
 port_binance_futures_funding = 50005
 port_binance_futures_oi = 50006
 port_binance_options = 50007
-port_deribit_ticker = 50094
-port_deribit_trades = 50095
-port_deribit_index = 50096
+port_deribit_ticker = 50008
+port_deribit_trades = 50009
+port_deribit_index = 50010
 
 [influx]
 url = "http://localhost:8086"

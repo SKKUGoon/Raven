@@ -27,6 +27,35 @@ pub async fn handle_plan(
 
     for venue in venues {
         let venue_wire = venue.as_wire();
+        if venue_wire.eq_ignore_ascii_case("DERIBIT") {
+            out.push_str("Plan: start pipeline for DERIBIT (venue_symbol=*)\n");
+            for (service_id, label) in [
+                ("tick_persistence", "TICKER"),
+                ("tick_persistence", "TRADE"),
+                ("tick_persistence", "PRICE_INDEX"),
+                ("deribit_option", "TICKER"),
+                ("deribit_trades", "TRADE"),
+                ("deribit_index", "PRICE_INDEX"),
+            ] {
+                if let Some(addr) = service_addr(settings, service_id) {
+                    out.push_str(&format!("  - {service_id} @ {addr}\n"));
+                    out.push_str("    start_collection(symbol=*, venue=DERIBIT, data_type=");
+                    out.push_str(label);
+                    out.push_str(")\n");
+                } else {
+                    out.push_str(&format!(
+                        "  - {service_id} -> ERROR: unknown service id\n"
+                    ));
+                }
+            }
+            let process_services = process_services_for_venue(&venue);
+            out.push_str("  process services in scope:\n");
+            for svc in process_services {
+                out.push_str(&format!("    - {svc}\n"));
+            }
+            out.push('\n');
+            continue;
+        }
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue),
             None => coin.to_string(),

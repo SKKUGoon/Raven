@@ -4,12 +4,13 @@ use crate::proto::market_data_message;
 use crate::proto::MarketDataMessage;
 use crate::source::deribit::constants::{PRODUCER_DERIBIT, VENUE_DERIBIT};
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{self, error::ProtocolError};
 use tonic::Status;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 const SUBSCRIBE_ID: u64 = 1;
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
@@ -17,7 +18,7 @@ const CONNECTION_LIFETIME: Duration = Duration::from_secs(23 * 3600 + 30 * 60);
 
 /// All three Deribit channels for BTC options intelligence.
 pub const CHANNEL_TICKER: &str = "ticker.BTC-OPTION.100ms";
-pub const CHANNEL_TRADES: &str = "trades.BTC-OPTION.100ms";
+pub const CHANNEL_TRADES: &str = "trades.option.BTC.100ms";
 pub const CHANNEL_PRICE_INDEX: &str = "deribit_price_index.btc_usd";
 
 /// Callback: (channel, data_json) -> zero or more data payloads to broadcast.
@@ -58,6 +59,10 @@ pub async fn run(
 
                 let start = std::time::Instant::now();
                 let mut should_reconnect = false;
+                let mut notifications_seen: u64 = 0;
+                let mut emitted_messages: u64 = 0;
+                let mut empty_parse_logs: u8 = 0;
+                let mut no_subscriber_logs: u8 = 0;
 
                 while let Some(msg) = read.next().await {
                     if start.elapsed() >= CONNECTION_LIFETIME {
@@ -73,21 +78,59 @@ pub async fn run(
                             if let Some((channel, data_str)) =
                                 parse_subscription_notification(&text)
                             {
-                                for data in on_notification(channel.as_str(), data_str.as_str()) {
+                                notifications_seen += 1;
+                                let parsed = on_notification(channel.as_str(), data_str.as_str());
+                                if parsed.is_empty() && empty_parse_logs < 5 {
+                                    empty_parse_logs += 1;
+                                    warn!(
+                                        "Deribit: notification parsed to 0 messages for channel={channel}"
+                                    );
+                                }
+                                for data in parsed {
                                     let msg = MarketDataMessage {
                                         venue: VENUE_DERIBIT.to_string(),
                                         producer: PRODUCER_DERIBIT.to_string(),
                                         data: Some(data),
                                     };
+                                    emitted_messages += 1;
                                     if tx.send(Ok(msg)).is_err() {
-                                        return;
+                                        // No active gRPC subscribers yet; keep the WS session alive.
+                                        if no_subscriber_logs < 3 {
+                                            no_subscriber_logs += 1;
+                                            info!(
+                                                "Deribit: dropping message because there are no active subscribers yet"
+                                            );
+                                        }
                                     }
                                 }
+                                if notifications_seen == 1 {
+                                    info!(
+                                        "Deribit: first subscription notification received (channel={channel})"
+                                    );
+                                }
+                                if notifications_seen % 500 == 0 {
+                                    info!(
+                                        "Deribit: notifications_seen={notifications_seen}, emitted_messages={emitted_messages}"
+                                    );
+                                }
+                            } else {
+                                log_control_message(&text);
                             }
                         }
-                        Ok(Message::Ping(_)) => {}
+                        Ok(Message::Ping(payload)) => {
+                            // Keep the connection healthy by replying to server pings.
+                            if let Err(e) = write.send(Message::Pong(payload)).await {
+                                warn!("Deribit: failed to send pong: {e}");
+                                should_reconnect = true;
+                                break;
+                            }
+                        }
                         Err(e) => {
-                            error!("Deribit: WS error: {}", e);
+                            if is_expected_disconnect(&e) {
+                                warn!("Deribit: transient WS disconnect: {e}. Reconnecting...");
+                            } else {
+                                error!("Deribit: WS error: {e}");
+                            }
                             should_reconnect = true;
                             break;
                         }
@@ -104,6 +147,73 @@ pub async fn run(
         }
         tokio::time::sleep(RETRY_INTERVAL).await;
     }
+}
+
+/// Build per-instrument ticker channels for active BTC options.
+///
+/// Deribit currently does not reliably emit wildcard ticker channels for all options, so we
+/// enumerate active instruments and subscribe to `ticker.<instrument>.100ms` for each.
+pub async fn fetch_btc_option_ticker_channels(rest_url: &str) -> Vec<String> {
+    let url = format!(
+        "{}/public/get_instruments?currency=BTC&kind=option&expired=false",
+        rest_url.trim_end_matches('/')
+    );
+    let response = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Deribit: failed to fetch option instruments from REST: {e}");
+            return vec![CHANNEL_TICKER.to_string()];
+        }
+    };
+    let payload = match response.json::<Value>().await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("Deribit: failed to decode get_instruments response: {e}");
+            return vec![CHANNEL_TICKER.to_string()];
+        }
+    };
+    let Some(arr) = payload.get("result").and_then(|v| v.as_array()) else {
+        warn!("Deribit: get_instruments response missing result array");
+        return vec![CHANNEL_TICKER.to_string()];
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for instrument in arr {
+        if let Some(name) = instrument.get("instrument_name").and_then(|v| v.as_str()) {
+            out.push(format!("ticker.{name}.100ms"));
+        }
+    }
+    if out.is_empty() {
+        warn!("Deribit: no active BTC option instruments found");
+        return vec![CHANNEL_TICKER.to_string()];
+    }
+    info!(
+        "Deribit: fetched {} option instruments for ticker subscription",
+        out.len()
+    );
+    out
+}
+
+fn log_control_message(text: &str) {
+    let Ok(v) = serde_json::from_str::<Value>(text) else {
+        return;
+    };
+    if let Some(err) = v.get("error") {
+        error!("Deribit: subscribe/control error response: {}", err);
+        return;
+    }
+    if let (Some(id), Some(result)) = (v.get("id"), v.get("result")) {
+        info!("Deribit: control response id={id}, result={result}");
+    }
+}
+
+fn is_expected_disconnect(err: &tungstenite::Error) -> bool {
+    matches!(
+        err,
+        tungstenite::Error::ConnectionClosed
+            | tungstenite::Error::AlreadyClosed
+            | tungstenite::Error::Protocol(ProtocolError::ResetWithoutClosingHandshake)
+            | tungstenite::Error::Io(_)
+    )
 }
 
 /// Parse JSON-RPC notification: method "subscription", params.channel and params.data (as string).

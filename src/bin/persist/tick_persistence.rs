@@ -4,6 +4,7 @@ mod common;
 use raven::config::Settings;
 use raven::db::influx;
 use raven::service::{RavenService, StreamDataType, StreamKey};
+use raven::utils::service_registry::client_host;
 use std::collections::HashMap;
 
 #[tokio::main]
@@ -18,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    let h = &settings.server.host;
+    let h = client_host(&settings.server.host);
 
     let spot_upstream = format!("http://{}:{}", h, settings.server.port_binance_spot);
     let futures_upstream = format!("http://{}:{}", h, settings.server.port_binance_futures);

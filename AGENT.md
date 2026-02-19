@@ -27,8 +27,8 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
          ▼                     ▼      │      │      │             ▼      ▼      ▼
 ┌─────────────────┐ ┌────────────────┐│      │      │  ┌──────────────┬─────────┬──────────────┐
 │  binance_spot   │ │binance_futures ││      │      │  │deribit_option│ deribit │ deribit_index│
-│  :50001         │ │  :50002        ││      │      │  │  :50094      │ _trades │   :50096     │
-│  WS per-symbol  │ │  WS per-symbol ││      │      │  │  WS single   │ :50095  │  WS single   │
+│  :50001         │ │  :50002        ││      │      │  │  :50008      │ _trades │   :50010     │
+│  WS per-symbol  │ │  WS per-symbol ││      │      │  │  WS single   │ :50009  │  WS single   │
 │ produces:       │ │ produces:      ││      │      │  │ produces:    │produces:│ produces:    │
 │  TRADE ─────────┼─┤  TRADE ────────┼┼───┐  │      │  │  TICKER      │ TRADE   │ PRICE_INDEX  │
 │  ORDERBOOK ─────┼─┤  ORDERBOOK ────┼┴┐  │  │      │  └──────────────┴─────────┴──────────────┘
@@ -117,9 +117,9 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
 | `binance_futures_funding` | 50005 | WS single | `!markPrice@arr@1s` | All symbols (all-market) | FUNDING |
 | `binance_futures_oi` | 50006 | REST poll (5s) | `GET /fapi/v1/openInterest?symbol={sym}` | From `binance_rest.symbols` config | OPEN_INTEREST |
 | `binance_options` | 50007 | REST poll (10s) | `GET /eapi/v1/ticker` | All BTC options (auto-filtered) | TICKER |
-| `deribit_option` | 50094 | WS single (JSON-RPC) | `ticker.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TICKER |
-| `deribit_trades` | 50095 | WS single (JSON-RPC) | `trades.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TRADE |
-| `deribit_index` | 50096 | WS single (JSON-RPC) | `deribit_price_index.btc_usd` | BTC/USD only | PRICE_INDEX |
+| `deribit_option` | 50008 | WS single (JSON-RPC) | `ticker.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TICKER |
+| `deribit_trades` | 50009 | WS single (JSON-RPC) | `trades.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TRADE |
+| `deribit_index` | 50010 | WS single (JSON-RPC) | `deribit_price_index.btc_usd` | BTC/USD only | PRICE_INDEX |
 
 ### Feature makers (derived data)
 
@@ -190,6 +190,10 @@ ravenctl start
 - **Venues**: `BINANCE_SPOT`, `BINANCE_FUTURES`, `BINANCE_OPTIONS`, `DERIBIT`.
 - **Collections** are started by `Control.StartCollection` (symbol, venue, data_type). Most services only stream after a collection is started; exceptions: `binance_futures_klines` (auto-starts all USDT perps), `binance_futures_funding` and `binance_futures_liquidations` (all-market WS, always streaming).
 - **Ports**: each service has a gRPC port (see `config.rs` / TOML); metrics are on **port + 1000**.
+- **Port allocation policy**:
+  - Raw data services: `50001` to `50050`
+  - Statistics services: `50050` to `50090`
+  - Persistence services: `50091` to `50099`
 - **Klines**: 1-minute interval from Binance Futures for all USDT perpetuals. TimescaleDB continuous aggregates handle upsampling to 5m, 15m, 1h, etc.
 
 ## Layout

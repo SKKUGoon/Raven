@@ -298,15 +298,15 @@ fn default_port_binance_options() -> u16 {
 }
 
 fn default_port_deribit_ticker() -> u16 {
-    50094
+    50008
 }
 
 fn default_port_deribit_trades() -> u16 {
-    50095
+    50009
 }
 
 fn default_port_deribit_index() -> u16 {
-    50096
+    50010
 }
 
 fn default_deribit_ws_url() -> String {

@@ -17,8 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.host, settings.server.port_deribit_ticker
     )
     .parse()?;
+    let channels =
+        deribit::client::fetch_btc_option_ticker_channels(&settings.deribit.rest_url).await;
     let svc = deribit::new_ticker_service(
         settings.deribit.ws_url.clone(),
+        channels,
         settings.deribit.channel_capacity,
     );
     let raven = RavenService::new("DeribitTicker", svc.clone());

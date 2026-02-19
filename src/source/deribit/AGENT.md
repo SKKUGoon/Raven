@@ -14,9 +14,9 @@ Three independent microservices for **Deribit** BTC options trading intelligence
 
 | Binary | Channel | DataType | Port (default) | Description |
 |--------|---------|----------|----------------|-------------|
-| `deribit_option` | `ticker.BTC-OPTION.100ms` | TICKER | 50094 | Options ticker: OI, IV, mark, best bid/ask. |
-| `deribit_trades` | `trades.BTC-OPTION.100ms` | TRADE | 50095 | Options trades: every execution. |
-| `deribit_index` | `deribit_price_index.btc_usd` | PRICE_INDEX | 50096 | Underlying BTC index price. |
+| `deribit_option` | `ticker.BTC-OPTION.100ms` | TICKER | 50008 | Options ticker: OI, IV, mark, best bid/ask. |
+| `deribit_trades` | `trades.BTC-OPTION.100ms` | TRADE | 50009 | Options trades: every execution. |
+| `deribit_index` | `deribit_price_index.btc_usd` | PRICE_INDEX | 50010 | Underlying BTC index price. |
 
 Each binary runs its own WebSocket connection and gRPC server. They can be deployed, scaled, and restarted independently.
 
