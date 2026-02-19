@@ -117,8 +117,8 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
 | `binance_futures_funding` | 50005 | WS single | `!markPrice@arr@1s` | All symbols (all-market) | FUNDING |
 | `binance_futures_oi` | 50006 | REST poll (5s) | `GET /fapi/v1/openInterest?symbol={sym}` | From `binance_rest.symbols` config | OPEN_INTEREST |
 | `binance_options` | 50007 | REST poll (10s) | `GET /eapi/v1/ticker` | All BTC options (auto-filtered) | TICKER |
-| `deribit_option` | 50008 | WS single (JSON-RPC) | `ticker.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TICKER |
-| `deribit_trades` | 50009 | WS single (JSON-RPC) | `trades.BTC-OPTION.100ms` | All BTC options (wildcard channel) | TRADE |
+| `deribit_option` | 50008 | WS single (JSON-RPC) | `ticker.<instrument_name>.100ms` (per active instrument) | Active BTC options from `public/get_instruments` | TICKER |
+| `deribit_trades` | 50009 | WS single (JSON-RPC) | `trades.option.BTC.100ms` | All BTC options (kind+currency stream) | TRADE |
 | `deribit_index` | 50010 | WS single (JSON-RPC) | `deribit_price_index.btc_usd` | BTC/USD only | PRICE_INDEX |
 
 ### Feature makers (derived data)
@@ -189,6 +189,7 @@ ravenctl start
 - **Instrument** = base/quote (e.g. ETH/USDC). **Venue symbol** = exchange-specific (e.g. `ETHUSDC`, `1000PEPEUSDT`). Routing and `routing.symbol_map` resolve instrument → venue symbols.
 - **Venues**: `BINANCE_SPOT`, `BINANCE_FUTURES`, `BINANCE_OPTIONS`, `DERIBIT`.
 - **Collections** are started by `Control.StartCollection` (symbol, venue, data_type). Most services only stream after a collection is started; exceptions: `binance_futures_klines` (auto-starts all USDT perps), `binance_futures_funding` and `binance_futures_liquidations` (all-market WS, always streaming).
+- **Deribit collect semantics**: `ravenctl collect --venue DERIBIT` intentionally uses `venue_symbol=*` for TICKER/TRADE/PRICE_INDEX startup to subscribe wildcard streams at service boundaries.
 - **Ports**: each service has a gRPC port (see `config.rs` / TOML); metrics are on **port + 1000**.
 - **Port allocation policy**:
   - Raw data services: `50001` to `50050`
@@ -223,6 +224,19 @@ ravenctl start
 - **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
 - **Argument-heavy construction**: if a function or constructor grows many parameters (or triggers clippy `too_many_arguments` / `type_complexity`), prefer an argument struct with a chainable builder API.
 - **Builder style**: for internal builders in this repository, prefer infallible `.build()` that returns the target type directly and enforces required fields internally (panic with clear `missing <field>` messages if violated).
+
+### Deribit reliability guardrails
+
+- **Use client-reachable upstream hosts**: persistence clients must not connect to `0.0.0.0`; always normalize bind hosts through `utils::service_registry::client_host` (e.g. `127.0.0.1`).
+- **Never terminate WS ingest on zero subscribers**: `broadcast::Sender::send` can fail when no subscribers are attached yet; drop that message and continue the socket loop.
+- **Surface control-plane failures**: `ravenctl` start/stop collection helpers must log gRPC errors, not ignore RPC results.
+- **Validate Deribit subscribe acceptance**: in Deribit logs, `control response ... result=[]` means the channel was not effectively subscribed. Treat this as a misconfiguration and fix channel names/patterns.
+- **Expected startup race**: `tick_persistence` may temporarily log `Failed to connect to upstream http://127.0.0.1:<port>` until raw services come up; this is normal if it converges quickly.
+- **Post-change smoke checklist**:
+  - `deribit_option.log`: non-empty subscribe result and ongoing notifications.
+  - `deribit_trades.log`: `result=["trades.option.BTC.100ms"]`.
+  - `tick_persistence.log`: `*:TICKER#DERIBIT`/`*:TRADE#DERIBIT` streams started and no persistent upstream connect failures.
+  - Influx: `exchange=DERIBIT` visible for `options_ticker`, `trades`, and `price_index`.
 
 ### When adding or deleting DB tables
 
