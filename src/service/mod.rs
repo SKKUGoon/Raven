@@ -13,12 +13,12 @@ use hyper_util::rt::TokioIo;
 use prometheus::{Encoder, TextEncoder};
 use tokio::net::TcpListener;
 
+pub mod spec;
 pub mod stream_key;
 pub mod stream_manager;
-pub mod spec;
+pub use spec::{ImbalanceBarSpec, ServiceSpec};
 pub use stream_key::{StreamDataType, StreamKey};
 pub use stream_manager::{StreamManager, StreamWorker};
-pub use spec::{ImbalanceBarSpec, ServiceSpec};
 
 pub struct RavenService<C> {
     control: C,

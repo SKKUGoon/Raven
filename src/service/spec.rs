@@ -4,8 +4,6 @@ pub struct ImbalanceBarSpec {
     pub initial_p_buy: f64,
     pub alpha_size: f64,
     pub alpha_imbl: f64,
-    pub size_min: Option<f64>,
-    pub size_max: Option<f64>,
     pub size_min_pct: Option<f64>,
     pub size_max_pct: Option<f64>,
 }
@@ -61,14 +59,6 @@ impl ServiceSpec {
             out.push("--alpha-imbl".to_string());
             out.push(cfg.alpha_imbl.to_string());
 
-            if let Some(v) = cfg.size_min {
-                out.push("--size-min".to_string());
-                out.push(v.to_string());
-            }
-            if let Some(v) = cfg.size_max {
-                out.push("--size-max".to_string());
-                out.push(v.to_string());
-            }
             if let Some(v) = cfg.size_min_pct {
                 out.push("--size-min-pct".to_string());
                 out.push(v.to_string());
@@ -91,5 +81,3 @@ pub fn client_host(host: &str) -> &str {
         _ => host,
     }
 }
-
-

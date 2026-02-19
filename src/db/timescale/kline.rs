@@ -14,13 +14,15 @@ use tonic::Request;
 use tonic::Status;
 use tracing::{error, info, warn};
 
-use super::schema::{ensure_schema_and_kline_table, qualify_table, validate_pg_ident};
+use super::dim_cache::DimCache;
+use super::schema::{ensure_schema_and_kline_table, validate_pg_ident};
 
 #[derive(Clone)]
 pub struct TimescaleKlineWorker {
     upstream_url: String,
     schema: String,
     pool: Pool<Postgres>,
+    dim_cache: Arc<DimCache>,
 }
 
 #[tonic::async_trait]
@@ -36,6 +38,7 @@ impl StreamWorker for TimescaleKlineWorker {
             key_str,
             self.schema.clone(),
             self.pool.clone(),
+            self.dim_cache.clone(),
         )
         .await;
     }
@@ -50,10 +53,10 @@ pub async fn new_kline(
     let schema = validate_pg_ident(&config.schema)
         .unwrap_or_else(|| {
             warn!(
-                "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `warehouse`",
+                "Invalid timescale.schema `{}` (must match [A-Za-z_][A-Za-z0-9_]*); falling back to `mart`",
                 config.schema
             );
-            "warehouse"
+            "mart"
         })
         .to_string();
 
@@ -62,7 +65,7 @@ pub async fn new_kline(
         .connect(&config.url)
         .await?;
 
-    let kline_table = qualify_table(&schema, "bar__kline");
+    let kline_table = format!("{schema}.fact__kline");
     if let Err(e) = ensure_schema_and_kline_table(&pool, &schema, &kline_table).await {
         warn!(
             "Failed to create/verify kline hypertable (might already exist or not using TimescaleDB): {}",
@@ -74,6 +77,7 @@ pub async fn new_kline(
         upstream_url,
         schema,
         pool,
+        dim_cache: Arc::new(DimCache::new()),
     };
 
     Ok(StreamManager::new(Arc::new(worker), 10_000, false))
@@ -154,6 +158,7 @@ async fn connect_kline_stream(
 }
 
 async fn persist_kline(
+    dim_cache: &DimCache,
     pool: &Pool<Postgres>,
     schema: &str,
     venue: &str,
@@ -165,19 +170,42 @@ async fn persist_kline(
         return;
     };
 
-    let table_name = qualify_table(schema, "bar__kline");
-    let query = format!(
-        r#"
-        INSERT INTO {table_name} (time, symbol, exchange, interval, open, high, low, close, volume)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        "#,
-    );
+    let (coin_id, quote_id) = match dim_cache
+        .resolve_coin_quote(pool, schema, &candle.symbol)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to resolve coin/quote dimensions for {}: {}", key, e);
+            return;
+        }
+    };
+    let exchange_id = match dim_cache.resolve_exchange(pool, schema, venue).await {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to resolve exchange dimension for {}: {}", key, e);
+            return;
+        }
+    };
+    let interval_id = match dim_cache
+        .resolve_interval(pool, schema, &candle.interval)
+        .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Failed to resolve interval dimension for {}: {}", key, e);
+            return;
+        }
+    };
+
+    let query = insert_sql_kline(schema);
 
     let result = sqlx::query(&query)
         .bind(t)
-        .bind(&candle.symbol)
-        .bind(venue)
-        .bind(&candle.interval)
+        .bind(coin_id)
+        .bind(quote_id)
+        .bind(exchange_id)
+        .bind(interval_id)
         .bind(candle.open)
         .bind(candle.high)
         .bind(candle.low)
@@ -191,6 +219,12 @@ async fn persist_kline(
     }
 }
 
+fn insert_sql_kline(schema: &str) -> String {
+    format!(
+        "INSERT INTO {schema}.fact__kline (time, coin_id, quote_id, exchange_id, interval_id, open, high, low, close, volume) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+    )
+}
+
 async fn run_kline_persistence_loop(
     upstream_url: String,
     symbol: String,
@@ -198,6 +232,7 @@ async fn run_kline_persistence_loop(
     key: String,
     schema: String,
     pool: Pool<Postgres>,
+    dim_cache: Arc<DimCache>,
 ) {
     info!("Kline persistence task started for {}", key);
     let mut stream = connect_kline_stream(&upstream_url, &symbol, &venue, &key).await;
@@ -206,7 +241,7 @@ async fn run_kline_persistence_loop(
         match stream.message().await {
             Ok(Some(m)) => {
                 if let Some(market_data_message::Data::Candle(candle)) = m.data {
-                    persist_kline(&pool, &schema, &venue, &key, candle).await;
+                    persist_kline(&dim_cache, &pool, &schema, &venue, &key, candle).await;
                 }
             }
             Ok(None) => {

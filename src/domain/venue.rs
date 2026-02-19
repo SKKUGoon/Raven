@@ -44,7 +44,9 @@ impl FromStr for VenueId {
 }
 
 pub fn default_venues() -> Vec<VenueId> {
-    vec![VenueId::BinanceSpot, VenueId::BinanceFutures]
+    vec![
+        VenueId::BinanceSpot,
+        VenueId::BinanceFutures,
+        VenueId::Other("DERIBIT".to_string()),
+    ]
 }
-
-

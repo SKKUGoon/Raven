@@ -18,9 +18,23 @@ impl Instrument {
         Self { symbol, quote }
     }
 
-    /// Default venue symbol, historically used by Raven services (e.g. BTCUSDT).
-    pub fn default_venue_symbol(&self) -> String {
+    /// Binance-style venue symbol (e.g. BTCUSDT).
+    pub fn binance_symbol(&self) -> String {
         format!("{}{}", self.symbol, self.quote)
+    }
+
+    /// Deribit-style venue symbol (e.g. btc_usd).
+    pub fn deribit_symbol(&self) -> String {
+        format!(
+            "{}_{}",
+            self.symbol.as_str().to_lowercase(),
+            self.quote.as_str().to_lowercase()
+        )
+    }
+
+    /// Default venue symbol, historically used by Raven services.
+    pub fn default_venue_symbol(&self) -> String {
+        self.binance_symbol()
     }
 
     /// Human-readable canonical form (e.g. BTC/USDT).

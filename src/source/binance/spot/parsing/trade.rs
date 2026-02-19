@@ -1,10 +1,7 @@
 use crate::proto::{market_data_message, Trade};
 use serde_json::Value;
 
-pub(crate) fn parse_binance_trade(
-    json: &str,
-    symbol: &str,
-) -> Option<market_data_message::Data> {
+pub(crate) fn parse_binance_trade(json: &str, symbol: &str) -> Option<market_data_message::Data> {
     let v: Value = serde_json::from_str(json).ok()?;
 
     // {"e":"trade","E":123456789,"s":"BNBBTC","t":12345,"p":"0.001","q":"100","b":88,"a":50,"T":123456785,"m":true,"M":true}

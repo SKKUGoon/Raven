@@ -1,9 +1,11 @@
 #[path = "../common/mod.rs"]
 mod common;
+mod init_seed;
 
 use raven::config::Settings;
 use raven::db::timescale;
 use raven::service::RavenService;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -17,19 +19,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .parse()?;
 
-    // This service connects to aggregators (timebar, tibs)
-    let timebar_upstreams = vec![
-        format!(
-            "http://{}:{}",
-            settings.server.host, settings.server.port_timebar_minutes
-        ),
-        format!(
-            "http://{}:{}",
-            settings.server.host, settings.server.port_timebar_seconds
-        ),
-    ];
-
-    // This service connects to aggregators (timebar, tibs, trbs)
     let tibs_upstreams = vec![
         format!(
             "http://{}:{}",
@@ -65,8 +54,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.host, settings.server.port_vpin
     )];
 
+    let init_seed = init_seed::collect_raven_init_seed(&settings).await;
+    if let Err(e) = timescale::run_raven_init(&settings.timescale, init_seed).await {
+        warn!("Raven init failed before bar persistence startup: {}", e);
+    } else {
+        info!("Raven init completed before bar persistence startup");
+    }
+
     let service_impl = timescale::new(
-        timebar_upstreams,
         tibs_upstreams,
         vibs_upstreams,
         vpin_upstreams,

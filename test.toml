@@ -3,8 +3,6 @@ host = "0.0.0.0"
 port_binance_spot = 50001
 port_binance_futures = 50002
 port_binance_futures_klines = 50003
-port_timebar_minutes = 50051
-port_timebar_seconds = 50052
 port_tibs_large = 50053
 port_tibs_small = 50054
 port_trbs_small = 50055
@@ -15,7 +13,13 @@ port_vpin = 50059
 port_tick_persistence = 50091
 port_bar_persistence = 50092
 port_kline_persistence = 50093
-
+port_binance_futures_liquidations = 50004
+port_binance_futures_funding = 50005
+port_binance_futures_oi = 50006
+port_binance_options = 50007
+port_deribit_ticker = 50008
+port_deribit_trades = 50009
+port_deribit_index = 50010
 
 [influx]
 url = "http://localhost:8086"
@@ -27,7 +31,7 @@ batch_interval_ms = 1000
 
 [timescale]
 url = "postgres://postgres:postgres@localhost:5432/postgres"
-schema = "warehouse"
+schema = "mart"
 
 [logging]
 level = "info"
@@ -43,6 +47,19 @@ venue_exclude = []
 "PEPE/USDT" = { BINANCE_FUTURES = "1000PEPEUSDT" }
 
 [binance_klines]
-interval = "5m"
+interval = "1m"
 shard_size = 50
 connections = 11
+
+[deribit]
+# ws_url = "wss://test.deribit.com/ws/api/v2"  # testnet
+# ws_url = "wss://www.deribit.com/ws/api/v2"   # production (default)
+# channel_capacity = 10000
+
+[binance_rest]
+# futures_rest_url = "https://fapi.binance.com"
+# options_rest_url = "https://eapi.binance.com"
+# funding_poll_secs = 60
+# oi_poll_secs = 5
+# options_poll_secs = 10
+symbols = ["BTCUSDT"]

@@ -406,8 +406,6 @@ async fn run_vpin_aggregation(
                             };
 
                             let out = MarketDataMessage {
-                                // Legacy proto field; prefer `producer` + `venue`.
-                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_vpin".to_string(),
                                 data: Some(market_data_message::Data::Candle(candle)),

@@ -1,4 +1,7 @@
+pub mod funding;
 pub mod klines;
+pub mod liquidation;
+pub mod open_interest;
 pub(crate) mod parsing;
 mod worker;
 

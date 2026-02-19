@@ -1,15 +1,15 @@
 use crate::config::{BinanceKlinesConfig, Settings};
 use crate::proto::{market_data_message, MarketDataMessage};
 use crate::service::{StreamDataType, StreamKey};
-use crate::telemetry::{BINANCE_FUTURES_KLINES_CONNECTIONS, BINANCE_FUTURES_KLINES_PROCESSED};
+use crate::source::ws_sharding::{run_shard, ControlKind, RunShardArgs, ShardCommand};
 use crate::telemetry::binance::{
     BINANCE_FUTURES_KLINES_SHARD_CONNECTIONS, BINANCE_FUTURES_KLINES_SHARD_STREAMS,
 };
-use crate::source::ws_sharding::{ControlKind, RunShardArgs, ShardCommand, run_shard};
+use crate::telemetry::{BINANCE_FUTURES_KLINES_CONNECTIONS, BINANCE_FUTURES_KLINES_PROCESSED};
 use dashmap::DashSet;
 use serde_json::json;
-use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -156,28 +156,30 @@ impl BinanceFuturesKlinesService {
             let refresh_tx = refresh_tx.clone();
 
             tokio::spawn(async move {
-                run_shard(RunShardArgs {
-                    shard_idx,
-                    ws_url,
-                    interval: ws_interval,
-                    initial_symbols,
-                    shard_size,
-                    tx,
-                    cmd_rx,
-                    streams_set,
-                    venue,
-                    producer,
-                    stream_name_for_symbol: build_stream_name,
-                    build_control_message,
-                    handle_text: handle_kline_text,
-                    on_data: Some(on_kline_data),
-                    on_connect: Some(on_kline_shard_connect),
-                    on_disconnect: Some(on_kline_shard_disconnect),
-                    on_streams_seeded: Some(on_kline_shard_streams_seeded),
-                    on_connect_tx: Some(refresh_tx),
-                    connection_lifetime: std::time::Duration::from_secs(23 * 3600 + 30 * 60),
-                    retry_interval: std::time::Duration::from_secs(5),
-                })
+                run_shard(
+                    RunShardArgs::builder()
+                        .shard_idx(shard_idx)
+                        .ws_url(ws_url)
+                        .interval(ws_interval)
+                        .initial_symbols(initial_symbols)
+                        .shard_size(shard_size)
+                        .tx(tx)
+                        .cmd_rx(cmd_rx)
+                        .streams_set(streams_set)
+                        .venue(venue)
+                        .producer(producer)
+                        .stream_name_for_symbol(build_stream_name)
+                        .build_control_message(build_control_message)
+                        .handle_text(handle_kline_text)
+                        .on_data(Some(on_kline_data))
+                        .on_connect(Some(on_kline_shard_connect))
+                        .on_disconnect(Some(on_kline_shard_disconnect))
+                        .on_streams_seeded(Some(on_kline_shard_streams_seeded))
+                        .on_connect_tx(Some(refresh_tx))
+                        .connection_lifetime(std::time::Duration::from_secs(23 * 3600 + 30 * 60))
+                        .retry_interval(std::time::Duration::from_secs(5))
+                        .build(),
+                )
                 .await
             });
         }
@@ -332,7 +334,9 @@ fn handle_kline_text(text: &str) -> Option<market_data_message::Data> {
 
 fn on_kline_data(data: &market_data_message::Data) {
     if let market_data_message::Data::Candle(c) = data {
-        BINANCE_FUTURES_KLINES_PROCESSED.with_label_values(&[&c.symbol]).inc();
+        BINANCE_FUTURES_KLINES_PROCESSED
+            .with_label_values(&[&c.symbol])
+            .inc();
     }
 }
 

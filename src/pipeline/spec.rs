@@ -36,8 +36,6 @@ pub enum NodeId {
     CollectorBinanceFutures,
     TickPersistence,
     BarPersistence,
-    Timebar1m,
-    Timebar1s,
     TibsSmall,
     TibsLarge,
     TrbsSmall,
@@ -54,8 +52,6 @@ impl NodeId {
             NodeId::CollectorBinanceFutures => "collector:binance_futures",
             NodeId::TickPersistence => "tick_persistence",
             NodeId::BarPersistence => "bar_persistence",
-            NodeId::Timebar1m => "timebar_60s",
-            NodeId::Timebar1s => "timebar_1s",
             NodeId::TibsSmall => "tibs_small",
             NodeId::TibsLarge => "tibs_large",
             NodeId::TrbsSmall => "trbs_small",
@@ -72,8 +68,6 @@ impl NodeId {
             NodeId::CollectorBinanceFutures => "binance_futures",
             NodeId::TickPersistence => "tick_persistence",
             NodeId::BarPersistence => "bar_persistence",
-            NodeId::Timebar1m => "timebar_60s",
-            NodeId::Timebar1s => "timebar_1s",
             NodeId::TibsSmall => "tibs_small",
             NodeId::TibsLarge => "tibs_large",
             NodeId::TrbsSmall => "trbs_small",
@@ -133,14 +127,6 @@ impl Default for PipelineSpec {
                 kind: NodeKind::Persistence,
             },
             NodeSpec {
-                id: NodeId::Timebar1m,
-                kind: NodeKind::Aggregator,
-            },
-            NodeSpec {
-                id: NodeId::Timebar1s,
-                kind: NodeKind::Aggregator,
-            },
-            NodeSpec {
                 id: NodeId::TibsSmall,
                 kind: NodeKind::Aggregator,
             },
@@ -189,8 +175,6 @@ impl Default for PipelineSpec {
 
             // Collector -> aggregators
             for agg in [
-                NodeId::Timebar1m,
-                NodeId::Timebar1s,
                 NodeId::TibsSmall,
                 NodeId::TibsLarge,
                 NodeId::TrbsSmall,
@@ -209,8 +193,6 @@ impl Default for PipelineSpec {
 
         // Aggregators -> bar persistence (candle sink)
         for agg in [
-            NodeId::Timebar1m,
-            NodeId::Timebar1s,
             NodeId::TibsSmall,
             NodeId::TibsLarge,
             NodeId::TrbsSmall,

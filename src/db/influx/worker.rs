@@ -1,13 +1,13 @@
 use crate::config::InfluxConfig;
-use crate::proto::{DataType, MarketDataMessage};
-use crate::service::{StreamDataType, StreamKey, StreamManager, StreamWorker};
+use crate::proto::MarketDataMessage;
+use crate::service::{StreamKey, StreamManager, StreamWorker};
 use influxdb2::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tonic::Status;
 
-use super::persistence::run_persistence;
+use super::persistence::PersistenceRunConfig;
 
 #[derive(Clone)]
 pub struct InfluxWorker {
@@ -24,39 +24,39 @@ impl StreamWorker for InfluxWorker {
     async fn run(&self, key: StreamKey, _tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
         let symbol = key.symbol.clone();
         let exchange = key.venue.clone().unwrap_or_default();
-        let data_type = match key.data_type {
-            StreamDataType::Trade => DataType::Trade,
-            StreamDataType::Orderbook => DataType::Orderbook,
-            StreamDataType::Candle => DataType::Candle,
-            StreamDataType::Funding => DataType::Funding,
-            StreamDataType::Unknown(_) => DataType::Unknown,
-        };
+        let data_type = key.data_type.to_proto();
 
-        // Select upstream
         let upstream_url = if !exchange.is_empty() {
-            self.upstreams.get(&exchange).cloned().unwrap_or_else(|| {
-                tracing::warn!(
-                    "No upstream found for exchange '{}', falling back to default",
-                    exchange
-                );
-                self.default_upstream.clone()
-            })
+            let composite = format!("{}{}", exchange, key.data_type.suffix());
+            self.upstreams
+                .get(&composite)
+                .or_else(|| self.upstreams.get(&exchange))
+                .cloned()
+                .unwrap_or_else(|| {
+                    tracing::warn!(
+                        "No upstream found for '{}' (tried '{}'), falling back to default",
+                        exchange,
+                        composite,
+                    );
+                    self.default_upstream.clone()
+                })
         } else {
             self.default_upstream.clone()
         };
 
-        run_persistence(
-            upstream_url,
-            symbol,
-            exchange,
-            key.to_string(),
-            data_type,
-            self.client.clone(),
-            self.bucket.clone(),
-            self.batch_size,
-            self.batch_interval_ms,
-        )
-        .await;
+        PersistenceRunConfig::builder()
+            .upstream_url(upstream_url)
+            .symbol(symbol)
+            .exchange(exchange)
+            .key(key.to_string())
+            .data_type(data_type)
+            .influx_client(self.client.clone())
+            .bucket(self.bucket.clone())
+            .batch_size(self.batch_size)
+            .batch_interval_ms(self.batch_interval_ms)
+            .build()
+            .run()
+            .await;
     }
 }
 

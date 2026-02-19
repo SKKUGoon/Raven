@@ -22,5 +22,3 @@ pub async fn wait_for_control_ready(addr: &str, timeout: Duration) -> bool {
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
 }
-
-

@@ -1,4 +1,5 @@
 use raven::config::Settings;
+use raven::domain::venue::VenueId;
 use raven::pipeline::spec::PipelineSpec;
 use raven::routing::symbol_resolver::SymbolResolver;
 use std::io::{Error as IoError, ErrorKind};
@@ -7,13 +8,13 @@ use super::util::{build_instrument, resolve_venues, service_addr};
 
 pub async fn handle_plan(
     settings: &Settings,
-    symbol: &str,
-    base: &Option<String>,
+    coin: &str,
+    quote: &Option<String>,
     venue: &Option<String>,
     venue_include: &[String],
     venue_exclude: &[String],
 ) -> Result<String, IoError> {
-    let instrument = build_instrument(symbol, base)?;
+    let instrument = build_instrument(coin, quote)?;
     let resolver = SymbolResolver::from_config(&settings.routing);
     let venues = resolve_venues(settings, venue.as_deref(), venue_include, venue_exclude)?;
 
@@ -26,9 +27,38 @@ pub async fn handle_plan(
 
     for venue in venues {
         let venue_wire = venue.as_wire();
+        if venue_wire.eq_ignore_ascii_case("DERIBIT") {
+            out.push_str("Plan: start pipeline for DERIBIT (venue_symbol=*)\n");
+            for (service_id, label) in [
+                ("tick_persistence", "TICKER"),
+                ("tick_persistence", "TRADE"),
+                ("tick_persistence", "PRICE_INDEX"),
+                ("deribit_option", "TICKER"),
+                ("deribit_trades", "TRADE"),
+                ("deribit_index", "PRICE_INDEX"),
+            ] {
+                if let Some(addr) = service_addr(settings, service_id) {
+                    out.push_str(&format!("  - {service_id} @ {addr}\n"));
+                    out.push_str("    start_collection(symbol=*, venue=DERIBIT, data_type=");
+                    out.push_str(label);
+                    out.push_str(")\n");
+                } else {
+                    out.push_str(&format!(
+                        "  - {service_id} -> ERROR: unknown service id\n"
+                    ));
+                }
+            }
+            let process_services = process_services_for_venue(&venue);
+            out.push_str("  process services in scope:\n");
+            for svc in process_services {
+                out.push_str(&format!("    - {svc}\n"));
+            }
+            out.push('\n');
+            continue;
+        }
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue),
-            None => symbol.to_string(),
+            None => coin.to_string(),
         };
 
         out.push_str(&format!(
@@ -36,7 +66,7 @@ pub async fn handle_plan(
             instrument
                 .as_ref()
                 .map(|i| i.to_string())
-                .unwrap_or_else(|| symbol.to_string()),
+                .unwrap_or_else(|| coin.to_string()),
             venue_wire,
             venue_symbol
         ));
@@ -69,10 +99,55 @@ pub async fn handle_plan(
                 ));
             }
         }
+        let process_services = process_services_for_venue(&venue);
+        out.push_str("  process services in scope:\n");
+        for svc in process_services {
+            out.push_str(&format!("    - {svc}\n"));
+        }
         out.push('\n');
     }
 
     Ok(out)
 }
 
-
+fn process_services_for_venue(venue: &VenueId) -> Vec<&'static str> {
+    match venue {
+        VenueId::BinanceSpot => vec![
+            "binance_spot",
+            "tick_persistence",
+            "tibs_small",
+            "tibs_large",
+            "trbs_small",
+            "trbs_large",
+            "vibs_small",
+            "vibs_large",
+            "vpin",
+            "bar_persistence",
+        ],
+        VenueId::BinanceFutures => vec![
+            "binance_futures",
+            "binance_futures_funding",
+            "binance_futures_liquidations",
+            "binance_futures_oi",
+            "tick_persistence",
+            "tibs_small",
+            "tibs_large",
+            "trbs_small",
+            "trbs_large",
+            "vibs_small",
+            "vibs_large",
+            "vpin",
+            "bar_persistence",
+        ],
+        VenueId::Other(v) if v == "BINANCE_OPTIONS" => {
+            vec!["binance_options", "tick_persistence"]
+        }
+        VenueId::Other(v) if v == "DERIBIT" => vec![
+            "deribit_option",
+            "deribit_trades",
+            "deribit_index",
+            "tick_persistence",
+        ],
+        VenueId::Other(_) => vec![],
+    }
+}

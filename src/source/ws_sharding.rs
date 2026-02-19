@@ -19,6 +19,13 @@ pub enum ControlKind {
     Unsubscribe,
 }
 
+type StreamNameForSymbolFn = fn(&str, &str) -> String;
+type BuildControlMessageFn = fn(ControlKind, &[String], u64) -> String;
+type HandleTextFn = fn(&str) -> Option<market_data_message::Data>;
+type OnDataFn = fn(&market_data_message::Data);
+type OnShardEventFn = fn(usize);
+type OnStreamsSeededFn = fn(usize, usize);
+
 pub struct RunShardArgs {
     pub shard_idx: usize,
     pub ws_url: String,
@@ -30,16 +37,179 @@ pub struct RunShardArgs {
     pub streams_set: Arc<dashmap::DashSet<String>>,
     pub venue: String,
     pub producer: String,
-    pub stream_name_for_symbol: fn(&str, &str) -> String,
-    pub build_control_message: fn(ControlKind, &[String], u64) -> String,
-    pub handle_text: fn(&str) -> Option<market_data_message::Data>,
-    pub on_data: Option<fn(&market_data_message::Data)>,
-    pub on_connect: Option<fn(usize)>,
-    pub on_disconnect: Option<fn(usize)>,
-    pub on_streams_seeded: Option<fn(usize, usize)>,
+    pub stream_name_for_symbol: StreamNameForSymbolFn,
+    pub build_control_message: BuildControlMessageFn,
+    pub handle_text: HandleTextFn,
+    pub on_data: Option<OnDataFn>,
+    pub on_connect: Option<OnShardEventFn>,
+    pub on_disconnect: Option<OnShardEventFn>,
+    pub on_streams_seeded: Option<OnStreamsSeededFn>,
     pub on_connect_tx: Option<mpsc::Sender<usize>>,
     pub connection_lifetime: Duration,
     pub retry_interval: Duration,
+}
+
+#[derive(Default)]
+pub struct RunShardArgsBuilder {
+    shard_idx: Option<usize>,
+    ws_url: Option<String>,
+    interval: Option<String>,
+    initial_symbols: Vec<String>,
+    shard_size: Option<usize>,
+    tx: Option<broadcast::Sender<Result<MarketDataMessage, Status>>>,
+    cmd_rx: Option<mpsc::Receiver<ShardCommand>>,
+    streams_set: Option<Arc<dashmap::DashSet<String>>>,
+    venue: Option<String>,
+    producer: Option<String>,
+    stream_name_for_symbol: Option<StreamNameForSymbolFn>,
+    build_control_message: Option<BuildControlMessageFn>,
+    handle_text: Option<HandleTextFn>,
+    on_data: Option<OnDataFn>,
+    on_connect: Option<OnShardEventFn>,
+    on_disconnect: Option<OnShardEventFn>,
+    on_streams_seeded: Option<OnStreamsSeededFn>,
+    on_connect_tx: Option<mpsc::Sender<usize>>,
+    connection_lifetime: Option<Duration>,
+    retry_interval: Option<Duration>,
+}
+
+impl RunShardArgs {
+    pub fn builder() -> RunShardArgsBuilder {
+        RunShardArgsBuilder::default()
+    }
+}
+
+impl RunShardArgsBuilder {
+    pub fn shard_idx(mut self, shard_idx: usize) -> Self {
+        self.shard_idx = Some(shard_idx);
+        self
+    }
+
+    pub fn ws_url(mut self, ws_url: String) -> Self {
+        self.ws_url = Some(ws_url);
+        self
+    }
+
+    pub fn interval(mut self, interval: String) -> Self {
+        self.interval = Some(interval);
+        self
+    }
+
+    pub fn initial_symbols(mut self, initial_symbols: Vec<String>) -> Self {
+        self.initial_symbols = initial_symbols;
+        self
+    }
+
+    pub fn shard_size(mut self, shard_size: usize) -> Self {
+        self.shard_size = Some(shard_size);
+        self
+    }
+
+    pub fn tx(mut self, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) -> Self {
+        self.tx = Some(tx);
+        self
+    }
+
+    pub fn cmd_rx(mut self, cmd_rx: mpsc::Receiver<ShardCommand>) -> Self {
+        self.cmd_rx = Some(cmd_rx);
+        self
+    }
+
+    pub fn streams_set(mut self, streams_set: Arc<dashmap::DashSet<String>>) -> Self {
+        self.streams_set = Some(streams_set);
+        self
+    }
+
+    pub fn venue(mut self, venue: String) -> Self {
+        self.venue = Some(venue);
+        self
+    }
+
+    pub fn producer(mut self, producer: String) -> Self {
+        self.producer = Some(producer);
+        self
+    }
+
+    pub fn stream_name_for_symbol(mut self, stream_name_for_symbol: StreamNameForSymbolFn) -> Self {
+        self.stream_name_for_symbol = Some(stream_name_for_symbol);
+        self
+    }
+
+    pub fn build_control_message(mut self, build_control_message: BuildControlMessageFn) -> Self {
+        self.build_control_message = Some(build_control_message);
+        self
+    }
+
+    pub fn handle_text(mut self, handle_text: HandleTextFn) -> Self {
+        self.handle_text = Some(handle_text);
+        self
+    }
+
+    pub fn on_data(mut self, on_data: Option<OnDataFn>) -> Self {
+        self.on_data = on_data;
+        self
+    }
+
+    pub fn on_connect(mut self, on_connect: Option<OnShardEventFn>) -> Self {
+        self.on_connect = on_connect;
+        self
+    }
+
+    pub fn on_disconnect(mut self, on_disconnect: Option<OnShardEventFn>) -> Self {
+        self.on_disconnect = on_disconnect;
+        self
+    }
+
+    pub fn on_streams_seeded(mut self, on_streams_seeded: Option<OnStreamsSeededFn>) -> Self {
+        self.on_streams_seeded = on_streams_seeded;
+        self
+    }
+
+    pub fn on_connect_tx(mut self, on_connect_tx: Option<mpsc::Sender<usize>>) -> Self {
+        self.on_connect_tx = on_connect_tx;
+        self
+    }
+
+    pub fn connection_lifetime(mut self, connection_lifetime: Duration) -> Self {
+        self.connection_lifetime = Some(connection_lifetime);
+        self
+    }
+
+    pub fn retry_interval(mut self, retry_interval: Duration) -> Self {
+        self.retry_interval = Some(retry_interval);
+        self
+    }
+
+    pub fn build(self) -> RunShardArgs {
+        RunShardArgs {
+            shard_idx: self.shard_idx.expect("missing shard_idx"),
+            ws_url: self.ws_url.expect("missing ws_url"),
+            interval: self.interval.expect("missing interval"),
+            initial_symbols: self.initial_symbols,
+            shard_size: self.shard_size.unwrap_or(1),
+            tx: self.tx.expect("missing tx"),
+            cmd_rx: self.cmd_rx.expect("missing cmd_rx"),
+            streams_set: self.streams_set.expect("missing streams_set"),
+            venue: self.venue.expect("missing venue"),
+            producer: self.producer.expect("missing producer"),
+            stream_name_for_symbol: self
+                .stream_name_for_symbol
+                .expect("missing stream_name_for_symbol"),
+            build_control_message: self
+                .build_control_message
+                .expect("missing build_control_message"),
+            handle_text: self.handle_text.expect("missing handle_text"),
+            on_data: self.on_data,
+            on_connect: self.on_connect,
+            on_disconnect: self.on_disconnect,
+            on_streams_seeded: self.on_streams_seeded,
+            on_connect_tx: self.on_connect_tx,
+            connection_lifetime: self
+                .connection_lifetime
+                .unwrap_or(Duration::from_secs(23 * 3600 + 30 * 60)),
+            retry_interval: self.retry_interval.unwrap_or(Duration::from_secs(5)),
+        }
+    }
 }
 
 pub async fn run_shard(args: RunShardArgs) {
@@ -160,7 +330,6 @@ pub async fn run_shard(args: RunShardArgs) {
                                                 callback(&data);
                                             }
                                             let m = MarketDataMessage {
-                                                exchange: String::new(),
                                                 venue: venue.clone(),
                                                 producer: producer.clone(),
                                                 data: Some(data),
@@ -210,7 +379,7 @@ async fn send_control<W>(
     kind: ControlKind,
     params: &[String],
     next_id: &AtomicU64,
-    build_control_message: fn(ControlKind, &[String], u64) -> String,
+    build_control_message: BuildControlMessageFn,
 ) -> Result<(), tungstenite::Error>
 where
     W: Sink<tokio_tungstenite::tungstenite::Message, Error = tungstenite::Error> + Unpin,

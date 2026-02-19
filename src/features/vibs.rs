@@ -214,7 +214,8 @@ impl VolumeImbalanceState {
             // Update E[T] from realized ticks-per-bar (and clamp).
             let new_size = closed.tick_size as f64;
             self.size_ewma = self.alpha_size * new_size + (1.0 - self.alpha_size) * self.size_ewma;
-            self.size_ewma = Self::bound(self.size_ewma, self.size_boundary.0, self.size_boundary.1);
+            self.size_ewma =
+                Self::bound(self.size_ewma, self.size_boundary.0, self.size_boundary.1);
 
             self.update_threshold();
             return Some(closed);
@@ -222,21 +223,6 @@ impl VolumeImbalanceState {
 
         None
     }
-}
-
-fn bounds_from_config(config: &TibsConfig, initial_size: f64) -> (f64, f64) {
-    // Preferred: percentage bounds relative to initial_size
-    if let (Some(min_pct), Some(max_pct)) = (config.size_min_pct, config.size_max_pct) {
-        let min = initial_size * (1.0 - min_pct);
-        let max = initial_size * (1.0 + max_pct);
-        return (min, max);
-    }
-    // Back-compat: absolute bounds
-    if let (Some(min), Some(max)) = (config.size_min, config.size_max) {
-        return (min, max);
-    }
-    // Sensible default: +/- 10%
-    (initial_size * 0.9, initial_size * 1.1)
 }
 
 #[derive(Clone)]
@@ -248,13 +234,12 @@ pub struct VibsWorker {
 
 #[tonic::async_trait]
 impl StreamWorker for VibsWorker {
-    async fn run(
-        &self,
-        key: StreamKey,
-        tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
-    ) {
+    async fn run(&self, key: StreamKey, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
         let symbol = key.symbol.clone();
-        let venue = key.venue.clone().unwrap_or_else(|| "BINANCE_SPOT".to_string());
+        let venue = key
+            .venue
+            .clone()
+            .unwrap_or_else(|| "BINANCE_SPOT".to_string());
         let interval = self.interval.clone();
 
         // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
@@ -291,7 +276,11 @@ impl StreamWorker for VibsWorker {
 
 pub type VibsService = StreamManager<VibsWorker>;
 
-pub fn new(upstreams: HashMap<String, String>, config: TibsConfig, interval: String) -> VibsService {
+pub fn new(
+    upstreams: HashMap<String, String>,
+    config: TibsConfig,
+    interval: String,
+) -> VibsService {
     let worker = VibsWorker {
         upstreams,
         config,
@@ -320,7 +309,7 @@ async fn run_vib_aggregation(
         config.initial_p_buy,
         config.alpha_size,
         config.alpha_imbl,
-        bounds_from_config(&config, config.initial_size),
+        super::imbalance_bounds_from_config(&config, config.initial_size),
     );
 
     loop {
@@ -361,8 +350,6 @@ async fn run_vib_aggregation(
                         ) {
                             VIBS_GENERATED.with_label_values(&[&output_symbol]).inc();
                             let msg = MarketDataMessage {
-                                // Legacy proto field; prefer `producer` + `venue`.
-                                exchange: String::new(),
                                 venue: venue.clone(),
                                 producer: "raven_vibs".to_string(),
                                 data: Some(market_data_message::Data::Candle(
@@ -370,7 +357,9 @@ async fn run_vib_aggregation(
                                 )),
                             };
                             if tx.send(Ok(msg)).is_err() {
-                                info!("No subscribers for {output_symbol}; ending aggregation task.");
+                                info!(
+                                    "No subscribers for {output_symbol}; ending aggregation task."
+                                );
                                 info!("VIB aggregation task ended for {}", output_symbol);
                                 VIBS_ACTIVE_AGGREGATIONS.dec();
                                 return;
@@ -392,5 +381,3 @@ async fn run_vib_aggregation(
         }
     }
 }
-
-

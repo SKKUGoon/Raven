@@ -72,8 +72,6 @@ impl BinanceWsClient {
                                         if let Some(data) = parser(&text, &symbol) {
                                             metrics_processed.with_label_values(&[&symbol]).inc();
                                             let msg = MarketDataMessage {
-                                                // Legacy proto field; prefer `producer` + `venue`.
-                                                exchange: String::new(),
                                                 venue: self.venue.clone(),
                                                 producer: self.exchange_name.clone(),
                                                 data: Some(data),

@@ -1,4 +1,5 @@
 use sqlx::{Pool, Postgres};
+const TIMESCALE_SCHEMA_SQL: &str = include_str!("../../../sql/timescale_schema.sql");
 
 pub(super) fn validate_pg_ident(s: &str) -> Option<&str> {
     let mut chars = s.chars();
@@ -12,203 +13,50 @@ pub(super) fn validate_pg_ident(s: &str) -> Option<&str> {
     Some(s)
 }
 
-pub(super) fn qualify_table(schema: &str, table: &str) -> String {
-    format!("{schema}.{table}")
+async fn ensure_dimension_tables(pool: &Pool<Postgres>, schema: &str) -> Result<(), sqlx::Error> {
+    execute_timescale_schema_script(pool, schema).await
+}
+
+pub(super) async fn ensure_schema_and_dimensions(
+    pool: &Pool<Postgres>,
+    schema: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
+        .execute(pool)
+        .await?;
+    ensure_dimension_tables(pool, schema).await
 }
 
 pub(super) async fn ensure_schema_and_tables(
     pool: &Pool<Postgres>,
     schema: &str,
-    time_table: &str,
-    tib_table: &str,
-    vib_table: &str,
-    vpin_table: &str,
+    _tib_table: &str,
+    _vib_table: &str,
+    _vpin_table: &str,
 ) -> Result<(), sqlx::Error> {
-    // Postgres drivers generally disallow multiple statements in a single prepared statement,
-    // so keep this strictly one statement per execute().
-    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
-        .execute(pool)
-        .await?;
-
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {tib_table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    // If TimescaleDB isn't installed/enabled, this will error; that's okay.
-    // (Callers treat this as best-effort setup.)
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{tib_table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_tib_symbol_exchange_interval_time_idx ON {tib_table} (symbol, exchange, interval, time DESC);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {vib_table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{vib_table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_vib_symbol_exchange_interval_time_idx ON {vib_table} (symbol, exchange, interval, time DESC);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {vpin_table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{vpin_table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_vpin_symbol_exchange_interval_time_idx ON {vpin_table} (symbol, exchange, interval, time DESC);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {time_table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            buy_ticks   BIGINT NOT NULL DEFAULT 0,
-            sell_ticks  BIGINT NOT NULL DEFAULT 0,
-            total_ticks BIGINT NOT NULL DEFAULT 0,
-            theta       DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{time_table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
-    sqlx::query(&format!(
-        "CREATE INDEX IF NOT EXISTS {schema}_time_symbol_exchange_interval_time_idx ON {time_table} (symbol, exchange, interval, time DESC);"
-    ))
-    .execute(pool)
-    .await?;
-
-    Ok(())
+    ensure_schema_and_dimensions(pool, schema).await
 }
 
 pub(super) async fn ensure_schema_and_kline_table(
     pool: &Pool<Postgres>,
     schema: &str,
-    table: &str,
+    _table: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(&format!("CREATE SCHEMA IF NOT EXISTS {schema};"))
-        .execute(pool)
-        .await?;
+    ensure_schema_and_dimensions(pool, schema).await
+}
 
-    sqlx::query(&format!(
-        r#"
-        CREATE TABLE IF NOT EXISTS {table} (
-            time        TIMESTAMPTZ NOT NULL,
-            symbol      TEXT NOT NULL,
-            exchange    TEXT NOT NULL,
-            interval    TEXT NOT NULL,
-            open        DOUBLE PRECISION NOT NULL,
-            high        DOUBLE PRECISION NOT NULL,
-            low         DOUBLE PRECISION NOT NULL,
-            close       DOUBLE PRECISION NOT NULL,
-            volume      DOUBLE PRECISION NOT NULL,
-            UNIQUE (time, symbol, exchange, interval)
-        );
-        "#
-    ))
-    .execute(pool)
-    .await?;
-
-    // If TimescaleDB isn't installed/enabled, this will error; that's okay.
-    sqlx::query(&format!(
-        "SELECT create_hypertable('{table}', 'time', if_not_exists => TRUE);"
-    ))
-    .execute(pool)
-    .await?;
-
+async fn execute_timescale_schema_script(
+    pool: &Pool<Postgres>,
+    schema: &str,
+) -> Result<(), sqlx::Error> {
+    let rendered = TIMESCALE_SCHEMA_SQL.replace("__SCHEMA__", schema);
+    for raw_stmt in rendered.split(';') {
+        let stmt = raw_stmt.trim();
+        if stmt.is_empty() {
+            continue;
+        }
+        let sql = format!("{stmt};");
+        sqlx::query(&sql).execute(pool).await?;
+    }
     Ok(())
 }
