@@ -6,6 +6,7 @@ Raven is a **modular market-data platform** in Rust. Use this file and per-direc
 
 - `MarketDataMessage.exchange` was removed from `proto/market_data.proto` and reserved. Use `venue` and `producer` instead.
 - TIBS/TRBS/VIBS size bounds are percentage-only (`size_min_pct`, `size_max_pct`). Legacy absolute bounds (`size_min`, `size_max`) were removed.
+- Legacy `timebar_minutes` config/service wiring was removed. Use `binance_futures_klines` (1m CANDLE source) with `kline_persistence` for minute bars.
 
 ## Mental model
 
@@ -205,7 +206,7 @@ ravenctl start
 
 - `cargo build --release` → binaries in `target/release/`.
 - `cargo run --release --bin ravenctl -- start` → start all services.
-- `cargo run --release --bin ravenctl -- start --symbol ETH --base USDC` → start pipeline for that instrument.
+- `cargo run --release --bin ravenctl -- collect --coin ETH --quote USDC` → start pipeline for that instrument.
 - See `README.md` for prerequisites (Rust, InfluxDB v2, PostgreSQL + TimescaleDB), config loading order, and `ravenctl` commands.
 
 ## Conventions
@@ -216,6 +217,8 @@ ravenctl start
 - **v3 proto compatibility**: do not reuse reserved protobuf field numbers/names (notably `MarketDataMessage` field `6` / `exchange`).
 - **Tests**: unit tests in modules; integration-style tests in `tests/`; some binaries have `#[cfg(test)]` or dedicated test binaries.
 - **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
+- **Argument-heavy construction**: if a function or constructor grows many parameters (or triggers clippy `too_many_arguments` / `type_complexity`), prefer an argument struct with a chainable builder API.
+- **Builder style**: for internal builders in this repository, prefer infallible `.build()` that returns the target type directly and enforces required fields internally (panic with clear `missing <field>` messages if violated).
 
 ### When adding or deleting DB tables
 

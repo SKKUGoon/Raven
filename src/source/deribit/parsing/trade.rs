@@ -42,7 +42,10 @@ fn parse_single_trade(channel: &str, data: &Value) -> Option<market_data_message
     let trade_id = data
         .get("trade_id")
         .or_else(|| data.get("tradeId"))
-        .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .and_then(|v| {
+            v.as_u64()
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
         .map(|u| u.to_string())
         .unwrap_or_default();
 

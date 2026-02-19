@@ -5,15 +5,15 @@
 
 use crate::config::BinanceRestConfig;
 use crate::proto::market_data_message::Data;
-use crate::source::binance::control::{list_active_collections, stream_key};
-use crate::source::binance::constants::VENUE_BINANCE_OPTIONS;
-use crate::source::binance::message::new_market_data_message;
-use crate::source::binance::subscribe::filtered_broadcast_stream;
 use crate::proto::{
-    ControlRequest, ControlResponse, ListRequest, ListResponse,
-    MarketDataMessage, MarketDataRequest, OptionsTicker, StopAllRequest, StopAllResponse,
+    ControlRequest, ControlResponse, ListRequest, ListResponse, MarketDataMessage,
+    MarketDataRequest, OptionsTicker, StopAllRequest, StopAllResponse,
 };
 use crate::service::{StreamDataType, StreamKey};
+use crate::source::binance::constants::VENUE_BINANCE_OPTIONS;
+use crate::source::binance::control::{list_active_collections, stream_key};
+use crate::source::binance::message::new_market_data_message;
+use crate::source::binance::subscribe::filtered_broadcast_stream;
 use async_trait::async_trait;
 use dashmap::DashSet;
 use std::sync::Arc;
@@ -203,9 +203,11 @@ impl MarketData for BinanceOptionsService {
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let req = request.into_inner();
         let symbol = req.symbol.trim().to_uppercase();
-        let stream = filtered_broadcast_stream(&self.tx, symbol, |m, sym, wildcard| {
-            matches!(&m.data, Some(Data::OptionsTicker(t)) if wildcard || t.symbol == sym)
-        });
+        let stream = filtered_broadcast_stream(
+            &self.tx,
+            symbol,
+            |m, sym, wildcard| matches!(&m.data, Some(Data::OptionsTicker(t)) if wildcard || t.symbol == sym),
+        );
         Ok(Response::new(stream))
     }
 }

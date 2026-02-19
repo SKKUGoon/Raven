@@ -11,8 +11,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     common::init_logging(&settings);
 
-    let addr =
-        format!("{}:{}", settings.server.host, settings.server.port_binance_futures).parse()?;
+    let addr = format!(
+        "{}:{}",
+        settings.server.host, settings.server.port_binance_futures
+    )
+    .parse()?;
     let service_impl = futures::new();
     let raven = RavenService::new("BinanceFutures", service_impl.clone());
 

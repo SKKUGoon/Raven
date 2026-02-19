@@ -37,7 +37,6 @@ pub struct ServerConfig {
     pub port_bar_persistence: u16,
     #[serde(default = "default_port_kline_persistence")]
     pub port_kline_persistence: u16,
-    pub port_timebar_minutes: u16,
     #[serde(default = "default_port_timebar_seconds")]
     pub port_timebar_seconds: u16,
     #[serde(default = "default_port_vpin")]

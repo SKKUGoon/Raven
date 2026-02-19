@@ -1,9 +1,9 @@
-use super::parsing::{orderbook::parse_binance_spot_orderbook, trade::parse_binance_trade};
-use super::super::BinanceWsClient;
 use super::super::constants::{
     BINANCE_SPOT_STREAM_TRADE, BINANCE_SPOT_WS_URL, BINANCE_STREAM_ORDERBOOK_DEPTH20_100MS,
     VENUE_BINANCE_SPOT,
 };
+use super::super::BinanceWsClient;
+use super::parsing::{orderbook::parse_binance_spot_orderbook, trade::parse_binance_trade};
 use crate::proto::{market_data_message, MarketDataMessage};
 use crate::service::{StreamDataType, StreamKey, StreamManager, StreamWorker};
 use crate::telemetry::{BINANCE_SPOT_CONNECTIONS, BINANCE_SPOT_TRADES};

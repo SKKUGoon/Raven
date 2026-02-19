@@ -5,15 +5,15 @@
 //! Replaces the previous REST polling approach to save API rate limit budget.
 
 use crate::proto::market_data_message::Data;
-use crate::source::binance::constants::VENUE_BINANCE_FUTURES;
-use crate::source::binance::control::{list_active_collections, stream_key};
-use crate::source::binance::message::new_market_data_message;
-use crate::source::binance::subscribe::filtered_broadcast_stream;
 use crate::proto::{
     ControlRequest, ControlResponse, FundingRate, ListRequest, ListResponse, MarketDataMessage,
     MarketDataRequest, StopAllRequest, StopAllResponse,
 };
 use crate::service::{StreamDataType, StreamKey};
+use crate::source::binance::constants::VENUE_BINANCE_FUTURES;
+use crate::source::binance::control::{list_active_collections, stream_key};
+use crate::source::binance::message::new_market_data_message;
+use crate::source::binance::subscribe::filtered_broadcast_stream;
 use async_trait::async_trait;
 use dashmap::DashSet;
 use futures_util::StreamExt;
@@ -43,10 +43,7 @@ impl FundingRateService {
     pub fn new(channel_capacity: usize) -> Self {
         let (tx, _) = broadcast::channel(channel_capacity);
         let active = Arc::new(DashSet::new());
-        let service = Self {
-            active,
-            tx,
-        };
+        let service = Self { active, tx };
         service.spawn_ws();
         service
     }
@@ -63,9 +60,7 @@ impl FundingRateService {
     }
 }
 
-async fn run_mark_price_stream(
-    tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
-) {
+async fn run_mark_price_stream(tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
     loop {
         info!("Binance mark price stream: connecting to {WS_URL}");
         match tokio_tungstenite::connect_async(WS_URL).await {
@@ -125,10 +120,7 @@ fn parse_mark_price_item(v: &serde_json::Value) -> Option<Data> {
         .get("r")
         .and_then(|v| v.as_str()?.parse().ok())
         .unwrap_or(0.0);
-    let next_funding_time = v
-        .get("T")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let next_funding_time = v.get("T").and_then(|v| v.as_i64()).unwrap_or(0);
     let mark_price: f64 = v
         .get("p")
         .and_then(|v| v.as_str()?.parse().ok())
@@ -208,9 +200,11 @@ impl MarketData for FundingRateService {
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let req = request.into_inner();
         let symbol = req.symbol.trim().to_uppercase();
-        let stream = filtered_broadcast_stream(&self.tx, symbol, |m, sym, wildcard| {
-            matches!(&m.data, Some(Data::Funding(f)) if wildcard || f.symbol == sym)
-        });
+        let stream = filtered_broadcast_stream(
+            &self.tx,
+            symbol,
+            |m, sym, wildcard| matches!(&m.data, Some(Data::Funding(f)) if wildcard || f.symbol == sym),
+        );
         Ok(Response::new(stream))
     }
 }

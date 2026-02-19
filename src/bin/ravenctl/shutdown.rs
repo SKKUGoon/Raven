@@ -49,5 +49,3 @@ pub fn resolve_control_host(
         cli_host
     }
 }
-
-

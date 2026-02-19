@@ -170,7 +170,10 @@ async fn persist_kline(
         return;
     };
 
-    let (coin_id, quote_id) = match dim_cache.resolve_coin_quote(pool, schema, &candle.symbol).await {
+    let (coin_id, quote_id) = match dim_cache
+        .resolve_coin_quote(pool, schema, &candle.symbol)
+        .await
+    {
         Ok(v) => v,
         Err(e) => {
             error!("Failed to resolve coin/quote dimensions for {}: {}", key, e);

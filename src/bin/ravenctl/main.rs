@@ -1,8 +1,10 @@
 mod cli;
+mod interactive;
 mod ops;
 
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, GraphScope};
+use interactive::{resolve_pipeline_inputs, PipelineInputResolver};
 use raven::config::Settings;
 use raven::pipeline::render::{self, GraphFormat};
 use raven::pipeline::spec::PipelineSpec;
@@ -24,7 +26,11 @@ struct RavenCtlPersistedConfig {
 
 fn persisted_config_path() -> Option<PathBuf> {
     let home = env::var("HOME").ok()?;
-    Some(PathBuf::from(home).join(".raven").join("ravenctl_config.json"))
+    Some(
+        PathBuf::from(home)
+            .join(".raven")
+            .join("ravenctl_config.json"),
+    )
 }
 
 fn load_persisted_config() -> Option<RavenCtlPersistedConfig> {
@@ -34,9 +40,8 @@ fn load_persisted_config() -> Option<RavenCtlPersistedConfig> {
 }
 
 fn write_persisted_config(cfg: &RavenCtlPersistedConfig) -> Result<PathBuf, std::io::Error> {
-    let path = persisted_config_path().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
-    })?;
+    let path = persisted_config_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -90,14 +95,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // If the user ran `ravenctl setup`, use it automatically (unless env vars already set).
     apply_persisted_env_if_missing();
 
-    // Graph should not require config; it only depends on the compiled-in PipelineSpec.
-    if let Commands::Graph { format } = &cli.command {
-        let spec = PipelineSpec::default();
+    // Graph can render collection topology without config; service topology is best-effort and
+    // falls back to embedded defaults if loading the configured file fails.
+    if let Commands::Graph { format, scope } = &cli.command {
         let fmt = GraphFormat::parse(format).unwrap_or(GraphFormat::Ascii);
-        let s = match fmt {
-            GraphFormat::Ascii => render::render_ascii(&spec),
-            GraphFormat::Dot => render::render_dot(&spec),
+        let pipeline = PipelineSpec::default();
+        let settings = Settings::new().ok();
+        let (show_pipeline, show_services) = match *scope {
+            GraphScope::Pipeline => (true, false),
+            GraphScope::Services => (false, true),
+            GraphScope::All => (true, true),
         };
+        let s = match fmt {
+            GraphFormat::Ascii => render::render_ascii_with_scope(
+                &pipeline,
+                settings.as_ref(),
+                show_pipeline,
+                show_services,
+            ),
+            GraphFormat::Dot => render::render_dot_with_scope(
+                &pipeline,
+                settings.as_ref(),
+                show_pipeline,
+                show_services,
+            ),
+        };
+        if settings.is_none() && matches!(*scope, GraphScope::Services | GraphScope::All) {
+            eprintln!(
+                "Warning: failed to load runtime config; service graph uses embedded default ports."
+            );
+        }
         print!("{s}");
         return Ok(());
     }
@@ -119,14 +146,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Commands::Plan {
-            symbol,
-            base,
+            coin,
+            quote,
             venue,
             venue_include,
             venue_exclude,
+            interactive,
         } => {
-            let s = ops::handle_plan(&settings, symbol, base, venue, venue_include, venue_exclude)
-                .await?;
+            let inputs = resolve_pipeline_inputs(
+                PipelineInputResolver::new(&settings, "plan")
+                    .coin(coin.clone())
+                    .quote(quote.clone())
+                    .venue(venue.clone())
+                    .venue_include(venue_include.clone())
+                    .venue_exclude(venue_exclude.clone())
+                    .interactive(*interactive),
+            )?;
+            let s = ops::handle_plan(
+                &settings,
+                &inputs.coin,
+                &inputs.quote,
+                &inputs.venue,
+                &inputs.venue_include,
+                &inputs.venue_exclude,
+            )
+            .await?;
             print!("{s}");
             return Ok(());
         }
@@ -135,19 +179,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         Commands::Collect {
-            symbol,
-            base,
+            coin,
+            quote,
             venue,
             venue_include,
             venue_exclude,
+            interactive,
             print_graph,
         } => {
             if *print_graph {
                 let spec = PipelineSpec::default();
                 print!("{}", render::render_ascii(&spec));
             }
-            ops::handle_collect(&settings, symbol, base, venue, venue_include, venue_exclude)
-                .await?;
+            let inputs = resolve_pipeline_inputs(
+                PipelineInputResolver::new(&settings, "collect")
+                    .coin(coin.clone())
+                    .quote(quote.clone())
+                    .venue(venue.clone())
+                    .venue_include(venue_include.clone())
+                    .venue_exclude(venue_exclude.clone())
+                    .interactive(*interactive),
+            )?;
+            ops::handle_collect(
+                &settings,
+                &inputs.coin,
+                &inputs.quote,
+                &inputs.venue,
+                &inputs.venue_include,
+                &inputs.venue_exclude,
+            )
+            .await?;
             return Ok(());
         }
         Commands::StopAll => {
@@ -185,13 +246,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Setup { .. } => unreachable!(),
 
         Commands::Stop {
-            symbol,
-            base,
+            coin,
+            quote,
             venue,
             venue_include,
             venue_exclude,
+            interactive,
         } => {
-            ops::handle_stop(&settings, symbol, base, venue, venue_include, venue_exclude).await?;
+            let inputs = resolve_pipeline_inputs(
+                PipelineInputResolver::new(&settings, "stop")
+                    .coin(coin)
+                    .quote(quote)
+                    .venue(venue)
+                    .venue_include(venue_include)
+                    .venue_exclude(venue_exclude)
+                    .interactive(interactive),
+            )?;
+            ops::handle_stop(
+                &settings,
+                inputs.coin,
+                inputs.quote,
+                inputs.venue,
+                inputs.venue_include,
+                inputs.venue_exclude,
+            )
+            .await?;
         }
         Commands::StopAll => {
             let host = ops::resolve_control_host(cli.host, &cli.service, &settings);

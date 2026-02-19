@@ -44,19 +44,19 @@ impl StreamWorker for InfluxWorker {
             self.default_upstream.clone()
         };
 
-        PersistenceRunConfig {
-            upstream_url,
-            symbol,
-            exchange,
-            key: key.to_string(),
-            data_type,
-            influx_client: self.client.clone(),
-            bucket: self.bucket.clone(),
-            batch_size: self.batch_size,
-            batch_interval_ms: self.batch_interval_ms,
-        }
-        .run()
-        .await;
+        PersistenceRunConfig::builder()
+            .upstream_url(upstream_url)
+            .symbol(symbol)
+            .exchange(exchange)
+            .key(key.to_string())
+            .data_type(data_type)
+            .influx_client(self.client.clone())
+            .bucket(self.bucket.clone())
+            .batch_size(self.batch_size)
+            .batch_interval_ms(self.batch_interval_ms)
+            .build()
+            .run()
+            .await;
     }
 }
 

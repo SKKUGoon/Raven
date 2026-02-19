@@ -30,17 +30,19 @@ impl StreamWorker for TimescaleWorker {
         let symbol = key.symbol.clone();
         let venue = key.venue.clone().unwrap_or_default();
 
-        run_multi_persistence(MultiPersistenceArgs {
-            tibs_upstreams: self.tibs_upstreams.clone(),
-            vibs_upstreams: self.vibs_upstreams.clone(),
-            vpin_upstreams: self.vpin_upstreams.clone(),
-            symbol,
-            venue,
-            key: key.to_string(),
-            schema: self.schema.clone(),
-            pool: self.pool.clone(),
-            dim_cache: self.dim_cache.clone(),
-        })
+        run_multi_persistence(
+            MultiPersistenceArgs::builder()
+                .tibs_upstreams(self.tibs_upstreams.clone())
+                .vibs_upstreams(self.vibs_upstreams.clone())
+                .vpin_upstreams(self.vpin_upstreams.clone())
+                .symbol(symbol)
+                .venue(venue)
+                .key(key.to_string())
+                .schema(self.schema.clone())
+                .pool(self.pool.clone())
+                .dim_cache(self.dim_cache.clone())
+                .build(),
+        )
         .await
     }
 }
@@ -72,14 +74,8 @@ pub async fn new(
     let vib_table = format!("{schema}.fact__volume_imbalance");
     let vpin_table = format!("{schema}.fact__vpin");
 
-    if let Err(e) = ensure_schema_and_tables(
-        &pool,
-        &schema,
-        &tib_table,
-        &vib_table,
-        &vpin_table,
-    )
-    .await
+    if let Err(e) =
+        ensure_schema_and_tables(&pool, &schema, &tib_table, &vib_table, &vpin_table).await
     {
         warn!(
             "Failed to create/verify hypertable (might already exist or not using TimescaleDB): {}",
@@ -157,11 +153,16 @@ async fn persist_candle(
         } else if candle.interval.starts_with("vib") {
             insert_sql_volume_imbalance(schema)
         } else {
-            warn!("Unknown candle interval prefix '{}'; skipping persistence", candle.interval);
+            warn!(
+                "Unknown candle interval prefix '{}'; skipping persistence",
+                candle.interval
+            );
             return;
         };
 
-        let (coin_id, quote_id) = match dim_cache.resolve_coin_quote(pool, schema, &candle.symbol).await
+        let (coin_id, quote_id) = match dim_cache
+            .resolve_coin_quote(pool, schema, &candle.symbol)
+            .await
         {
             Ok(v) => v,
             Err(e) => {
@@ -240,7 +241,23 @@ struct PersistenceLoopConfig {
     stream_name: &'static str,
 }
 
+#[derive(Default)]
+struct PersistenceLoopConfigBuilder {
+    upstream_url: Option<String>,
+    symbol: Option<String>,
+    venue: Option<String>,
+    key: Option<String>,
+    schema: Option<String>,
+    pool: Option<Pool<Postgres>>,
+    dim_cache: Option<Arc<DimCache>>,
+    stream_name: Option<&'static str>,
+}
+
 impl PersistenceLoopConfig {
+    fn builder() -> PersistenceLoopConfigBuilder {
+        PersistenceLoopConfigBuilder::default()
+    }
+
     async fn run(self) {
         let Self {
             upstream_url,
@@ -282,6 +299,61 @@ impl PersistenceLoopConfig {
     }
 }
 
+impl PersistenceLoopConfigBuilder {
+    fn upstream_url(mut self, upstream_url: String) -> Self {
+        self.upstream_url = Some(upstream_url);
+        self
+    }
+
+    fn symbol(mut self, symbol: String) -> Self {
+        self.symbol = Some(symbol);
+        self
+    }
+
+    fn venue(mut self, venue: String) -> Self {
+        self.venue = Some(venue);
+        self
+    }
+
+    fn key(mut self, key: String) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    fn schema(mut self, schema: String) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    fn pool(mut self, pool: Pool<Postgres>) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    fn dim_cache(mut self, dim_cache: Arc<DimCache>) -> Self {
+        self.dim_cache = Some(dim_cache);
+        self
+    }
+
+    fn stream_name(mut self, stream_name: &'static str) -> Self {
+        self.stream_name = Some(stream_name);
+        self
+    }
+
+    fn build(self) -> PersistenceLoopConfig {
+        PersistenceLoopConfig {
+            upstream_url: self.upstream_url.expect("missing upstream_url"),
+            symbol: self.symbol.expect("missing symbol"),
+            venue: self.venue.expect("missing venue"),
+            key: self.key.expect("missing key"),
+            schema: self.schema.expect("missing schema"),
+            pool: self.pool.expect("missing pool"),
+            dim_cache: self.dim_cache.expect("missing dim_cache"),
+            stream_name: self.stream_name.expect("missing stream_name"),
+        }
+    }
+}
+
 struct MultiPersistenceArgs {
     tibs_upstreams: Vec<String>,
     vibs_upstreams: Vec<String>,
@@ -292,6 +364,86 @@ struct MultiPersistenceArgs {
     schema: String,
     pool: Pool<Postgres>,
     dim_cache: Arc<DimCache>,
+}
+
+#[derive(Default)]
+struct MultiPersistenceArgsBuilder {
+    tibs_upstreams: Vec<String>,
+    vibs_upstreams: Vec<String>,
+    vpin_upstreams: Vec<String>,
+    symbol: Option<String>,
+    venue: Option<String>,
+    key: Option<String>,
+    schema: Option<String>,
+    pool: Option<Pool<Postgres>>,
+    dim_cache: Option<Arc<DimCache>>,
+}
+
+impl MultiPersistenceArgs {
+    fn builder() -> MultiPersistenceArgsBuilder {
+        MultiPersistenceArgsBuilder::default()
+    }
+}
+
+impl MultiPersistenceArgsBuilder {
+    fn tibs_upstreams(mut self, tibs_upstreams: Vec<String>) -> Self {
+        self.tibs_upstreams = tibs_upstreams;
+        self
+    }
+
+    fn vibs_upstreams(mut self, vibs_upstreams: Vec<String>) -> Self {
+        self.vibs_upstreams = vibs_upstreams;
+        self
+    }
+
+    fn vpin_upstreams(mut self, vpin_upstreams: Vec<String>) -> Self {
+        self.vpin_upstreams = vpin_upstreams;
+        self
+    }
+
+    fn symbol(mut self, symbol: String) -> Self {
+        self.symbol = Some(symbol);
+        self
+    }
+
+    fn venue(mut self, venue: String) -> Self {
+        self.venue = Some(venue);
+        self
+    }
+
+    fn key(mut self, key: String) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    fn schema(mut self, schema: String) -> Self {
+        self.schema = Some(schema);
+        self
+    }
+
+    fn pool(mut self, pool: Pool<Postgres>) -> Self {
+        self.pool = Some(pool);
+        self
+    }
+
+    fn dim_cache(mut self, dim_cache: Arc<DimCache>) -> Self {
+        self.dim_cache = Some(dim_cache);
+        self
+    }
+
+    fn build(self) -> MultiPersistenceArgs {
+        MultiPersistenceArgs {
+            tibs_upstreams: self.tibs_upstreams,
+            vibs_upstreams: self.vibs_upstreams,
+            vpin_upstreams: self.vpin_upstreams,
+            symbol: self.symbol.expect("missing symbol"),
+            venue: self.venue.expect("missing venue"),
+            key: self.key.expect("missing key"),
+            schema: self.schema.expect("missing schema"),
+            pool: self.pool.expect("missing pool"),
+            dim_cache: self.dim_cache.expect("missing dim_cache"),
+        }
+    }
 }
 
 async fn run_multi_persistence(args: MultiPersistenceArgs) {
@@ -323,18 +475,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "Tibs",
         };
         tib_tasks.push(tokio::spawn(async move {
-            PersistenceLoopConfig {
-                upstream_url: upstream,
-                symbol: t_symbol,
-                venue: t_venue,
-                key: t_key,
-                schema: t_schema,
-                pool: t_pool,
-                dim_cache: t_dim,
-                stream_name: label,
-            }
-            .run()
-            .await;
+            PersistenceLoopConfig::builder()
+                .upstream_url(upstream)
+                .symbol(t_symbol)
+                .venue(t_venue)
+                .key(t_key)
+                .schema(t_schema)
+                .pool(t_pool)
+                .dim_cache(t_dim)
+                .stream_name(label)
+                .build()
+                .run()
+                .await;
         }));
     }
 
@@ -353,18 +505,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "Vibs",
         };
         vib_tasks.push(tokio::spawn(async move {
-            PersistenceLoopConfig {
-                upstream_url: upstream,
-                symbol: t_symbol,
-                venue: t_venue,
-                key: t_key,
-                schema: t_schema,
-                pool: t_pool,
-                dim_cache: t_dim,
-                stream_name: label,
-            }
-            .run()
-            .await;
+            PersistenceLoopConfig::builder()
+                .upstream_url(upstream)
+                .symbol(t_symbol)
+                .venue(t_venue)
+                .key(t_key)
+                .schema(t_schema)
+                .pool(t_pool)
+                .dim_cache(t_dim)
+                .stream_name(label)
+                .build()
+                .run()
+                .await;
         }));
     }
 
@@ -381,18 +533,18 @@ async fn run_multi_persistence(args: MultiPersistenceArgs) {
             _ => "VPIN",
         };
         vpin_tasks.push(tokio::spawn(async move {
-            PersistenceLoopConfig {
-                upstream_url: upstream,
-                symbol: t_symbol,
-                venue: t_venue,
-                key: t_key,
-                schema: t_schema,
-                pool: t_pool,
-                dim_cache: t_dim,
-                stream_name: label,
-            }
-            .run()
-            .await;
+            PersistenceLoopConfig::builder()
+                .upstream_url(upstream)
+                .symbol(t_symbol)
+                .venue(t_venue)
+                .key(t_key)
+                .schema(t_schema)
+                .pool(t_pool)
+                .dim_cache(t_dim)
+                .stream_name(label)
+                .build()
+                .run()
+                .await;
         }));
     }
 

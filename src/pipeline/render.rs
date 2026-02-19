@@ -1,4 +1,6 @@
+use crate::config::Settings;
 use crate::pipeline::spec::{NodeId, PipelineSpec, StreamKind};
+use crate::utils::service_registry;
 
 pub enum GraphFormat {
     Ascii,
@@ -48,6 +50,48 @@ pub fn render_ascii(spec: &PipelineSpec) -> String {
     out
 }
 
+fn render_services_ascii(settings: Option<&Settings>) -> String {
+    let mut out = String::new();
+    out.push_str("Service graph (process topology):\n");
+    match settings {
+        Some(s) => {
+            let host = service_registry::client_host(&s.server.host);
+            let services = service_registry::all_services(s);
+            for svc in services {
+                out.push_str(&format!(
+                    "- {} ({}) @ {}\n",
+                    svc.display_name,
+                    svc.id,
+                    svc.addr(host)
+                ));
+            }
+        }
+        None => {
+            out.push_str("- unavailable (settings not loaded)\n");
+        }
+    }
+    out
+}
+
+pub fn render_ascii_with_scope(
+    spec: &PipelineSpec,
+    settings: Option<&Settings>,
+    show_pipeline: bool,
+    show_services: bool,
+) -> String {
+    let mut out = String::new();
+    if show_pipeline {
+        out.push_str(&render_ascii(spec));
+    }
+    if show_services {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&render_services_ascii(settings));
+    }
+    out
+}
+
 pub fn render_dot(spec: &PipelineSpec) -> String {
     let mut out = String::new();
     out.push_str("digraph raven_pipeline {\n");
@@ -76,4 +120,93 @@ pub fn render_dot(spec: &PipelineSpec) -> String {
     out
 }
 
+fn render_services_dot(settings: Option<&Settings>) -> String {
+    let mut out = String::new();
+    out.push_str("digraph raven_services {\n");
+    out.push_str("  rankdir=LR;\n");
+    out.push_str("  node [shape=box, fontname=\"Arial\"];\n");
+    match settings {
+        Some(s) => {
+            let host = service_registry::client_host(&s.server.host);
+            let mut services = service_registry::all_services(s);
+            services.sort_by_key(|svc| svc.id);
+            for svc in services {
+                out.push_str(&format!(
+                    "  \"{}\" [label=\"{}\\n{}\"];\n",
+                    svc.id,
+                    svc.display_name,
+                    svc.addr(host)
+                ));
+            }
+        }
+        None => {
+            out.push_str("  \"services_unavailable\" [label=\"settings not loaded\"];\n");
+        }
+    }
+    out.push_str("}\n");
+    out
+}
 
+pub fn render_dot_with_scope(
+    spec: &PipelineSpec,
+    settings: Option<&Settings>,
+    show_pipeline: bool,
+    show_services: bool,
+) -> String {
+    match (show_pipeline, show_services) {
+        (true, false) => render_dot(spec),
+        (false, true) => render_services_dot(settings),
+        (true, true) => {
+            let mut out = String::new();
+            out.push_str("digraph raven_topology {\n");
+            out.push_str("  rankdir=LR;\n");
+            out.push_str("  node [shape=box, fontname=\"Arial\"];\n");
+
+            out.push_str("  subgraph cluster_pipeline {\n");
+            out.push_str("    label=\"Collection pipeline\";\n");
+            out.push_str("    style=rounded;\n");
+            let mut nodes: Vec<NodeId> = spec.nodes.iter().map(|n| n.id).collect();
+            nodes.sort_by_key(|n| n.label());
+            for n in nodes {
+                out.push_str(&format!("    \"pipeline:{}\";\n", n.label()));
+            }
+            let mut edges = spec.edges.clone();
+            edges.sort_by_key(|e| (e.from.label(), e.to.label(), e.stream.label()));
+            for e in edges {
+                out.push_str(&format!(
+                    "    \"pipeline:{}\" -> \"pipeline:{}\" [label=\"{}\"];\n",
+                    e.from.label(),
+                    e.to.label(),
+                    e.stream.label()
+                ));
+            }
+            out.push_str("  }\n");
+
+            out.push_str("  subgraph cluster_services {\n");
+            out.push_str("    label=\"Service processes\";\n");
+            out.push_str("    style=rounded;\n");
+            match settings {
+                Some(s) => {
+                    let host = service_registry::client_host(&s.server.host);
+                    let mut services = service_registry::all_services(s);
+                    services.sort_by_key(|svc| svc.id);
+                    for svc in services {
+                        out.push_str(&format!(
+                            "    \"service:{}\" [label=\"{}\\n{}\"];\n",
+                            svc.id,
+                            svc.display_name,
+                            svc.addr(host)
+                        ));
+                    }
+                }
+                None => {
+                    out.push_str("    \"service:unavailable\" [label=\"settings not loaded\"];\n");
+                }
+            }
+            out.push_str("  }\n");
+            out.push_str("}\n");
+            out
+        }
+        (false, false) => String::new(),
+    }
+}

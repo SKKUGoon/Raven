@@ -7,16 +7,16 @@ Raven is a modular market-data platform in Rust: **sources** ingest exchange dat
 Your mental model is the right one; here is how it maps to the current code:
 
 - **1) Instrument + venues**
-  - Preferred: **canonical instrument** + quote (base/quote) and let Raven resolve venue symbols:
-    - `ravenctl start --symbol ETH --base USDC` (instrument = `ETH/USDC`)
+  - Preferred: **canonical instrument** + quote (coin/quote) and let Raven resolve venue symbols:
+    - `ravenctl collect --coin ETH --quote USDC` (instrument = `ETH/USDC`)
   - Optional: restrict venues using:
     - `--venue BINANCE_SPOT` (single venue)
     - `--venue-include ...` / `--venue-exclude ...` (multi-venue selection)
   - Venue symbol differences (e.g. spot `PEPEUSDT` vs futures `1000PEPEUSDT`) are handled via `routing.symbol_map`.
 
-- **2) Start = spin up services, then wire, then subscribe**
-  - `ravenctl start` (no symbol) first runs one-shot `raven_init` (dimension seeding), then starts all long-lived service processes.
-  - `ravenctl start --symbol ...` starts infra (if needed) and then starts **collections** in a strict order:
+- **2) Start services, then collect**
+  - `ravenctl start` (no coin input) first runs one-shot `raven_init` (dimension seeding), then starts all long-lived service processes.
+  - `ravenctl collect --coin ...` starts **collections** in a strict order:
     - downstream first (persistence + feature makers)
     - collectors last (this is when exchange WebSocket subscriptions actually happen)
   - **Exception**: `binance_futures_klines` + `kline_persistence` are autonomous. If you run those binaries directly, they immediately start collecting/persisting klines for the configured symbols without `ravenctl start`.
@@ -34,7 +34,7 @@ Your mental model is the right one; here is how it maps to the current code:
 To see the topology and exact calls Raven will make:
 
 - `ravenctl graph` (ASCII) / `ravenctl graph --format dot` (Graphviz)
-- `ravenctl plan --symbol ETH --base USDC ...` (no execution; prints the exact ordered `start_collection(...)` calls)
+- `ravenctl plan --coin ETH --quote USDC ...` (no execution; prints the exact ordered `start_collection(...)` calls)
 
 
 ## Prerequisites
@@ -231,7 +231,7 @@ Run a specific service directly:
 Tip: you can also run from source:
 
 ```bash
-cargo run --release --bin ravenctl -- start --symbol ETH --base USDC
+cargo run --release --bin ravenctl -- collect --coin ETH --quote USDC
 ```
 
 ### Start infrastructure (all services)
@@ -245,26 +245,26 @@ This starts all service processes based on the service registry and writes PID/l
 - `~/.raven/log/*.pid`
 - `~/.raven/log/*.log`
 
-### Start a pipeline (instrument + venues)
+### Collect a pipeline (instrument + venues)
 
 Canonical instrument input:
 
 ```bash
-./target/release/ravenctl start --symbol ETH --base USDC
+./target/release/ravenctl collect --coin ETH --quote USDC
 ```
 
-Venue-symbol input (no base/quote parsing; you are responsible for the venue symbol):
+Venue-symbol input (no coin/quote parsing; you are responsible for the venue symbol):
 
 ```bash
-./target/release/ravenctl start --symbol ETHUSDC --venue BINANCE_SPOT
+./target/release/ravenctl collect --coin ETHUSDC --venue BINANCE_SPOT
 ```
 
 Venue selection:
 
 ```bash
-./target/release/ravenctl start --symbol ETH --base USDC --venue BINANCE_SPOT
-./target/release/ravenctl start --symbol ETH --base USDC --venue-include BINANCE_SPOT --venue-include BINANCE_FUTURES
-./target/release/ravenctl start --symbol ETH --base USDC --venue-exclude BINANCE_FUTURES
+./target/release/ravenctl collect --coin ETH --quote USDC --venue BINANCE_SPOT
+./target/release/ravenctl collect --coin ETH --quote USDC --venue-include BINANCE_SPOT --venue-include BINANCE_FUTURES
+./target/release/ravenctl collect --coin ETH --quote USDC --venue-exclude BINANCE_FUTURES
 ```
 
 What this does (per venue):
@@ -282,14 +282,14 @@ What this does (per venue):
 Tip: to see the exact execution plan without running anything:
 
 ```bash
-./target/release/ravenctl plan --symbol ETH --base USDC --venue-include BINANCE_SPOT
+./target/release/ravenctl plan --coin ETH --quote USDC --venue-include BINANCE_SPOT
 ```
 
 ### Stop a pipeline (instrument + venues)
 
 ```bash
-./target/release/ravenctl stop --symbol ETH --base USDC
-./target/release/ravenctl stop --symbol ETH --base USDC --venue BINANCE_FUTURES
+./target/release/ravenctl stop --coin ETH --quote USDC
+./target/release/ravenctl stop --coin ETH --quote USDC --venue BINANCE_FUTURES
 ```
 
 ### Stop all collections (leave processes running)
@@ -317,6 +317,8 @@ Or shutdown a single service process:
 ./target/release/ravenctl user
 ./target/release/ravenctl graph
 ./target/release/ravenctl graph --format dot
+./target/release/ravenctl graph --scope pipeline
+./target/release/ravenctl graph --scope services
 ```
 
 ## Protocol note (if you write your own client)
@@ -363,7 +365,7 @@ python -m grpc_tools.protoc \
 ### 2) Start a pipeline (example)
 
 ```bash
-./target/release/ravenctl start --symbol ETH --base USDC --venue BINANCE_SPOT
+./target/release/ravenctl collect --coin ETH --quote USDC --venue BINANCE_SPOT
 ```
 
 ### 3) Subscribe to candles from a feature service

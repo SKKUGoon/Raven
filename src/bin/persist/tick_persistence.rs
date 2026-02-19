@@ -30,11 +30,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Data-type-specific upstreams (composite key: "VENUE:DATA_TYPE")
     upstreams.insert(
         "BINANCE_FUTURES:FUNDING".to_string(),
-        format!("http://{}:{}", h, settings.server.port_binance_futures_funding),
+        format!(
+            "http://{}:{}",
+            h, settings.server.port_binance_futures_funding
+        ),
     );
     upstreams.insert(
         "BINANCE_FUTURES:LIQUIDATION".to_string(),
-        format!("http://{}:{}", h, settings.server.port_binance_futures_liquidations),
+        format!(
+            "http://{}:{}",
+            h, settings.server.port_binance_futures_liquidations
+        ),
     );
     upstreams.insert(
         "BINANCE_FUTURES:OPEN_INTEREST".to_string(),

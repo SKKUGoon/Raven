@@ -81,5 +81,3 @@ pub fn client_host(host: &str) -> &str {
         _ => host,
     }
 }
-
-

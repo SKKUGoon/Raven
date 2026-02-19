@@ -1,14 +1,42 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use raven::utils::service_registry;
+
+fn parse_service_id(s: &str) -> Result<String, String> {
+    let normalized = match s {
+        // Backward-compatible alias used by older scripts.
+        "persistence" => "tick_persistence",
+        _ => s,
+    };
+    if service_registry::is_known_service_id(normalized) {
+        return Ok(normalized.to_string());
+    }
+    Err(format!(
+        "unknown service `{s}` (expected one of: {})",
+        service_registry::KNOWN_SERVICE_IDS.join(", ")
+    ))
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+pub enum GraphScope {
+    /// Collection-control pipeline graph only.
+    Pipeline,
+    /// Process topology graph for all known microservices.
+    Services,
+    /// Print both pipeline and process topology.
+    All,
+}
 
 #[derive(Parser)]
 #[command(name = "ravenctl")]
-#[command(about = "Control Raven services", long_about = None)]
+#[command(about = "Control Raven microservices", long_about = None)]
 pub struct Cli {
     #[arg(long, default_value = "http://localhost:50051")]
     pub host: String,
 
-    /// Target service: binance_spot, binance_futures, binance_futures_klines, tick_persistence, bar_persistence, kline_persistence, tibs_small, tibs_large, trbs_small, trbs_large, vibs_small, vibs_large, vpin
-    #[arg(short, long)]
+    /// Target service id for service-scoped commands.
+    ///
+    /// Run `ravenctl graph --scope services` to see the full service map.
+    #[arg(short, long, value_parser = parse_service_id)]
     pub service: Option<String>,
 
     #[command(subcommand)]
@@ -17,7 +45,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Persist the config file location for `ravenctl` (so it can be run from any directory).
+    /// Persist config location for `ravenctl` (used by all commands and spawned services).
     ///
     /// This writes a small file under `~/.raven/` and, on subsequent runs, `ravenctl` will
     /// automatically set `RAVEN_CONFIG_FILE` (and optionally `RUN_MODE`) for itself and any
@@ -31,20 +59,20 @@ pub enum Commands {
         run_mode: Option<String>,
     },
 
-    /// Start services only (no data collection).
+    /// Start all registered microservice processes (no collection-control calls).
     Start,
 
-    /// Print the execution plan for starting a symbol (no execution).
+    /// Print collection-control plan for a coin/venue selection (no execution).
     Plan {
-        /// Symbol or base asset to collect.
+        /// Coin (e.g. ETH) or venue symbol (e.g. ETHUSDC).
         ///
-        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
-        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
-        #[arg(short, long)]
-        symbol: String,
-        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
-        #[arg(long)]
-        base: Option<String>,
+        /// - If you pass `--quote`, this is interpreted as the coin (e.g. ETH).
+        /// - If you omit `--quote`, this is interpreted as a venue symbol (e.g. ETHUSDC).
+        #[arg(short = 'c', long)]
+        coin: Option<String>,
+        /// Quote currency (e.g. USDC). If provided, `--coin` is treated as a coin code.
+        #[arg(short = 'q', long)]
+        quote: Option<String>,
         /// Target venue (single-venue selector).
         #[arg(short, long)]
         venue: Option<String>,
@@ -54,18 +82,21 @@ pub enum Commands {
         /// Optional denylist of venues (may be repeated). Overrides config denylist.
         #[arg(long = "venue-exclude")]
         venue_exclude: Vec<String>,
+        /// Prompt for missing inputs and venue selection.
+        #[arg(short = 'i', long)]
+        interactive: bool,
     },
-    /// Collect data for a symbol (starts services if needed).
+    /// Start collection-control streams for a coin/venue selection.
     Collect {
-        /// Symbol or base asset to collect.
+        /// Coin (e.g. ETH) or venue symbol (e.g. ETHUSDC).
         ///
-        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
-        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
-        #[arg(short, long)]
-        symbol: String,
-        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
-        #[arg(long)]
-        base: Option<String>,
+        /// - If you pass `--quote`, this is interpreted as the coin (e.g. ETH).
+        /// - If you omit `--quote`, this is interpreted as a venue symbol (e.g. ETHUSDC).
+        #[arg(short = 'c', long)]
+        coin: Option<String>,
+        /// Quote currency (e.g. USDC). If provided, `--coin` is treated as a coin code.
+        #[arg(short = 'q', long)]
+        quote: Option<String>,
         /// Target venue (single-venue selector).
         #[arg(short, long)]
         venue: Option<String>,
@@ -75,21 +106,24 @@ pub enum Commands {
         /// Optional denylist of venues (may be repeated). Overrides config denylist.
         #[arg(long = "venue-exclude")]
         venue_exclude: Vec<String>,
+        /// Prompt for missing inputs and venue selection.
+        #[arg(short = 'i', long)]
+        interactive: bool,
         /// Print the pipeline graph before executing.
         #[arg(long)]
         print_graph: bool,
     },
-    /// Stop data collection for a symbol
+    /// Stop collection-control streams for a coin/venue selection.
     Stop {
-        /// Symbol or base asset to stop.
+        /// Coin (e.g. ETH) or venue symbol (e.g. ETHUSDC).
         ///
-        /// - If you pass `--base`, this is interpreted as the base asset (e.g. ETH).
-        /// - If you omit `--base`, this is interpreted as a venue symbol (e.g. ETHUSDC).
-        #[arg(short, long)]
-        symbol: String,
-        /// Quote / base currency (e.g. USDC). If provided, `--symbol` is treated as the base asset.
-        #[arg(long)]
-        base: Option<String>,
+        /// - If you pass `--quote`, this is interpreted as the coin (e.g. ETH).
+        /// - If you omit `--quote`, this is interpreted as a venue symbol (e.g. ETHUSDC).
+        #[arg(short = 'c', long)]
+        coin: Option<String>,
+        /// Quote currency (e.g. USDC). If provided, `--coin` is treated as a coin code.
+        #[arg(short = 'q', long)]
+        quote: Option<String>,
         /// Target venue (single-venue selector).
         #[arg(short, long)]
         venue: Option<String>,
@@ -99,22 +133,28 @@ pub enum Commands {
         /// Optional denylist of venues (may be repeated). Overrides config denylist.
         #[arg(long = "venue-exclude")]
         venue_exclude: Vec<String>,
+        /// Prompt for missing inputs and venue selection.
+        #[arg(short = 'i', long)]
+        interactive: bool,
     },
-    /// Stop all data collections (all services, unless --service is set)
+    /// Stop all collections across services (or only --service).
     StopAll,
-    /// Shutdown Raven services (all services, unless --service is set)
+    /// Shutdown service processes (all services, or only --service).
     Shutdown,
-    /// List active collections (excluding klines)
+    /// List active collections across services (or only --service).
     List,
-    /// Check status of all services
+    /// Check runtime status of all registered services.
     Status,
     /// Show service users/subscriptions tree
     User,
 
-    /// Print the pipeline graph (topology), optionally as DOT for Graphviz.
+    /// Print graph topology (collection pipeline and/or service processes).
     Graph {
         /// Output format: ascii | dot
         #[arg(long, default_value = "ascii")]
         format: String,
+        /// Graph scope: pipeline | services | all
+        #[arg(long, value_enum, default_value_t = GraphScope::All)]
+        scope: GraphScope,
     },
 }

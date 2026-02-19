@@ -122,6 +122,7 @@ figment = { version = "0.10", features = ["env", "toml", "json"] }
 # Utilities
 uuid = { version = "1.0", features = ["v4"] }
 clap = { version = "4.4", features = ["derive"] }
+dialoguer = "0.12"
 
 # WebSocket dependencies
 tokio-tungstenite = { version = "0.28", features = ["native-tls"] }

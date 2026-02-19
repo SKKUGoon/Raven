@@ -1,8 +1,10 @@
-use super::parsing::{orderbook::parse_binance_futures_orderbook, trade::parse_binance_futures_trade};
-use super::super::BinanceWsClient;
 use super::super::constants::{
     BINANCE_FUTURES_STREAM_AGG_TRADE, BINANCE_FUTURES_WS_URL,
     BINANCE_STREAM_ORDERBOOK_DEPTH20_100MS, VENUE_BINANCE_FUTURES,
+};
+use super::super::BinanceWsClient;
+use super::parsing::{
+    orderbook::parse_binance_futures_orderbook, trade::parse_binance_futures_trade,
 };
 use crate::proto::{market_data_message, MarketDataMessage};
 use crate::service::{StreamDataType, StreamKey, StreamManager, StreamWorker};
@@ -23,7 +25,8 @@ impl StreamWorker for BinanceFuturesWorker {
             (
                 key.symbol,
                 BINANCE_STREAM_ORDERBOOK_DEPTH20_100MS.to_string(),
-                parse_binance_futures_orderbook as fn(&str, &str) -> Option<market_data_message::Data>,
+                parse_binance_futures_orderbook
+                    as fn(&str, &str) -> Option<market_data_message::Data>,
             )
         } else {
             (

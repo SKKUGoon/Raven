@@ -40,4 +40,3 @@ pub async fn show_users_tree(settings: &Settings) {
 
     let _ = ptree::print_tree(&tree.build());
 }
-

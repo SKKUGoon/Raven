@@ -4,8 +4,8 @@ use crate::proto::market_data_message;
 use crate::proto::MarketDataMessage;
 use crate::source::deribit::constants::{PRODUCER_DERIBIT, VENUE_DERIBIT};
 use futures_util::{SinkExt, StreamExt};
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 use tonic::Status;
@@ -21,9 +21,7 @@ pub const CHANNEL_TRADES: &str = "trades.BTC-OPTION.100ms";
 pub const CHANNEL_PRICE_INDEX: &str = "deribit_price_index.btc_usd";
 
 /// Callback: (channel, data_json) -> zero or more data payloads to broadcast.
-pub type OnNotification = Box<
-    dyn Fn(&str, &str) -> Vec<market_data_message::Data> + Send + Sync,
->;
+pub type OnNotification = Box<dyn Fn(&str, &str) -> Vec<market_data_message::Data> + Send + Sync>;
 
 /// Run the Deribit WebSocket connection: connect, subscribe to `channels`, then read loop.
 /// Calls `on_notification` for each subscription notification; messages are broadcast by the service.
@@ -63,13 +61,17 @@ pub async fn run(
 
                 while let Some(msg) = read.next().await {
                     if start.elapsed() >= CONNECTION_LIFETIME {
-                        info!("Deribit: scheduled reconnection after {:?}", CONNECTION_LIFETIME);
+                        info!(
+                            "Deribit: scheduled reconnection after {:?}",
+                            CONNECTION_LIFETIME
+                        );
                         should_reconnect = true;
                         break;
                     }
                     match msg {
                         Ok(Message::Text(text)) => {
-                            if let Some((channel, data_str)) = parse_subscription_notification(&text)
+                            if let Some((channel, data_str)) =
+                                parse_subscription_notification(&text)
                             {
                                 for data in on_notification(channel.as_str(), data_str.as_str()) {
                                     let msg = MarketDataMessage {
@@ -152,7 +154,9 @@ mod tests {
         let mut got_notification = false;
         let deadline = std::time::Duration::from_secs(20);
         while let Some(msg) = timeout(deadline, read.next()).await.ok().flatten() {
-            let Ok(Message::Text(text)) = msg else { continue };
+            let Ok(Message::Text(text)) = msg else {
+                continue;
+            };
             let v: serde_json::Value = match serde_json::from_str(&text) {
                 Ok(x) => x,
                 Err(_) => continue,
@@ -225,7 +229,9 @@ mod tests {
                     "[{}] channel={} data={}",
                     count,
                     channel,
-                    data.as_ref().map(|v| v.to_string()).unwrap_or_else(|| "null".into())
+                    data.as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "null".into())
                 );
             }
         }

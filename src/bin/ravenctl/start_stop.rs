@@ -45,8 +45,8 @@ fn run_raven_init_once() -> Result<(), IoError> {
 
 pub async fn handle_collect(
     settings: &Settings,
-    symbol: &str,
-    base: &Option<String>,
+    coin: &str,
+    quote: &Option<String>,
     venue: &Option<String>,
     venue_include: &[String],
     venue_exclude: &[String],
@@ -57,8 +57,8 @@ pub async fn handle_collect(
         ));
     }
 
-    // Build instrument if base is provided; otherwise treat --symbol as a venue symbol.
-    let instrument = build_instrument(symbol, base)?;
+    // Build instrument if quote is provided; otherwise treat --coin as a venue symbol.
+    let instrument = build_instrument(coin, quote)?;
 
     let resolver = SymbolResolver::from_config(&settings.routing);
 
@@ -79,7 +79,7 @@ pub async fn handle_collect(
         let venue_wire = venue.as_wire();
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue),
-            None => symbol.to_string(),
+            None => coin.to_string(),
         };
 
         println!(
@@ -87,7 +87,7 @@ pub async fn handle_collect(
             instrument
                 .as_ref()
                 .map(|i| i.to_string())
-                .unwrap_or_else(|| symbol.to_string()),
+                .unwrap_or_else(|| coin.to_string()),
             venue_wire,
             venue_symbol
         );
@@ -136,14 +136,14 @@ pub async fn handle_collect(
 
 pub async fn handle_stop(
     settings: &Settings,
-    symbol: String,
-    base: Option<String>,
+    coin: String,
+    quote: Option<String>,
     venue: Option<String>,
     venue_include: Vec<String>,
     venue_exclude: Vec<String>,
 ) -> Result<(), IoError> {
-    // Build instrument if base is provided; otherwise treat --symbol as a venue symbol.
-    let instrument = build_instrument(&symbol, &base)?;
+    // Build instrument if quote is provided; otherwise treat --coin as a venue symbol.
+    let instrument = build_instrument(&coin, &quote)?;
 
     let resolver = SymbolResolver::from_config(&settings.routing);
     let venues = resolve_venues(settings, venue.as_deref(), &venue_include, &venue_exclude)?;
@@ -159,7 +159,7 @@ pub async fn handle_stop(
         let venue_wire = venue_id.as_wire();
         let venue_symbol = match &instrument {
             Some(instr) => resolver.resolve(instr, &venue_id),
-            None => symbol.clone(),
+            None => coin.clone(),
         };
 
         println!(
@@ -167,7 +167,7 @@ pub async fn handle_stop(
             instrument
                 .as_ref()
                 .map(|i| i.to_string())
-                .unwrap_or_else(|| symbol.clone()),
+                .unwrap_or_else(|| coin.clone()),
             venue_wire,
             venue_symbol
         );

@@ -200,13 +200,12 @@ pub struct TibsWorker {
 
 #[tonic::async_trait]
 impl StreamWorker for TibsWorker {
-    async fn run(
-        &self,
-        key: StreamKey,
-        tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
-    ) {
+    async fn run(&self, key: StreamKey, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
         let symbol = key.symbol.clone();
-        let venue = key.venue.clone().unwrap_or_else(|| "BINANCE_SPOT".to_string());
+        let venue = key
+            .venue
+            .clone()
+            .unwrap_or_else(|| "BINANCE_SPOT".to_string());
         let interval = self.interval.clone();
 
         // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
@@ -237,7 +236,11 @@ impl StreamWorker for TibsWorker {
 
 pub type TibsService = StreamManager<TibsWorker>;
 
-pub fn new(upstreams: HashMap<String, String>, config: TibsConfig, interval: String) -> TibsService {
+pub fn new(
+    upstreams: HashMap<String, String>,
+    config: TibsConfig,
+    interval: String,
+) -> TibsService {
     let worker = TibsWorker {
         upstreams,
         config,
@@ -317,7 +320,9 @@ async fn run_tib_aggregation(
                             };
                             if tx.send(Ok(msg)).is_err() {
                                 // No subscribers; allow StreamManager to prune the task.
-                                info!("No subscribers for {output_symbol}; ending aggregation task.");
+                                info!(
+                                    "No subscribers for {output_symbol}; ending aggregation task."
+                                );
                                 info!("TIB aggregation task ended for {}", output_symbol);
                                 TIBS_ACTIVE_AGGREGATIONS.dec();
                                 return;

@@ -12,11 +12,23 @@ pub fn parse_ticker(channel: &str, data: &Value) -> Option<market_data_message::
             .and_then(|s| s.get("timestamp"))
             .and_then(|t| t.as_i64())
     })?;
-    let open_interest = data.get("open_interest").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let open_interest = data
+        .get("open_interest")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     let mark_iv = data.get("mark_iv").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let best_bid_price = data.get("best_bid_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let best_ask_price = data.get("best_ask_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
-    let mark_price = data.get("mark_price").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    let best_bid_price = data
+        .get("best_bid_price")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let best_ask_price = data
+        .get("best_ask_price")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let mark_price = data
+        .get("mark_price")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
     let underlying_price = data
         .get("index_price")
         .and_then(|v| v.as_f64())

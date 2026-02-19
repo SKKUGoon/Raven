@@ -16,11 +16,11 @@ pub(super) fn service_addr(settings: &Settings, service_id: &str) -> Option<Stri
         .map(|s| s.addr(host_ip))
 }
 
-pub(super) async fn start_stream(addr: &str, symbol: &str, venue_wire: &str, data_type: i32) {
+pub(super) async fn start_stream(addr: &str, venue_symbol: &str, venue_wire: &str, data_type: i32) {
     match ControlClient::connect(addr.to_string()).await {
         Ok(mut client) => {
             let req = ControlRequest {
-                symbol: symbol.to_string(),
+                symbol: venue_symbol.to_string(),
                 venue: venue_wire.to_string(),
                 data_type,
             };
@@ -30,11 +30,11 @@ pub(super) async fn start_stream(addr: &str, symbol: &str, venue_wire: &str, dat
     }
 }
 
-pub(super) async fn stop_stream(addr: &str, symbol: &str, venue_wire: &str, data_type: i32) {
+pub(super) async fn stop_stream(addr: &str, venue_symbol: &str, venue_wire: &str, data_type: i32) {
     match ControlClient::connect(addr.to_string()).await {
         Ok(mut client) => {
             let req = ControlRequest {
-                symbol: symbol.to_string(),
+                symbol: venue_symbol.to_string(),
                 venue: venue_wire.to_string(),
                 data_type,
             };
@@ -55,14 +55,14 @@ pub(super) fn parse_venue(s: &str) -> Result<VenueId, IoError> {
 }
 
 pub(super) fn build_instrument(
-    symbol_or_base: &str,
-    base: &Option<String>,
+    coin_or_venue_symbol: &str,
+    quote: &Option<String>,
 ) -> Result<Option<Instrument>, IoError> {
-    match base {
+    match quote {
         Some(quote_raw) => {
-            let base_asset = parse_asset(symbol_or_base)?;
+            let coin_asset = parse_asset(coin_or_venue_symbol)?;
             let quote_asset = parse_asset(quote_raw)?;
-            Ok(Some(Instrument::new(base_asset, quote_asset)))
+            Ok(Some(Instrument::new(coin_asset, quote_asset)))
         }
         None => Ok(None),
     }
@@ -92,5 +92,3 @@ pub(super) fn resolve_venues(
     };
     Ok(selector.resolve())
 }
-
-

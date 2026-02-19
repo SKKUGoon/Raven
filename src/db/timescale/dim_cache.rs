@@ -110,7 +110,10 @@ async fn resolve_soft_dim_id(
         "#
     );
 
-    let id: i32 = sqlx::query_scalar(&query).bind(value).fetch_one(pool).await?;
+    let id: i32 = sqlx::query_scalar(&query)
+        .bind(value)
+        .fetch_one(pool)
+        .await?;
     cache.write().await.insert(value.to_string(), id);
     Ok(id)
 }

@@ -122,5 +122,3 @@ impl fmt::Display for StreamKey {
 
 // NOTE: We intentionally do not parse datatype from symbol suffixes anymore.
 // Control requests now carry `data_type` explicitly.
-
-

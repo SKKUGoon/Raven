@@ -1,6 +1,6 @@
 # src/routing/ – Venue and symbol resolution
 
-Resolves **which venues** to use and **instrument → venue symbol** mapping. Used by ravenctl when starting collections with `--symbol ETH --base USDC` and by config (venue_include/exclude, symbol_map).
+Resolves **which venues** to use and **instrument → venue symbol** mapping. Used by ravenctl when starting collections with `--coin ETH --quote USDC` and by config (venue_include/exclude, symbol_map).
 
 ## Modules
 

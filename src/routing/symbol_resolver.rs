@@ -39,5 +39,3 @@ fn default_symbol_for_venue(instrument: &Instrument, venue_wire: &str) -> String
         instrument.binance_symbol()
     }
 }
-
-

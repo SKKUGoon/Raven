@@ -214,7 +214,8 @@ impl VolumeImbalanceState {
             // Update E[T] from realized ticks-per-bar (and clamp).
             let new_size = closed.tick_size as f64;
             self.size_ewma = self.alpha_size * new_size + (1.0 - self.alpha_size) * self.size_ewma;
-            self.size_ewma = Self::bound(self.size_ewma, self.size_boundary.0, self.size_boundary.1);
+            self.size_ewma =
+                Self::bound(self.size_ewma, self.size_boundary.0, self.size_boundary.1);
 
             self.update_threshold();
             return Some(closed);
@@ -233,13 +234,12 @@ pub struct VibsWorker {
 
 #[tonic::async_trait]
 impl StreamWorker for VibsWorker {
-    async fn run(
-        &self,
-        key: StreamKey,
-        tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
-    ) {
+    async fn run(&self, key: StreamKey, tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
         let symbol = key.symbol.clone();
-        let venue = key.venue.clone().unwrap_or_else(|| "BINANCE_SPOT".to_string());
+        let venue = key
+            .venue
+            .clone()
+            .unwrap_or_else(|| "BINANCE_SPOT".to_string());
         let interval = self.interval.clone();
 
         // Try to find the upstream URL for the requested exchange, or fall back to BINANCE_SPOT
@@ -276,7 +276,11 @@ impl StreamWorker for VibsWorker {
 
 pub type VibsService = StreamManager<VibsWorker>;
 
-pub fn new(upstreams: HashMap<String, String>, config: TibsConfig, interval: String) -> VibsService {
+pub fn new(
+    upstreams: HashMap<String, String>,
+    config: TibsConfig,
+    interval: String,
+) -> VibsService {
     let worker = VibsWorker {
         upstreams,
         config,
@@ -353,7 +357,9 @@ async fn run_vib_aggregation(
                                 )),
                             };
                             if tx.send(Ok(msg)).is_err() {
-                                info!("No subscribers for {output_symbol}; ending aggregation task.");
+                                info!(
+                                    "No subscribers for {output_symbol}; ending aggregation task."
+                                );
                                 info!("VIB aggregation task ended for {}", output_symbol);
                                 VIBS_ACTIVE_AGGREGATIONS.dec();
                                 return;
@@ -375,5 +381,3 @@ async fn run_vib_aggregation(
         }
     }
 }
-
-

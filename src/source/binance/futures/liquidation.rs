@@ -4,15 +4,15 @@
 //! which pushes liquidation events for ALL perpetual symbols (snapshot per 1000ms).
 
 use crate::proto::market_data_message::Data;
-use crate::source::binance::constants::VENUE_BINANCE_FUTURES;
-use crate::source::binance::control::{list_active_collections, stream_key};
-use crate::source::binance::message::new_market_data_message;
-use crate::source::binance::subscribe::filtered_broadcast_stream;
 use crate::proto::{
     ControlRequest, ControlResponse, Liquidation, ListRequest, ListResponse, MarketDataMessage,
     MarketDataRequest, StopAllRequest, StopAllResponse,
 };
 use crate::service::{StreamDataType, StreamKey};
+use crate::source::binance::constants::VENUE_BINANCE_FUTURES;
+use crate::source::binance::control::{list_active_collections, stream_key};
+use crate::source::binance::message::new_market_data_message;
+use crate::source::binance::subscribe::filtered_broadcast_stream;
 use async_trait::async_trait;
 use dashmap::DashSet;
 use futures_util::StreamExt;
@@ -59,9 +59,7 @@ impl LiquidationService {
     }
 }
 
-async fn run_force_order_stream(
-    tx: broadcast::Sender<Result<MarketDataMessage, Status>>,
-) {
+async fn run_force_order_stream(tx: broadcast::Sender<Result<MarketDataMessage, Status>>) {
     loop {
         info!("Binance liquidation stream: connecting to {WS_URL}");
         match tokio_tungstenite::connect_async(WS_URL).await {
@@ -184,9 +182,11 @@ impl MarketData for LiquidationService {
     ) -> Result<Response<Self::SubscribeStream>, Status> {
         let req = request.into_inner();
         let symbol = req.symbol.trim().to_uppercase();
-        let stream = filtered_broadcast_stream(&self.tx, symbol, |m, sym, wildcard| {
-            matches!(&m.data, Some(Data::Liquidation(l)) if wildcard || l.symbol == sym)
-        });
+        let stream = filtered_broadcast_stream(
+            &self.tx,
+            symbol,
+            |m, sym, wildcard| matches!(&m.data, Some(Data::Liquidation(l)) if wildcard || l.symbol == sym),
+        );
         Ok(Response::new(stream))
     }
 }

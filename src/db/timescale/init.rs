@@ -43,25 +43,11 @@ pub async fn run_raven_init(
     ensure_schema_and_dimensions(&pool, &schema).await?;
 
     let (coins, quotes) = split_coin_quote(&seed.symbols);
-    let coin_stats = seed_simple_dimensions(
-        &pool,
-        &schema,
-        "dim__coin",
-        "coin_id",
-        "coin",
-        &coins,
-    )
-    .await?;
+    let coin_stats =
+        seed_simple_dimensions(&pool, &schema, "dim__coin", "coin_id", "coin", &coins).await?;
     log_stats("dim__coin", coin_stats);
-    let quote_stats = seed_simple_dimensions(
-        &pool,
-        &schema,
-        "dim__quote",
-        "quote_id",
-        "quote",
-        &quotes,
-    )
-    .await?;
+    let quote_stats =
+        seed_simple_dimensions(&pool, &schema, "dim__quote", "quote_id", "quote", &quotes).await?;
     log_stats("dim__quote", quote_stats);
     let exch = seed_simple_dimensions(
         &pool,

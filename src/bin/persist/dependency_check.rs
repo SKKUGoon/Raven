@@ -65,7 +65,12 @@ async fn check_timescale_connectivity(settings: &Settings, missing: &mut Vec<Mis
         return;
     }
 
-    match timeout(Duration::from_secs(3), TcpStream::connect((host.as_str(), port))).await {
+    match timeout(
+        Duration::from_secs(3),
+        TcpStream::connect((host.as_str(), port)),
+    )
+    .await
+    {
         Ok(Ok(_)) => {
             info!("Timescale TCP reachable at {host}:{port}");
         }
@@ -125,7 +130,8 @@ async fn check_timescaledb_extension(settings: &Settings, missing: &mut Vec<Miss
         Ok(true) => info!("TimescaleDB extension is installed."),
         Ok(false) => missing.push(MissingDependency {
             name: "TimescaleDB extension".to_string(),
-            detail: "extension `timescaledb` is not installed/enabled in target database".to_string(),
+            detail: "extension `timescaledb` is not installed/enabled in target database"
+                .to_string(),
         }),
         Err(e) => missing.push(MissingDependency {
             name: "TimescaleDB extension check".to_string(),

@@ -154,12 +154,7 @@ fn pid_command_name(pid: i32) -> Option<String> {
 
 fn pids_listening_on_port(port: u16) -> Option<Vec<i32>> {
     let out = Command::new("lsof")
-        .args([
-            "-nP",
-            &format!("-iTCP:{port}"),
-            "-sTCP:LISTEN",
-            "-t",
-        ])
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
         .output()
         .ok()?;
     if !out.status.success() {

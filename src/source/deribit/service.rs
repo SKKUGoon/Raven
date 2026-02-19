@@ -7,12 +7,12 @@
 
 use crate::proto::market_data_message::Data;
 use crate::proto::{
-    CollectionInfo, ControlRequest, ControlResponse, ListRequest,
-    ListResponse, MarketDataMessage, MarketDataRequest, StopAllRequest, StopAllResponse,
+    CollectionInfo, ControlRequest, ControlResponse, ListRequest, ListResponse, MarketDataMessage,
+    MarketDataRequest, StopAllRequest, StopAllResponse,
 };
 use crate::service::{StreamDataType, StreamKey};
-use crate::source::deribit::constants::VENUE_DERIBIT;
 use crate::source::deribit::client::{self, OnNotification};
+use crate::source::deribit::constants::VENUE_DERIBIT;
 use crate::source::deribit::parsing;
 use async_trait::async_trait;
 use dashmap::DashSet;
@@ -200,31 +200,32 @@ impl MarketData for DeribitService {
 
         let rx = self.tx.subscribe();
         let dt = self.data_type;
-        let stream = tokio_stream::StreamExt::filter_map(
-            BroadcastStream::new(rx),
-            move |item| {
-                let sym = symbol.clone();
-                match item {
-                    Ok(Ok(m)) => {
-                        let pass = match (&m.data, dt) {
-                            (Some(Data::OptionsTicker(t)), StreamDataType::Ticker) => {
-                                wildcard || t.symbol == sym
-                            }
-                            (Some(Data::Trade(t)), StreamDataType::Trade) => {
-                                wildcard || t.symbol == sym
-                            }
-                            (Some(Data::PriceIndex(p)), StreamDataType::PriceIndex) => {
-                                wildcard || sym == "BTC_USD" || p.index_name == sym.to_lowercase()
-                            }
-                            _ => false,
-                        };
-                        if pass { Some(Ok(m)) } else { None }
+        let stream = tokio_stream::StreamExt::filter_map(BroadcastStream::new(rx), move |item| {
+            let sym = symbol.clone();
+            match item {
+                Ok(Ok(m)) => {
+                    let pass = match (&m.data, dt) {
+                        (Some(Data::OptionsTicker(t)), StreamDataType::Ticker) => {
+                            wildcard || t.symbol == sym
+                        }
+                        (Some(Data::Trade(t)), StreamDataType::Trade) => {
+                            wildcard || t.symbol == sym
+                        }
+                        (Some(Data::PriceIndex(p)), StreamDataType::PriceIndex) => {
+                            wildcard || sym == "BTC_USD" || p.index_name == sym.to_lowercase()
+                        }
+                        _ => false,
+                    };
+                    if pass {
+                        Some(Ok(m))
+                    } else {
+                        None
                     }
-                    Ok(Err(e)) => Some(Err(e)),
-                    Err(_) => Some(Err(Status::internal("Stream lagged"))),
                 }
-            },
-        );
+                Ok(Err(e)) => Some(Err(e)),
+                Err(_) => Some(Err(Status::internal("Stream lagged"))),
+            }
+        });
         Ok(Response::new(Box::pin(stream)))
     }
 }
