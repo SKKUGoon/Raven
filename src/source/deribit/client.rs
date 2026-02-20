@@ -15,6 +15,7 @@ use tracing::{error, info, warn};
 const SUBSCRIBE_ID: u64 = 1;
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
 const CONNECTION_LIFETIME: Duration = Duration::from_secs(23 * 3600 + 30 * 60);
+const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 /// All three Deribit channels for BTC options intelligence.
 pub const CHANNEL_TICKER: &str = "ticker.BTC-OPTION.100ms";
@@ -54,6 +55,24 @@ pub async fn run(
                     error!("Deribit: failed to send subscribe: {}", e);
                     tokio::time::sleep(RETRY_INTERVAL).await;
                     continue;
+                }
+                request_id = request_id.wrapping_add(1);
+                let heartbeat_msg = serde_json::to_string(&json!({
+                    "jsonrpc": "2.0",
+                    "method": "public/set_heartbeat",
+                    "params": {
+                        "interval": HEARTBEAT_INTERVAL_SECS
+                    },
+                    "id": request_id
+                }))
+                .expect("set_heartbeat JSON");
+                if let Err(e) = write.send(Message::Text(heartbeat_msg.into())).await {
+                    warn!("Deribit: failed to send set_heartbeat request: {e}");
+                } else {
+                    info!(
+                        "Deribit: requested websocket heartbeat interval={}s",
+                        HEARTBEAT_INTERVAL_SECS
+                    );
                 }
                 request_id = request_id.wrapping_add(1);
 
@@ -114,7 +133,23 @@ pub async fn run(
                                     );
                                 }
                             } else {
-                                log_control_message(&text);
+                                if should_reply_public_test(&text) {
+                                    let test_msg = serde_json::to_string(&json!({
+                                        "jsonrpc": "2.0",
+                                        "method": "public/test",
+                                        "id": request_id
+                                    }))
+                                    .expect("public/test JSON");
+                                    request_id = request_id.wrapping_add(1);
+                                    if let Err(e) = write.send(Message::Text(test_msg.into())).await {
+                                        warn!("Deribit: failed to send public/test response: {e}");
+                                        should_reconnect = true;
+                                        break;
+                                    }
+                                    info!("Deribit: replied to heartbeat test_request with public/test");
+                                } else {
+                                    log_control_message(&text);
+                                }
                             }
                         }
                         Ok(Message::Ping(payload)) => {
@@ -124,6 +159,11 @@ pub async fn run(
                                 should_reconnect = true;
                                 break;
                             }
+                        }
+                        Ok(Message::Close(frame)) => {
+                            warn!("Deribit: websocket closed by server: {frame:?}");
+                            should_reconnect = true;
+                            break;
                         }
                         Err(e) => {
                             if is_expected_disconnect(&e) {
@@ -138,7 +178,9 @@ pub async fn run(
                     }
                 }
                 if !should_reconnect {
-                    return;
+                    // The stream ended cleanly (`read.next() -> None`); treat as a disconnect.
+                    warn!("Deribit: websocket stream ended; reconnecting...");
+                    continue;
                 }
             }
             Err(e) => {
@@ -204,6 +246,17 @@ fn log_control_message(text: &str) {
     if let (Some(id), Some(result)) = (v.get("id"), v.get("result")) {
         info!("Deribit: control response id={id}, result={result}");
     }
+}
+
+fn should_reply_public_test(text: &str) -> bool {
+    let Ok(v) = serde_json::from_str::<Value>(text) else {
+        return false;
+    };
+    v.get("method").and_then(|m| m.as_str()) == Some("heartbeat")
+        && v.get("params")
+            .and_then(|p| p.get("type"))
+            .and_then(|t| t.as_str())
+            == Some("test_request")
 }
 
 fn is_expected_disconnect(err: &tungstenite::Error) -> bool {
