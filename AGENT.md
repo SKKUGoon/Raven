@@ -224,6 +224,7 @@ ravenctl start
 - **Port-bearing service lifecycle**: whenever a service with a configured port is added, removed, or has a port changed, update `raven_init` dependency checks in `src/bin/persist/dependency_check.rs` and re-run `cargo run --bin raven_init` (or `cargo check --bin raven_init`) to verify missing dependencies are reported correctly.
 - **Argument-heavy construction**: if a function or constructor grows many parameters (or triggers clippy `too_many_arguments` / `type_complexity`), prefer an argument struct with a chainable builder API.
 - **Builder style**: for internal builders in this repository, prefer infallible `.build()` that returns the target type directly and enforces required fields internally (panic with clear `missing <field>` messages if violated).
+- **Auto CI/CD (GitHub Actions)**: keep `.github/workflows/release.yml` aligned with Rust binary targets in `Cargo.toml`. After changing binaries or release build/package logic, update and validate the workflow so release artifacts include every expected binary.
 
 ### Deribit reliability guardrails
 
