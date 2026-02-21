@@ -132,24 +132,22 @@ pub async fn run(
                                         "Deribit: notifications_seen={notifications_seen}, emitted_messages={emitted_messages}"
                                     );
                                 }
-                            } else {
-                                if should_reply_public_test(&text) {
-                                    let test_msg = serde_json::to_string(&json!({
-                                        "jsonrpc": "2.0",
-                                        "method": "public/test",
-                                        "id": request_id
-                                    }))
-                                    .expect("public/test JSON");
-                                    request_id = request_id.wrapping_add(1);
-                                    if let Err(e) = write.send(Message::Text(test_msg.into())).await {
-                                        warn!("Deribit: failed to send public/test response: {e}");
-                                        should_reconnect = true;
-                                        break;
-                                    }
-                                    info!("Deribit: replied to heartbeat test_request with public/test");
-                                } else {
-                                    log_control_message(&text);
+                            } else if should_reply_public_test(&text) {
+                                let test_msg = serde_json::to_string(&json!({
+                                    "jsonrpc": "2.0",
+                                    "method": "public/test",
+                                    "id": request_id
+                                }))
+                                .expect("public/test JSON");
+                                request_id = request_id.wrapping_add(1);
+                                if let Err(e) = write.send(Message::Text(test_msg.into())).await {
+                                    warn!("Deribit: failed to send public/test response: {e}");
+                                    should_reconnect = true;
+                                    break;
                                 }
+                                info!("Deribit: replied to heartbeat test_request with public/test");
+                            } else {
+                                log_control_message(&text);
                             }
                         }
                         Ok(Message::Ping(payload)) => {
